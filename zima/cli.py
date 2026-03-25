@@ -13,6 +13,7 @@ from rich.table import Table
 
 from zima.models import AgentConfig
 from zima.core import KimiRunner, CycleScheduler, StateManager
+from zima.core.daemon import start_daemon, stop_daemon, is_daemon_running
 from zima.utils import safe_print, icon
 
 app = typer.Typer(
@@ -139,6 +140,12 @@ def start(
         "-c",
         help="Start from specific cycle (for debugging)"
     ),
+    detach: bool = typer.Option(
+        False,
+        "--detach",
+        "-d",
+        help="Run agent in background (daemon mode)"
+    ),
 ):
     """Start an agent"""
     agent_dir = Path("agents") / name
@@ -152,31 +159,52 @@ def start(
         console.print(f"[red]{icon('cross')} Agent config not found: {config_path}[/red]")
         raise typer.Exit(1)
     
-    # Load config
-    config = AgentConfig.from_yaml(config_path)
+    # Check if already running
+    if is_daemon_running(agent_dir):
+        console.print(f"[yellow]{icon('warning')} Agent '{name}' is already running[/yellow]")
+        console.print(f"  Use 'zima logs {name} -f' to view logs")
+        raise typer.Exit(1)
     
-    # Initialize components
-    runner = KimiRunner(config, agent_dir)
-    state_manager = StateManager(agent_dir)
-    scheduler = CycleScheduler(config, runner, state_manager)
-    
-    # Set cycle if specified
-    if cycle:
-        state = state_manager.load_state()
-        state.current_cycle = cycle - 1
-        state_manager.save_state(state)
-        console.print(f"[yellow]Starting from cycle {cycle}[/yellow]")
-    
-    # Set global scheduler for signal handling
-    global _current_scheduler
-    _current_scheduler = scheduler
-    
-    try:
-        scheduler.run()
-    except KeyboardInterrupt:
-        safe_print("\n[WARNING] Stopped by user")
-    finally:
-        _current_scheduler = None
+    if detach:
+        # Start as daemon (background process)
+        pid = start_daemon(agent_dir)
+        console.print(f"[green]{icon('check')} Agent '{name}' started in background[/green]")
+        console.print(f"  PID: {pid}")
+        console.print(f"  Logs: {agent_dir / 'daemon.log'}")
+        console.print(f"\nTo view logs:")
+        console.print(f"  zima logs {name} -f")
+        console.print(f"\nTo stop:")
+        console.print(f"  zima stop {name}")
+    else:
+        # Run in foreground (blocking)
+        console.print(f"[green]{icon('check')} Starting agent '{name}' in foreground[/green]")
+        console.print(f"  Press Ctrl+C to stop\n")
+        
+        # Load config
+        config = AgentConfig.from_yaml(config_path)
+        
+        # Initialize components
+        runner = KimiRunner(config, agent_dir)
+        state_manager = StateManager(agent_dir)
+        scheduler = CycleScheduler(config, runner, state_manager)
+        
+        # Set cycle if specified
+        if cycle:
+            state = state_manager.load_state()
+            state.current_cycle = cycle - 1
+            state_manager.save_state(state)
+            console.print(f"[yellow]Starting from cycle {cycle}[/yellow]")
+        
+        # Set global scheduler for signal handling
+        global _current_scheduler
+        _current_scheduler = scheduler
+        
+        try:
+            scheduler.run()
+        except KeyboardInterrupt:
+            safe_print("\n[WARNING] Stopped by user")
+        finally:
+            _current_scheduler = None
 
 
 @app.command()
@@ -193,12 +221,22 @@ def status(
     state_manager = StateManager(agent_dir)
     state = state_manager.load_state()
     
+    # Check daemon status
+    daemon_running = is_daemon_running(agent_dir)
+    
     # Build status table
     table = Table(title=f"Agent: {name}")
     table.add_column("Property", style="cyan")
     table.add_column("Value", style="green")
     
-    table.add_row("Status", state.status)
+    # Show combined status
+    if daemon_running:
+        display_status = f"{state.status} (daemon running)"
+    else:
+        display_status = state.status
+    
+    table.add_row("Status", display_status)
+    table.add_row("Daemon Mode", "running" if daemon_running else "stopped")
     table.add_row("Current Cycle", str(state.current_cycle))
     table.add_row("Current Stage", state.current_stage or "not started")
     table.add_row("Started At", state.started_at or "never")
@@ -208,6 +246,15 @@ def status(
         table.add_row("Async Tasks", str(len(state.async_tasks)))
     
     console.print(table)
+    
+    # Show daemon info if running
+    if daemon_running:
+        pid_file = agent_dir / "daemon.pid"
+        if pid_file.exists():
+            pid = pid_file.read_text().strip()
+            console.print(f"\n[bold]Daemon Info:[/bold]")
+            console.print(f"  PID: {pid}")
+            console.print(f"  Log: {agent_dir / 'daemon.log'}")
     
     # Show recent sessions
     sessions = state_manager.get_recent_sessions(3)
@@ -325,8 +372,22 @@ def list(
 def stop(
     name: str = typer.Argument(..., help="Agent name"),
 ):
-    """Stop a running agent (not implemented - use Ctrl+C)"""
-    console.print(f"[yellow]{icon('warning')} To stop an agent, press Ctrl+C in the terminal where it's running[/yellow]")
+    """Stop a running agent (daemon mode)"""
+    agent_dir = Path("agents") / name
+    
+    if not agent_dir.exists():
+        console.print(f"[red]{icon('cross')} Agent '{name}' not found[/red]")
+        raise typer.Exit(1)
+    
+    if not is_daemon_running(agent_dir):
+        console.print(f"[yellow]{icon('warning')} Agent '{name}' is not running in daemon mode[/yellow]")
+        console.print(f"  If running in foreground, press Ctrl+C in that terminal")
+        raise typer.Exit(1)
+    
+    if stop_daemon(agent_dir):
+        console.print(f"[green]{icon('check')} Agent '{name}' stopped[/green]")
+    else:
+        console.print(f"[red]{icon('cross')} Failed to stop agent '{name}'[/red]")
 
 
 if __name__ == "__main__":
