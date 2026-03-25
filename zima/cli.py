@@ -1,0 +1,332 @@
+"""ZimaBlue CLI - Main entry point"""
+
+from __future__ import annotations
+
+import signal
+import sys
+from pathlib import Path
+from typing import Optional
+
+import typer
+from rich.console import Console
+from rich.table import Table
+
+from zima.models import AgentConfig
+from zima.core import KimiRunner, CycleScheduler, StateManager
+
+app = typer.Typer(
+    name="zima",
+    help="Zima Blue CLI - Personal Agent Orchestration Platform",
+    add_completion=False,
+)
+console = Console()
+
+# Global scheduler for signal handling
+_current_scheduler: Optional[CycleScheduler] = None
+
+
+def _signal_handler(sig, frame):
+    """Handle interrupt signals"""
+    global _current_scheduler
+    if _current_scheduler:
+        console.print("\n[yellow]Received interrupt, stopping agent...[/yellow]")
+        _current_scheduler.stop()
+    else:
+        sys.exit(0)
+
+
+# Register signal handlers
+signal.signal(signal.SIGINT, _signal_handler)
+signal.signal(signal.SIGTERM, _signal_handler)
+
+
+@app.callback()
+def main():
+    """Zima Blue CLI - Personal Agent Orchestration Platform"""
+    pass
+
+
+@app.command()
+def init(
+    path: Optional[Path] = typer.Option(
+        None,
+        "--path",
+        "-p",
+        help="Initialize path (default: current directory)"
+    )
+):
+    """Initialize ZimaBlue in current directory"""
+    target_path = path or Path.cwd()
+    
+    # Create directory structure
+    (target_path / "agents").mkdir(exist_ok=True)
+    
+    console.print(f"[green]✓ Initialized ZimaBlue at {target_path}[/green]")
+    console.print(f"  Created: agents/")
+
+
+@app.command()
+def create(
+    name: str = typer.Argument(..., help="Agent name"),
+    workspace: Optional[Path] = typer.Option(
+        None,
+        "--workspace",
+        "-w",
+        help="Workspace directory (default: agents/{name}/workspace)"
+    ),
+    task: str = typer.Option(
+        "default",
+        "--task",
+        "-t",
+        help="Initial task type"
+    ),
+):
+    """Create a new agent"""
+    agent_dir = Path("agents") / name
+    
+    if agent_dir.exists():
+        console.print(f"[red]✗ Agent '{name}' already exists[/red]")
+        raise typer.Exit(1)
+    
+    # Create directories
+    agent_dir.mkdir(parents=True)
+    (agent_dir / "workspace").mkdir()
+    (agent_dir / "prompts").mkdir()
+    (agent_dir / "logs").mkdir()
+    (agent_dir / "sessions").mkdir()
+    
+    # Create default config
+    config = AgentConfig(
+        name=name,
+        description=f"Agent {name} for automated task execution",
+        workspace=workspace or (agent_dir / "workspace"),
+        initial_task={
+            "type": task,
+            "description": f"Execute {task} task",
+        },
+        pipeline=[
+            {
+                "name": "analyze",
+                "description": "Analyze the current state and requirements",
+            },
+            {
+                "name": "execute",
+                "description": "Execute the main task",
+            },
+            {
+                "name": "verify",
+                "description": "Verify the results",
+            },
+        ]
+    )
+    
+    config.to_yaml(agent_dir / "agent.yaml")
+    
+    console.print(f"[green]✓ Created agent: {name}[/green]")
+    console.print(f"  Location: {agent_dir}")
+    console.print(f"  Config: {agent_dir / 'agent.yaml'}")
+    console.print(f"\nTo start the agent:")
+    console.print(f"  zima start {name}")
+
+
+@app.command()
+def start(
+    name: str = typer.Argument(..., help="Agent name"),
+    cycle: Optional[int] = typer.Option(
+        None,
+        "--cycle",
+        "-c",
+        help="Start from specific cycle (for debugging)"
+    ),
+):
+    """Start an agent"""
+    agent_dir = Path("agents") / name
+    
+    if not agent_dir.exists():
+        console.print(f"[red]✗ Agent '{name}' not found[/red]")
+        raise typer.Exit(1)
+    
+    config_path = agent_dir / "agent.yaml"
+    if not config_path.exists():
+        console.print(f"[red]✗ Agent config not found: {config_path}[/red]")
+        raise typer.Exit(1)
+    
+    # Load config
+    config = AgentConfig.from_yaml(config_path)
+    
+    # Initialize components
+    runner = KimiRunner(config, agent_dir)
+    state_manager = StateManager(agent_dir)
+    scheduler = CycleScheduler(config, runner, state_manager)
+    
+    # Set cycle if specified
+    if cycle:
+        state = state_manager.load_state()
+        state.current_cycle = cycle - 1
+        state_manager.save_state(state)
+        console.print(f"[yellow]Starting from cycle {cycle}[/yellow]")
+    
+    # Set global scheduler for signal handling
+    global _current_scheduler
+    _current_scheduler = scheduler
+    
+    try:
+        scheduler.run()
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Stopped by user[/yellow]")
+    finally:
+        _current_scheduler = None
+
+
+@app.command()
+def status(
+    name: str = typer.Argument(..., help="Agent name"),
+):
+    """Show agent status"""
+    agent_dir = Path("agents") / name
+    
+    if not agent_dir.exists():
+        console.print(f"[red]✗ Agent '{name}' not found[/red]")
+        raise typer.Exit(1)
+    
+    state_manager = StateManager(agent_dir)
+    state = state_manager.load_state()
+    
+    # Build status table
+    table = Table(title=f"Agent: {name}")
+    table.add_column("Property", style="cyan")
+    table.add_column("Value", style="green")
+    
+    table.add_row("Status", state.status)
+    table.add_row("Current Cycle", str(state.current_cycle))
+    table.add_row("Current Stage", state.current_stage or "not started")
+    table.add_row("Started At", state.started_at or "never")
+    table.add_row("Updated At", state.updated_at or "never")
+    
+    if state.async_tasks:
+        table.add_row("Async Tasks", str(len(state.async_tasks)))
+    
+    console.print(table)
+    
+    # Show recent sessions
+    sessions = state_manager.get_recent_sessions(3)
+    if sessions:
+        console.print(f"\n[bold]Recent Sessions:[/bold]")
+        for i, session in enumerate(sessions, 1):
+            lines = session.split('\n')
+            title = lines[0] if lines else f"Session {i}"
+            console.print(f"  {i}. {title}")
+
+
+@app.command()
+def logs(
+    name: str = typer.Argument(..., help="Agent name"),
+    follow: bool = typer.Option(
+        False,
+        "--follow",
+        "-f",
+        help="Follow log output"
+    ),
+    n: int = typer.Option(
+        20,
+        "--lines",
+        "-n",
+        help="Number of lines to show"
+    ),
+):
+    """Show agent logs"""
+    import time
+    
+    agent_dir = Path("agents") / name
+    logs_dir = agent_dir / "logs"
+    
+    if not logs_dir.exists():
+        console.print(f"[red]✗ No logs found for agent '{name}'[/red]")
+        raise typer.Exit(1)
+    
+    log_files = sorted(logs_dir.glob("cycle_*.log"), reverse=True)
+    
+    if not log_files:
+        console.print(f"[yellow]No log files found[/yellow]")
+        return
+    
+    latest_log = log_files[0]
+    
+    if follow:
+        # Follow mode (simple implementation)
+        console.print(f"[bold]Following {latest_log.name} (Ctrl+C to exit):[/bold]\n")
+        last_size = 0
+        try:
+            while True:
+                if latest_log.exists():
+                    content = latest_log.read_text(encoding="utf-8")
+                    if len(content) > last_size:
+                        new_content = content[last_size:]
+                        console.print(new_content, end="")
+                        last_size = len(content)
+                time.sleep(1)
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Stopped[/yellow]")
+    else:
+        # Show last n lines
+        content = latest_log.read_text(encoding="utf-8")
+        lines = content.split('\n')
+        
+        console.print(f"[bold]Latest log ({latest_log.name}):[/bold]\n")
+        for line in lines[-n:]:
+            console.print(line)
+
+
+@app.command()
+def list(
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Show detailed information"
+    ),
+):
+    """List all agents"""
+    agents_dir = Path("agents")
+    
+    if not agents_dir.exists():
+        console.print("[yellow]No agents found. Create one with: zima create <name>[/yellow]")
+        return
+    
+    agent_dirs = [d for d in agents_dir.iterdir() if d.is_dir()]
+    
+    if not agent_dirs:
+        console.print("[yellow]No agents found. Create one with: zima create <name>[/yellow]")
+        return
+    
+    table = Table(title="Agents")
+    table.add_column("Name", style="cyan")
+    table.add_column("Status", style="green")
+    table.add_column("Cycle", style="yellow")
+    table.add_column("Stage", style="blue")
+    
+    for agent_dir in sorted(agent_dirs):
+        name = agent_dir.name
+        state_manager = StateManager(agent_dir)
+        state = state_manager.load_state()
+        
+        table.add_row(
+            name,
+            state.status,
+            str(state.current_cycle),
+            state.current_stage or "-"
+        )
+    
+    console.print(table)
+
+
+@app.command()
+def stop(
+    name: str = typer.Argument(..., help="Agent name"),
+):
+    """Stop a running agent (not implemented - use Ctrl+C)"""
+    console.print(f"[yellow]To stop an agent, press Ctrl+C in the terminal where it's running[/yellow]")
+
+
+if __name__ == "__main__":
+    app()

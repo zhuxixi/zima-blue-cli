@@ -1,0 +1,41 @@
+apiVersion: zima.io/v1
+kind: Agent
+metadata:
+  name: example-agent
+  description: Example agent for testing ZimaBlue CLI
+
+spec:
+  workspace: "./workspace"
+  
+  cycle:
+    interval: 900
+    maxExecutionTime: 840
+    earlyCompletion: true
+  
+  timeout:
+    maxCycles: 10
+    maxDuration: "2h"
+    maxRetries: 2
+  
+  initialTask:
+    type: "hello_world"
+    description: "Print a hello world message and verify the system works"
+  
+  pipeline:
+    - name: "setup"
+      description: "Set up the workspace and verify environment"
+    
+    - name: "execute"
+      description: "Execute the main task"
+    
+    - name: "verify"
+      description: "Verify the results and clean up"
+  
+  capabilities:
+    tools:
+      - file/read
+      - file/write
+      - shell/powershell
+  
+  runtime:
+    maxStepsPerTurn: 30
