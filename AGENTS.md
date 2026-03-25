@@ -9,8 +9,16 @@
 > - [架构设计](../docs/architecture/) ⭐ **最新设计，以此为准**
 > - [历史文档](../docs/history/) — 设计演进过程（仅供参考）
 > - [架构决策](../docs/decisions/) — ADR 决策记录
+> - [会话历史](./SESSION.md) — 开发会话记录
 
 ---
+
+## Session History
+
+📋 **完整会话历史**: [SESSION.md](./SESSION.md)
+
+> 最近 Session 摘要：
+> - **Session 1** (2026-03-26): ZimaBlue CLI MVP 实现与测试 - 完成核心调度器、CLI 命令、后台守护进程模式，验证 example-agent 运行正常
 
 ## 1. 项目愿景
 
