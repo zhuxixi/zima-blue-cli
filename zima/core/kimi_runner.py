@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from zima.models import AgentConfig, CycleResult
+from zima.utils import safe_print, icon
 
 
 class KimiRunner:
@@ -56,20 +57,27 @@ class KimiRunner:
         full_prompt = self._prepare_prompt(prompt, result_file, task_name)
         prompt_file.write_text(full_prompt, encoding="utf-8")
         
+        # Ensure workspace exists with absolute path
+        workspace_abs = self.workspace.resolve()
+        workspace_abs.mkdir(parents=True, exist_ok=True)
+        
         # Build command
+        # Read prompt content for --prompt argument
+        prompt_content = prompt_file.read_text(encoding="utf-8")
+        
         cmd = [
             "kimi",
             "--print",  # Non-interactive mode
             "--yolo",   # Auto-approve
-            "--prompt-file", str(prompt_file),
-            "--work-dir", str(self.workspace),
+            "--prompt", prompt_content,
+            "--work-dir", str(workspace_abs),
             "--max-steps-per-turn", str(self.config.max_steps_per_turn),
             "--max-ralph-iterations", "10",
         ]
         
-        print(f"🚀 Starting cycle {cycle_num}")
-        print(f"   Prompt: {prompt_file.name}")
-        print(f"   Log: {log_file.name}")
+        safe_print(f"{icon('rocket')} Starting cycle {cycle_num}")
+        safe_print(f"   Prompt: {prompt_file.name}")
+        safe_print(f"   Log: {log_file.name}")
         
         # Execute with real-time logging
         start_time = datetime.now()
@@ -112,7 +120,7 @@ class KimiRunner:
             elapsed = self.config.max_execution_time
             progress = self._estimate_progress_from_log(log_file)
             
-            print(f"⏰ Cycle {cycle_num} timed out")
+            safe_print(f"{icon('warning')} Cycle {cycle_num} timed out")
             
             return CycleResult(
                 cycle_num=cycle_num,

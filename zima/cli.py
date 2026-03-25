@@ -13,6 +13,7 @@ from rich.table import Table
 
 from zima.models import AgentConfig
 from zima.core import KimiRunner, CycleScheduler, StateManager
+from zima.utils import safe_print, icon
 
 app = typer.Typer(
     name="zima",
@@ -29,7 +30,7 @@ def _signal_handler(sig, frame):
     """Handle interrupt signals"""
     global _current_scheduler
     if _current_scheduler:
-        console.print("\n[yellow]Received interrupt, stopping agent...[/yellow]")
+        safe_print("\n[WARNING] Received interrupt, stopping agent...")
         _current_scheduler.stop()
     else:
         sys.exit(0)
@@ -61,7 +62,7 @@ def init(
     # Create directory structure
     (target_path / "agents").mkdir(exist_ok=True)
     
-    console.print(f"[green]✓ Initialized ZimaBlue at {target_path}[/green]")
+    console.print(f"[green]{icon('check')} Initialized ZimaBlue at {target_path}[/green]")
     console.print(f"  Created: agents/")
 
 
@@ -85,7 +86,7 @@ def create(
     agent_dir = Path("agents") / name
     
     if agent_dir.exists():
-        console.print(f"[red]✗ Agent '{name}' already exists[/red]")
+        console.print(f"[red]{icon('cross')} Agent '{name}' already exists[/red]")
         raise typer.Exit(1)
     
     # Create directories
@@ -122,7 +123,7 @@ def create(
     
     config.to_yaml(agent_dir / "agent.yaml")
     
-    console.print(f"[green]✓ Created agent: {name}[/green]")
+    console.print(f"[green]{icon('check')} Created agent: {name}[/green]")
     console.print(f"  Location: {agent_dir}")
     console.print(f"  Config: {agent_dir / 'agent.yaml'}")
     console.print(f"\nTo start the agent:")
@@ -143,12 +144,12 @@ def start(
     agent_dir = Path("agents") / name
     
     if not agent_dir.exists():
-        console.print(f"[red]✗ Agent '{name}' not found[/red]")
+        console.print(f"[red]{icon('cross')} Agent '{name}' not found[/red]")
         raise typer.Exit(1)
     
     config_path = agent_dir / "agent.yaml"
     if not config_path.exists():
-        console.print(f"[red]✗ Agent config not found: {config_path}[/red]")
+        console.print(f"[red]{icon('cross')} Agent config not found: {config_path}[/red]")
         raise typer.Exit(1)
     
     # Load config
@@ -173,7 +174,7 @@ def start(
     try:
         scheduler.run()
     except KeyboardInterrupt:
-        console.print("\n[yellow]Stopped by user[/yellow]")
+        safe_print("\n[WARNING] Stopped by user")
     finally:
         _current_scheduler = None
 
@@ -186,7 +187,7 @@ def status(
     agent_dir = Path("agents") / name
     
     if not agent_dir.exists():
-        console.print(f"[red]✗ Agent '{name}' not found[/red]")
+        console.print(f"[red]{icon('cross')} Agent '{name}' not found[/red]")
         raise typer.Exit(1)
     
     state_manager = StateManager(agent_dir)
@@ -247,7 +248,7 @@ def logs(
     log_files = sorted(logs_dir.glob("cycle_*.log"), reverse=True)
     
     if not log_files:
-        console.print(f"[yellow]No log files found[/yellow]")
+        console.print(f"[yellow]{icon('warning')} No log files found[/yellow]")
         return
     
     latest_log = log_files[0]
@@ -290,13 +291,13 @@ def list(
     agents_dir = Path("agents")
     
     if not agents_dir.exists():
-        console.print("[yellow]No agents found. Create one with: zima create <name>[/yellow]")
+        console.print(f"[yellow]{icon('warning')} No agents found. Create one with: zima create <name>[/yellow]")
         return
     
     agent_dirs = [d for d in agents_dir.iterdir() if d.is_dir()]
     
     if not agent_dirs:
-        console.print("[yellow]No agents found. Create one with: zima create <name>[/yellow]")
+        console.print(f"[yellow]{icon('warning')} No agents found. Create one with: zima create <name>[/yellow]")
         return
     
     table = Table(title="Agents")
@@ -325,7 +326,7 @@ def stop(
     name: str = typer.Argument(..., help="Agent name"),
 ):
     """Stop a running agent (not implemented - use Ctrl+C)"""
-    console.print(f"[yellow]To stop an agent, press Ctrl+C in the terminal where it's running[/yellow]")
+    console.print(f"[yellow]{icon('warning')} To stop an agent, press Ctrl+C in the terminal where it's running[/yellow]")
 
 
 if __name__ == "__main__":

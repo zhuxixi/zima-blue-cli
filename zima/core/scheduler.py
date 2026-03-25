@@ -9,6 +9,7 @@ from pathlib import Path
 from zima.models import AgentConfig, AgentState, AgentStatus, CycleResult
 from zima.core.kimi_runner import KimiRunner
 from zima.core.state_manager import StateManager
+from zima.utils import safe_print, icon
 
 
 class CycleScheduler:
@@ -29,11 +30,11 @@ class CycleScheduler:
         """Main scheduling loop"""
         self.running = True
         
-        print(f"\n{'='*60}")
-        print(f"🚀 Starting Agent: {self.config.name}")
-        print(f"   Cycle interval: {self.config.cycle_interval}s")
-        print(f"   Max execution: {self.config.max_execution_time}s")
-        print(f"{'='*60}\n")
+        safe_print(f"\n{'='*60}")
+        safe_print(f"{icon('rocket')} Starting Agent: {self.config.name}")
+        safe_print(f"   Cycle interval: {self.config.cycle_interval}s")
+        safe_print(f"   Max execution: {self.config.max_execution_time}s")
+        safe_print(f"{'='*60}\n")
         
         while self.running:
             cycle_start = datetime.now()
@@ -44,16 +45,16 @@ class CycleScheduler:
             
             # Check if we should stop
             if self._should_stop(agent_state):
-                print(f"\n⏹️ Stopping agent: reached limit")
+                safe_print(f"\n{icon('stop')} Stopping agent: reached limit")
                 break
             
-            print(f"\n{'='*60}")
-            print(f"🌅 Cycle {cycle_num} started - {cycle_start.strftime('%H:%M:%S')}")
-            print(f"{'='*60}")
+            safe_print(f"\n{'='*60}")
+            safe_print(f"{icon('cycle')} Cycle {cycle_num} started - {cycle_start.strftime('%H:%M:%S')}")
+            safe_print(f"{'='*60}")
             
             # Determine current task
             task = self._determine_task(agent_state)
-            print(f"🎯 Task: {task['name']} - {task['description']}")
+            safe_print(f"{icon('task')} Task: {task['name']} - {task['description']}")
             
             # Build prompt
             prompt = self._build_prompt(task, agent_state)
@@ -82,12 +83,12 @@ class CycleScheduler:
             
             if sleep_time > 0 and self.running:
                 next_wake = datetime.now() + timedelta(seconds=sleep_time)
-                print(f"\n💤 Sleeping for {sleep_time:.0f}s, next wake: {next_wake.strftime('%H:%M:%S')}")
+                safe_print(f"\n{icon('sleep')} Sleeping for {sleep_time:.0f}s, next wake: {next_wake.strftime('%H:%M:%S')}")
                 
                 # Sleep with interrupt check
                 self._sleep_with_interrupt(sleep_time)
         
-        print(f"\n🏁 Agent stopped")
+        safe_print(f"\n{icon('complete')} Agent stopped")
     
     def stop(self) -> None:
         """Stop the scheduler"""
@@ -171,10 +172,10 @@ Now execute the task: {task['name']}
         task: dict
     ) -> None:
         """Handle execution result"""
-        print(f"\n📊 Result: {result.status}")
-        print(f"   Progress: {result.progress}%")
-        print(f"   Time: {result.elapsed_time:.1f}s")
-        print(f"   Summary: {result.summary}")
+        safe_print(f"\n{icon('result')} Result: {result.status}")
+        safe_print(f"   Progress: {result.progress}%")
+        safe_print(f"   Time: {result.elapsed_time:.1f}s")
+        safe_print(f"   Summary: {result.summary}")
         
         # Create session record
         execution_desc = f"Executed {task['name']}"
@@ -222,10 +223,10 @@ Now execute the task: {task['name']}
             if current_retries < self.config.max_retries:
                 agent_state.retry_count[retry_key] = current_retries + 1
                 agent_state.status = AgentStatus.IDLE.value
-                print(f"   Will retry ({current_retries + 1}/{self.config.max_retries})")
+                safe_print(f"   Will retry ({current_retries + 1}/{self.config.max_retries})")
             else:
                 agent_state.status = AgentStatus.FAILED.value
-                print(f"   Max retries reached, marking as failed")
+                safe_print(f"   Max retries reached, marking as failed")
         
         self.state.save_state(agent_state)
     
@@ -262,7 +263,7 @@ Now execute the task: {task['name']}
         """Check if agent should stop due to limits"""
         # Check max cycles
         if agent_state.current_cycle >= self.config.max_cycles:
-            print(f"⚠️ Reached max cycles: {self.config.max_cycles}")
+            safe_print(f"{icon('warning')} Reached max cycles: {self.config.max_cycles}")
             return True
         
         # Check max duration
@@ -270,7 +271,7 @@ Now execute the task: {task['name']}
             started = datetime.fromisoformat(agent_state.started_at)
             max_duration = self._parse_duration(self.config.max_duration)
             if datetime.now() - started > max_duration:
-                print(f"⚠️ Reached max duration: {self.config.max_duration}")
+                safe_print(f"{icon('warning')} Reached max duration: {self.config.max_duration}")
                 return True
         
         return False
