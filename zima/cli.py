@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import signal
 import sys
 from pathlib import Path
@@ -25,6 +26,26 @@ console = Console()
 
 # Global scheduler for signal handling
 _current_scheduler: Optional[CycleScheduler] = None
+
+
+def get_agents_dir() -> Path:
+    """Get agents directory - global in ~/.zima/agents
+    
+    Priority:
+    1. ZIMA_HOME environment variable
+    2. ~/.zima/agents (default)
+    """
+    # Check ZIMA_HOME environment variable
+    zima_home = os.environ.get("ZIMA_HOME")
+    if zima_home:
+        agents_dir = Path(zima_home) / "agents"
+    else:
+        # Default to ~/.zima/agents
+        agents_dir = Path.home() / ".zima" / "agents"
+    
+    # Ensure directory exists
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    return agents_dir
 
 
 def _signal_handler(sig, frame):
@@ -84,7 +105,8 @@ def create(
     ),
 ):
     """Create a new agent"""
-    agent_dir = Path("agents") / name
+    agents_dir = get_agents_dir()
+    agent_dir = agents_dir / name
     
     if agent_dir.exists():
         console.print(f"[red]{icon('cross')} Agent '{name}' already exists[/red]")
@@ -148,7 +170,8 @@ def start(
     ),
 ):
     """Start an agent"""
-    agent_dir = Path("agents") / name
+    agents_dir = get_agents_dir()
+    agent_dir = agents_dir / name
     
     if not agent_dir.exists():
         console.print(f"[red]{icon('cross')} Agent '{name}' not found[/red]")
@@ -212,7 +235,8 @@ def status(
     name: str = typer.Argument(..., help="Agent name"),
 ):
     """Show agent status"""
-    agent_dir = Path("agents") / name
+    agents_dir = get_agents_dir()
+    agent_dir = agents_dir / name
     
     if not agent_dir.exists():
         console.print(f"[red]{icon('cross')} Agent '{name}' not found[/red]")
@@ -285,7 +309,8 @@ def logs(
     """Show agent logs"""
     import time
     
-    agent_dir = Path("agents") / name
+    agents_dir = get_agents_dir()
+    agent_dir = agents_dir / name
     logs_dir = agent_dir / "logs"
     
     if not logs_dir.exists():
@@ -335,7 +360,7 @@ def list(
     ),
 ):
     """List all agents"""
-    agents_dir = Path("agents")
+    agents_dir = get_agents_dir()
     
     if not agents_dir.exists():
         console.print(f"[yellow]{icon('warning')} No agents found. Create one with: zima create <name>[/yellow]")
@@ -373,7 +398,8 @@ def stop(
     name: str = typer.Argument(..., help="Agent name"),
 ):
     """Stop a running agent (daemon mode)"""
-    agent_dir = Path("agents") / name
+    agents_dir = get_agents_dir()
+    agent_dir = agents_dir / name
     
     if not agent_dir.exists():
         console.print(f"[red]{icon('cross')} Agent '{name}' not found[/red]")
