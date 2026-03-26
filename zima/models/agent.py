@@ -87,10 +87,15 @@ class AgentConfig:
         
         spec = data.get("spec", {})
         
+        # Resolve workspace to absolute path (relative to agent directory)
+        agent_dir = path.parent
+        workspace_rel = spec.get("workspace", "./workspace")
+        workspace = (agent_dir / workspace_rel).resolve()
+        
         return cls(
             name=data.get("metadata", {}).get("name", "unnamed-agent"),
             description=data.get("metadata", {}).get("description", ""),
-            workspace=Path(spec.get("workspace", "./workspace")),
+            workspace=workspace,
             cycle_interval=spec.get("cycle", {}).get("interval", 900),
             max_execution_time=spec.get("cycle", {}).get("maxExecutionTime", 840),
             early_completion=spec.get("cycle", {}).get("earlyCompletion", True),

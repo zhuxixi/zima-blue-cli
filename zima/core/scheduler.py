@@ -146,6 +146,28 @@ class CycleScheduler:
                 except Exception:
                     task_prompt_content = ""
         
+        # Load project context from agent_state.json if exists
+        project_context = ""
+        agent_state_file = self.config.workspace.parent / "agent_state.json"
+        if agent_state_file.exists():
+            try:
+                import json
+                with open(agent_state_file, 'r', encoding='utf-8') as f:
+                    agent_data = json.load(f)
+                    project = agent_data.get('project', {})
+                    if project.get('path'):
+                        project_context = f"\n## Project Context\n- **Project Path**: {project['path']}\n"
+                        if project.get('test_dir'):
+                            project_context += f"- **Test Directory**: {project['test_dir']}\n"
+                    # Add progress info
+                    progress = agent_data.get('progress', {})
+                    if progress.get('pending_files'):
+                        project_context += f"- **Pending Test Files**: {len(progress['pending_files'])}\n"
+                    if progress.get('completed_files'):
+                        project_context += f"- **Completed Files**: {len(progress['completed_files'])}\n"
+            except Exception:
+                pass
+        
         return f"""# Agent Task Execution
 
 ## Your Identity
@@ -156,6 +178,7 @@ You are {self.config.name}.
 **Name**: {task['name']}
 **Description**: {task['description']}
 **Cycle**: {agent_state.current_cycle}
+{project_context}
 
 ## Task Instructions
 {task_prompt_content}
