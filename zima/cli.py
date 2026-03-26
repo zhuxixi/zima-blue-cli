@@ -14,6 +14,8 @@ from rich.table import Table
 from zima.models import AgentConfig, RunResult
 from zima.core import AgentRunner
 from zima.commands import agent as agent_cmd
+from zima.commands import workflow as workflow_cmd
+from zima.commands import variable as variable_cmd
 
 app = typer.Typer(
     name="zima",
@@ -23,6 +25,8 @@ app = typer.Typer(
 
 # Register subcommands
 app.add_typer(agent_cmd.app, name="agent")
+app.add_typer(workflow_cmd.app, name="workflow")
+app.add_typer(variable_cmd.app, name="variable")
 console = Console()
 
 
