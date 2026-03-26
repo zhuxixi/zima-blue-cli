@@ -9,6 +9,35 @@
 
 ## Recent Sessions (最近5次)
 
+### Session 6 - 2026-03-26
+
+**AgentConfig 模型实现与类型精简**
+
+完成 AgentConfig 模型升级，支持多类型并精简类型列表：
+
+1. **AgentConfig 模型实现**
+   - 支持三种类型：kimi、claude、gemini
+   - 类型特定参数模板（每个类型的默认参数）
+   - 命令构建器：`build_command()` 为每种类型生成 CLI 命令
+   - 序列化/反序列化：支持 dict、yaml、文件读写
+   - 验证框架：验证 code、name、type 必填字段
+   - 默认关联管理：get_default() / set_default() 管理 workflow/env/pmg
+
+2. **删除不用的类型**
+   - 从设计文档删除 openai 和 custom 类型
+   - 更新 VALID_AGENT_TYPES 常量
+   - 更新相关测试用例
+   - 现在仅支持：kimi、claude、gemini
+
+3. **新增测试**
+   - 37 个 AgentConfig 单元测试
+   - 覆盖创建、验证、序列化、命令构建、默认值管理
+   - 所有 142 个单元测试通过
+
+**产出文件**:
+- `zima/models/agent.py`: AgentConfig 模型实现
+- `tests/unit/test_models_agent.py`: AgentConfig 单元测试
+
 ### Session 5 - 2026-03-26
 
 **基础设施与测试框架实现**
@@ -24,7 +53,7 @@
    - 配置目录管理：`get_config_dir()`, `get_agents_config_dir()`
    - Code 格式验证：`validate_code()` - 小写字母开头，仅含数字、连字符
    - 时间戳生成：`generate_timestamp()` - ISO 8601 格式
-   - Agent 类型验证：`validate_agent_type()` - 支持 kimi/claude/gemini/openai/custom
+   - Agent 类型验证：`validate_agent_type()` - 支持 kimi/claude/gemini
 
 3. **配置管理系统**
    - `ConfigManager`：统一的配置 CRUD 管理器
@@ -146,4 +175,4 @@
 
 ---
 
-*Total: 5 sessions | Last Updated: 2026-03-26*
+*Total: 6 sessions | Last Updated: 2026-03-26*
