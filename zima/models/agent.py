@@ -1,83 +1,367 @@
-"""Agent data models - Simplified v2"""
+"""Agent configuration model - supports multiple agent types."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
+
+from zima.models.base import BaseConfig, Metadata
+from zima.utils import generate_timestamp, validate_code
+
+
+# Agent-specific parameters templates
+AGENT_PARAMETER_TEMPLATES = {
+    "kimi": {
+        "model": "kimi-k2-072515-preview",
+        "maxStepsPerTurn": 50,
+        "maxRalphIterations": 10,
+        "maxRetriesPerStep": 3,
+        "yolo": True,
+        "workDir": "./workspace",
+        "addDirs": [],
+        "outputFormat": "text",
+    },
+    "claude": {
+        "model": "claude-sonnet-4-6",
+        "maxTurns": 100,
+        "plan": False,
+        "acceptEdits": False,
+        "workDir": "./workspace",
+        "addDirs": [],
+        "outputFormat": "text",
+    },
+    "gemini": {
+        "model": "gemini-2.5-flash",
+        "approvalMode": "default",
+        "checkpointing": False,
+        "workDir": "./workspace",
+        "addDirs": [],
+        "outputFormat": "text",
+    },
+}
+
+VALID_AGENT_TYPES = {"kimi", "claude", "gemini"}
 
 
 @dataclass
-class AgentConfig:
-    """Agent configuration - manages Kimi CLI launch parameters"""
+class AgentConfig(BaseConfig):
+    """
+    Agent configuration model.
     
-    # Metadata (核心元数据)
-    name: str
-    description: str = ""
+    Supports multiple agent types: kimi, claude, gemini
     
-    # Workspace (工作目录)
-    workspace: Path = field(default_factory=lambda: Path("./workspace"))
+    Attributes:
+        type: Agent type (kimi/claude/gemini)
+        parameters: Type-specific parameters
+        defaults: Default workflow/variable/env/pmg references
+    """
+    kind: str = "Agent"
+    type: str = "kimi"
+    parameters: dict = field(default_factory=dict)
+    defaults: dict = field(default_factory=dict)
     
-    # Prompt Configuration (提示词配置)
-    prompt_file: str = "prompt.md"  # 主提示词文件
-    prompt_vars: dict = field(default_factory=dict)  # 提示词变量
+    def __post_init__(self):
+        """Post-initialization: merge default parameters."""
+        super().__post_init__()
+        self._merge_default_parameters()
     
-    # Kimi CLI Parameters (Kimi 启动参数)
-    max_execution_time: int = 900  # 最大执行时间(秒)
-    max_steps_per_turn: int = 50   # 每轮最大步数
-    max_ralph_iterations: int = 10 # Ralph迭代次数
+    def _merge_default_parameters(self) -> None:
+        """Merge type-specific default parameters."""
+        if self.type in AGENT_PARAMETER_TEMPLATES:
+            template = AGENT_PARAMETER_TEMPLATES[self.type].copy()
+            # User parameters override defaults
+            template.update(self.parameters)
+            self.parameters = template
     
     @classmethod
-    def from_yaml(cls, path: Path) -> AgentConfig:
-        """Load config from agent.yaml"""
-        import yaml
+    def create(
+        cls,
+        code: str,
+        name: str,
+        agent_type: str = "kimi",
+        description: str = "",
+        parameters: Optional[dict] = None,
+        defaults: Optional[dict] = None
+    ) -> AgentConfig:
+        """
+        Factory method to create a new AgentConfig.
         
-        with open(path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
+        Args:
+            code: Unique agent code
+            name: Display name
+            agent_type: Agent type (kimi/claude/gemini)
+            description: Optional description
+            parameters: Custom parameters (override defaults)
+            defaults: Default workflow/variable/env/pmg references
+            
+        Returns:
+            New AgentConfig instance
+            
+        Raises:
+            ValueError: If agent_type is invalid
+        """
+        if agent_type not in VALID_AGENT_TYPES:
+            raise ValueError(
+                f"Invalid agent type: {agent_type}. "
+                f"Valid types: {VALID_AGENT_TYPES}"
+            )
         
-        agent_dir = path.parent
-        spec = data.get("spec", {})
-        
-        # Resolve workspace
-        workspace_rel = spec.get("workspace", "./workspace")
-        workspace = (agent_dir / workspace_rel).resolve()
+        now = generate_timestamp()
         
         return cls(
-            name=data.get("metadata", {}).get("name", "unnamed-agent"),
-            description=data.get("metadata", {}).get("description", ""),
-            workspace=workspace,
-            prompt_file=spec.get("prompt", {}).get("file", "prompt.md"),
-            prompt_vars=spec.get("prompt", {}).get("vars", {}),
-            max_execution_time=spec.get("execution", {}).get("maxTime", 900),
-            max_steps_per_turn=spec.get("execution", {}).get("maxStepsPerTurn", 50),
-            max_ralph_iterations=spec.get("execution", {}).get("maxRalphIterations", 10),
+            metadata=Metadata(
+                code=code,
+                name=name,
+                description=description
+            ),
+            type=agent_type,
+            parameters=parameters or {},
+            defaults=defaults or {},
+            created_at=now,
+            updated_at=now
         )
     
-    def get_kimi_cmd(self, agent_dir: Path) -> list[str]:
-        """Generate kimi CLI command"""
-        prompt_path = agent_dir / self.prompt_file
+    def validate(self) -> list[str]:
+        """
+        Validate agent configuration.
         
-        return [
-            "kimi",
-            "--print",
-            "--yolo",
-            "--prompt", str(prompt_path),
-            "--work-dir", str(self.workspace),
-            "--max-steps-per-turn", str(self.max_steps_per_turn),
-            "--max-ralph-iterations", str(self.max_ralph_iterations),
-        ]
+        Returns:
+            List of error messages (empty if valid)
+        """
+        errors = []
+        
+        # Validate base fields
+        if not self.metadata.code:
+            errors.append("metadata.code is required")
+        elif not validate_code(self.metadata.code):
+            errors.append(f"metadata.code '{self.metadata.code}' has invalid format")
+        
+        if not self.metadata.name:
+            errors.append("metadata.name is required")
+        
+        # Validate type
+        if not self.type:
+            errors.append("spec.type is required")
+        elif self.type not in VALID_AGENT_TYPES:
+            errors.append(f"spec.type '{self.type}' is not valid. Valid: {VALID_AGENT_TYPES}")
+        
+        return errors
+    
+    def is_valid(self) -> bool:
+        """Check if configuration is valid."""
+        return len(self.validate()) == 0
+    
+    def to_dict(self) -> dict:
+        """Convert to dictionary."""
+        return {
+            "apiVersion": self.api_version,
+            "kind": self.kind,
+            "metadata": self.metadata.to_dict(),
+            "spec": {
+                "type": self.type,
+                "parameters": self.parameters,
+                "defaults": self.defaults,
+            },
+            "createdAt": self.created_at,
+            "updatedAt": self.updated_at,
+        }
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> AgentConfig:
+        """Create from dictionary."""
+        spec = data.get("spec", {})
+        
+        return cls(
+            api_version=data.get("apiVersion", "zima.io/v1"),
+            kind=data.get("kind", "Agent"),
+            metadata=Metadata.from_dict(data.get("metadata", {})),
+            type=spec.get("type", "kimi"),
+            parameters=spec.get("parameters", {}),
+            defaults=spec.get("defaults", {}),
+            created_at=data.get("createdAt", ""),
+            updated_at=data.get("updatedAt", ""),
+        )
+    
+    @classmethod
+    def from_yaml_file(cls, path: Path) -> AgentConfig:
+        """Load from YAML file."""
+        import yaml
+        
+        if not path.exists():
+            raise FileNotFoundError(f"Agent config not found: {path}")
+        
+        content = path.read_text(encoding="utf-8")
+        data = yaml.safe_load(content)
+        return cls.from_dict(data or {})
+    
+    def get_cli_command_template(self) -> list[str]:
+        """
+        Get base CLI command template for this agent type.
+        
+        Returns:
+            Base command list (e.g., ["kimi", "--print", "--yolo"])
+        """
+        templates = {
+            "kimi": ["kimi", "--print", "--yolo"],
+            "claude": ["claude", "--print"],
+            "gemini": ["gemini", "--yolo"],
+        }
+        return templates.get(self.type, [])
+    
+    def build_command(
+        self,
+        prompt_file: Optional[Path] = None,
+        work_dir: Optional[Path] = None,
+        extra_args: Optional[dict] = None
+    ) -> list[str]:
+        """
+        Build complete CLI command.
+        
+        Args:
+            prompt_file: Path to prompt file
+            work_dir: Working directory
+            extra_args: Additional arguments to override parameters
+            
+        Returns:
+            Complete command list
+        """
+        cmd = self.get_cli_command_template()
+        
+        # Merge parameters with extra args
+        params = self.parameters.copy()
+        if extra_args:
+            params.update(extra_args)
+        
+        # Add type-specific parameters
+        if self.type == "kimi":
+            cmd = self._build_kimi_command(cmd, params)
+        elif self.type == "claude":
+            cmd = self._build_claude_command(cmd, params)
+        elif self.type == "gemini":
+            cmd = self._build_gemini_command(cmd, params)
+        
+        # Add common parameters
+        if prompt_file:
+            cmd.extend(["--prompt", str(prompt_file)])
+        
+        if work_dir:
+            if self.type == "gemini":
+                cmd.extend(["--worktree", str(work_dir)])
+            else:
+                cmd.extend(["--work-dir", str(work_dir)])
+        
+        return cmd
+    
+    def _build_kimi_command(self, cmd: list[str], params: dict) -> list[str]:
+        """Build Kimi-specific command arguments."""
+        if params.get("model"):
+            cmd.extend(["--model", str(params["model"])])
+        
+        if params.get("maxStepsPerTurn"):
+            cmd.extend(["--max-steps-per-turn", str(params["maxStepsPerTurn"])])
+        
+        if params.get("maxRalphIterations"):
+            cmd.extend(["--max-ralph-iterations", str(params["maxRalphIterations"])])
+        
+        if params.get("maxRetriesPerStep"):
+            cmd.extend(["--max-retries-per-step", str(params["maxRetriesPerStep"])])
+        
+        # Handle addDirs
+        for add_dir in params.get("addDirs", []):
+            cmd.extend(["--add-dir", str(add_dir)])
+        
+        if params.get("outputFormat"):
+            cmd.extend(["--output-format", str(params["outputFormat"])])
+        
+        return cmd
+    
+    def _build_claude_command(self, cmd: list[str], params: dict) -> list[str]:
+        """Build Claude-specific command arguments."""
+        if params.get("model"):
+            cmd.extend(["--model", str(params["model"])])
+        
+        if params.get("maxTurns"):
+            cmd.extend(["--max-turns", str(params["maxTurns"])])
+        
+        if params.get("plan"):
+            cmd.append("--plan")
+        
+        if params.get("acceptEdits"):
+            cmd.append("--accept-edits")
+        
+        # Handle addDirs
+        for add_dir in params.get("addDirs", []):
+            cmd.extend(["--add-dir", str(add_dir)])
+        
+        if params.get("outputFormat"):
+            cmd.extend(["--output-format", str(params["outputFormat"])])
+        
+        return cmd
+    
+    def _build_gemini_command(self, cmd: list[str], params: dict) -> list[str]:
+        """Build Gemini-specific command arguments."""
+        if params.get("model"):
+            cmd.extend(["-m", str(params["model"])])
+        
+        if params.get("approvalMode") and params["approvalMode"] != "default":
+            cmd.extend(["--approval-mode", str(params["approvalMode"])])
+        
+        if params.get("checkpointing"):
+            cmd.append("--checkpointing")
+        
+        # Handle addDirs (for Gemini: --include-directories)
+        for add_dir in params.get("addDirs", []):
+            cmd.extend(["--include-directories", str(add_dir)])
+        
+        if params.get("outputFormat"):
+            cmd.extend(["--output-format", str(params["outputFormat"])])
+        
+        return cmd
+    
+    def get_default(self, key: str, default: any = None) -> any:
+        """
+        Get default workflow/variable/env/pmg reference.
+        
+        Args:
+            key: Key to look up (e.g., 'workflow', 'env')
+            default: Default value if not found
+            
+        Returns:
+            Default reference code or default value
+        """
+        return self.defaults.get(key, default)
+    
+    def set_default(self, key: str, code: str) -> None:
+        """
+        Set default workflow/variable/env/pmg reference.
+        
+        Args:
+            key: Key to set (e.g., 'workflow', 'env')
+            code: Reference code
+        """
+        self.defaults[key] = code
+        self.update_timestamp()
+
+
+# =============================================================================
+# Legacy Models (for backward compatibility)
+# =============================================================================
+
+from dataclasses import field as _field
+from datetime import datetime as _datetime
+from typing import Optional as _Optional
 
 
 @dataclass
 class AgentState:
-    """Minimal agent state"""
+    """Minimal agent state (legacy)."""
     
     agent_id: str
     status: str = "idle"  # idle, running, completed, failed
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
-    last_run: Optional[dict] = None  # 上次运行记录
+    created_at: _Optional[str] = None
+    updated_at: _Optional[str] = None
+    last_run: _Optional[dict] = None  # 上次运行记录
     
     def to_dict(self) -> dict:
         return {
@@ -101,14 +385,14 @@ class AgentState:
 
 @dataclass
 class RunResult:
-    """Result of a single run"""
+    """Result of a single run (legacy)."""
     
     status: str  # completed, failed, timeout
     summary: str = ""
     output: str = ""  # stdout内容
     elapsed_time: float = 0.0
     return_code: int = 0
-    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+    timestamp: str = _field(default_factory=lambda: _datetime.now().isoformat())
     
     def to_dict(self) -> dict:
         return {
