@@ -1,5 +1,5 @@
-"""Data models for ZimaBlue"""
+"""Data models for ZimaBlue - v2"""
 
-from .agent import AgentConfig, AgentState, AgentStatus, CycleResult, Session
+from .agent import AgentConfig, AgentState, RunResult
 
-__all__ = ["AgentConfig", "AgentState", "AgentStatus", "CycleResult", "Session"]
+__all__ = ["AgentConfig", "AgentState", "RunResult"]

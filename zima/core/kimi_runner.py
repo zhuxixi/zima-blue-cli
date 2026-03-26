@@ -45,6 +45,7 @@ class KimiRunner:
             CycleResult with execution results
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        cycle_start = datetime.now()
         
         # Prepare files
         prompt_file = self.prompts_dir / f"cycle_{timestamp}.md"
@@ -52,6 +53,17 @@ class KimiRunner:
         result_file = self.workspace / ".zima" / f"result_{timestamp}.json"
         
         result_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Write runtime info for kimi to query
+        runtime_file = self.workspace / ".zima" / "runtime.json"
+        runtime_info = {
+            "cycle_start": cycle_start.isoformat(),
+            "max_execution_time": self.config.max_execution_time,
+            "cycle_interval": self.config.cycle_interval,
+            "cycle_num": cycle_num,
+            "task_name": task_name
+        }
+        runtime_file.write_text(json.dumps(runtime_info, indent=2), encoding="utf-8")
         
         # Inject result file path into prompt
         full_prompt = self._prepare_prompt(prompt, result_file, task_name)

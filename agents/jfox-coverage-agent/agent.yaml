@@ -1,66 +1,22 @@
+# Agent 元数据
 metadata:
   name: jfox-coverage-agent
-  description: >
-    ZK-CLI 项目测试覆盖率提升 Agent。
-    循环执行：分析测试现状 -> 运行指定测试 -> 修复失败用例 -> 验证修复。
-    采用分批策略避免一次性运行全部测试（30分钟+）。
+  description: 提升 ZK-CLI 项目测试覆盖率
 
+# Agent 配置
 spec:
-  version: 2.0.0
+  # Workspace 工作目录
+  workspace: ./workspace
   
-  # 让 kimi 自主控制执行，zima 只负责唤起和基础约束
-  cycle:
-    interval: 900        # 15 分钟后唤起 kimi（kimi 自己决定是否继续）
-    maxExecutionTime: 840  # 14 分钟后强制终止（安全边界）
-    earlyCompletion: true  # kimi 提前完成时，15 分钟后再次唤起
+  # Prompt 配置
+  prompt:
+    file: tasks/main.txt
+    vars:
+      project_path: "C:/Users/zhuzh/work/personal/jfox/zk-cli"
+      target_coverage: 80
   
-  timeout:
-    maxCycles: 200       # 最多 200 个周期（约 50 小时）
-    maxDuration: "48h"   # 总运行时间限制
-    maxRetries: 3
-  
-  # 不再强制 pipeline，kimi 自己决定任务
-  initialTask:
-    type: autonomous
-    description: 自主执行测试覆盖率提升工作
-    prompt: tasks/main.txt
-  
-  pipeline: []  # 空 pipeline，不强制阶段
-
-  # 异步任务（在后台运行）
-  asyncTasks:
-    - name: coverage_report
-      description: 生成完整覆盖率报告（长时间任务）
-      command: "pytest tests/ --cov=zk --cov-report=html --cov-report=term -x -q"
-      schedule: "0 */6 * * *"  # 每6小时运行一次
-
-# 项目配置
-project:
-  path: "C:/Users/zhuzh/work/personal/jfox/zk-cli"
-  testDir: "tests"
-  sourceDir: "zk"
-  
-  # 测试文件优先级（按此顺序处理）
-  testPriority:
-    - test_core_workflow.py      # 核心功能
-    - test_backlinks.py          # 反向链接
-    - test_kb_current.py         # kb current 命令
-    - test_hybrid_search.py      # 混合搜索
-    - test_suggest_links.py      # 链接建议
-    - test_formatters.py         # 格式化输出
-    - test_cli_format.py         # CLI 格式
-    - test_template.py           # 模板功能
-    - test_advanced_features.py  # 高级功能
-    - test_integration.py        # 集成测试
-
-  # 已知问题区域（优先检查）
-  knownIssues:
-    - "--kb 参数未完全实现"
-    - "MCP Server 扩展待开发"
-    - "kb current 命令待实现"
-
-# 运行时配置
-runtime:
-  logLevel: INFO
-  maxTestTime: 300  # 单个测试文件最大5分钟
-  batchSize: 1      # 每批运行1个测试文件
+  # Kimi 执行参数
+  execution:
+    maxTime: 900              # 最大执行时间(秒)
+    maxStepsPerTurn: 50       # 每轮最大步数
+    maxRalphIterations: 10    # Ralph迭代次数

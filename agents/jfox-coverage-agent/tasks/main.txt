@@ -10,6 +10,47 @@
 - **截止时间**: 14 分钟后必须主动保存进度并退出
 - **自主权**: 你可以自由决定在这 15 分钟内做什么，但必须确保能按时保存
 
+### 如何查询剩余时间
+你可以随时查询还剩多少时间，来做决策：
+
+**方法 1 - 读取 runtime.json（推荐）**:
+运行时信息保存在 `workspace/.zima/runtime.json`：
+```json
+{
+  "cycle_start": "2026-03-26T10:00:00",  // 周期开始时间
+  "max_execution_time": 840,              // 最大执行时间（秒）
+  "cycle_interval": 900,                  // 周期间隔（秒）
+  "cycle_num": 5,                         // 当前周期数
+  "task_name": "autonomous"               // 任务名称
+}
+```
+
+计算剩余时间：
+```python
+from datetime import datetime
+import json
+
+with open("workspace/.zima/runtime.json", "r") as f:
+    runtime = json.load(f)
+
+start = datetime.fromisoformat(runtime["cycle_start"])
+elapsed = (datetime.now() - start).total_seconds()
+remaining = runtime["max_execution_time"] - elapsed
+
+print(f"已用: {int(elapsed)}s, 剩余: {int(remaining)}s")
+```
+
+**方法 2 - 调用 zima time 命令**:
+```bash
+zima time jfox-coverage-agent
+```
+
+**方法 3 - 使用 Kimi CLI 工具**:
+```python
+# 使用 Shell 工具执行
+Shell({"command": "zima time jfox-coverage-agent"})
+```
+
 ### 任务粒度原则
 根据剩余时间灵活选择任务大小：
 
