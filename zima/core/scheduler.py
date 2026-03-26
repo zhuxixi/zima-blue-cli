@@ -106,6 +106,7 @@ class CycleScheduler:
             return {
                 "name": pipeline[0]["name"],
                 "description": pipeline[0].get("description", "Execute task"),
+                "prompt_file": pipeline[0].get("prompt"),
             }
         
         # Find current stage in pipeline
@@ -114,12 +115,14 @@ class CycleScheduler:
                 return {
                     "name": stage["name"],
                     "description": stage.get("description", "Execute task"),
+                    "prompt_file": stage.get("prompt"),
                 }
         
         # Default to initial task
         return {
             "name": self.config.initial_task.get("type", "task"),
             "description": self.config.initial_task.get("description", "Execute task"),
+            "prompt_file": None,
         }
     
     def _build_prompt(self, task: dict, agent_state: AgentState) -> str:
@@ -133,6 +136,16 @@ class CycleScheduler:
             for i, session in enumerate(recent_sessions, 1):
                 sessions_context += f"### Session -{i}\n{session[:500]}...\n\n"
         
+        # Load task prompt file if specified
+        task_prompt_content = ""
+        if task.get("prompt_file"):
+            prompt_file = self.config.workspace / task["prompt_file"]
+            if prompt_file.exists():
+                try:
+                    task_prompt_content = prompt_file.read_text(encoding="utf-8")
+                except Exception:
+                    task_prompt_content = ""
+        
         return f"""# Agent Task Execution
 
 ## Your Identity
@@ -143,6 +156,9 @@ You are {self.config.name}.
 **Name**: {task['name']}
 **Description**: {task['description']}
 **Cycle**: {agent_state.current_cycle}
+
+## Task Instructions
+{task_prompt_content}
 
 ## Context
 You are operating in a 15-minute cycle system.

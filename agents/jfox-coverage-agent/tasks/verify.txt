@@ -1,0 +1,140 @@
+# ZK-CLI 测试验证任务
+
+## 目标
+验证修复是否成功，确认测试通过。
+
+## 项目路径
+`C:/Users/zhuzh/work/personal/jfox/zk-cli`
+
+## 前置条件
+修复阶段已应用修复（从 state.json 读取 fixes_applied）
+
+## 验证步骤
+
+### 1. 确定验证范围
+从 agent_state.json 读取：
+- `last_execution.file` - 要验证的测试文件
+- `fixes_applied` - 已应用的修复列表
+
+### 2. 重新运行失败的测试
+只运行之前失败的测试（不是整个文件）：
+
+```bash
+cd C:/Users/zhuzh/work/personal/jfox/zk-cli
+
+# 如果修复了多个测试，用 -k 参数指定
+pytest tests/{file} -v -k "test_kb_current or test_kb_current_json" --tb=short
+```
+
+### 3. 验证结果分析
+
+**情况 A: 所有修复的测试都通过**
+- 更新 agent_state.json 标记这些测试为 "fixed"
+- 如果是该文件最后一个失败，标记整个文件为 "completed"
+- 下一周期进入 analyze 阶段，处理下一个文件
+
+**情况 B: 部分测试仍失败**
+- 更新失败原因（可能是新的错误）
+- 如果是相同错误，可能需要不同修复策略
+- 下一周期继续 fix 阶段
+
+**情况 C: 出现新的失败**
+- 记录回归问题
+- 分析是否是修复引入的新问题
+- 可能需要回滚或调整修复
+
+### 4. 回归检查（快速）
+运行相关功能的快速冒烟测试：
+
+```bash
+# 验证核心功能没有被破坏
+pytest tests/test_core_workflow.py -v -k "test_init or test_add" --tb=line -q
+```
+
+如果回归检查失败：
+- 标记修复为 "needs_rework"
+- 记录可能的冲突
+
+## 输出格式
+
+### 验证报告
+```
+=== 验证结果 ===
+
+验证文件: {filename}
+修复的测试: {N} 个
+
+结果:
+- 通过: {N}
+- 仍失败: {N}
+- 新增失败: {N}
+
+详细:
+- test_kb_current: [PASS]
+- test_kb_current_json: [PASS]
+
+=== 状态更新 ===
+文件 {filename}: {completed/partial/failed}
+
+=== 下一周期建议 ===
+{建议}
+```
+
+### agent_state.json 更新
+```json
+{
+  "verification": {
+    "timestamp": "2026-03-26T09:15:00",
+    "file": "test_kb_current.py",
+    "result": "success",
+    "passed": 5,
+    "still_failing": 0,
+    "regressions": 0
+  },
+  "completed_files": ["test_kb_current.py"],
+  "next_target": "test_backlinks.py"
+}
+```
+
+## 完成标准
+
+一个测试文件被认为是 "completed" 当：
+1. 所有测试函数通过
+2. 没有跳过标记的测试（除非是外部依赖问题）
+3. 回归检查通过
+
+整个项目被认为是 "completed" 当：
+1. 所有优先级测试文件都标记为 completed
+2. 覆盖率报告显示主要模块覆盖 > 80%
+
+## 输出要求（必须）
+
+任务完成后，必须创建一个 JSON 结果文件，格式如下：
+
+```json
+{
+  "status": "completed",
+  "progress": 100,
+  "summary": "验证完成: 5 passed, 0 failed. test_kb_current.py 完成",
+  "details": "所有修复已验证通过",
+  "next_action": "continue"
+}
+```
+
+**状态选择**:
+- `"completed"` - 验证通过，文件完成，回到 analyze 阶段处理下一个文件
+- `"partial"` - 部分验证通过，仍有失败，回到 fix 阶段
+- `"failed"` - 出现回归问题，需要重新修复
+
+**Pipeline 循环**:
+- 如果当前文件完成: verify -> analyze (下一个文件)
+- 如果还有失败: verify -> fix (继续修复)
+
+**重要**: 
+- 如果当前测试文件完全通过，确保更新 agent_state.json 中的 `completed_files` 列表
+- 同时从 `pending_files` 中移除该文件
+- 将 `current_stage` 重置为 "analyze" 以处理下一个文件
+
+1. 更新 agent_state.json 的验证结果
+2. 如果全部完成，进入 analyze 阶段选择下一个文件
+3. 如果还有失败，下一周期继续 fix 阶段

@@ -1,0 +1,160 @@
+# ZK-CLI 测试修复任务
+
+## 目标
+修复执行阶段发现的失败测试。
+
+## 项目路径
+`C:/Users/zhuzh/work/personal/jfox/zk-cli`
+
+## 前置条件
+执行阶段已记录失败的测试（从 state.json 读取 failures）
+
+## 修复策略
+
+### 策略 1: 功能缺失（最常见）
+如果测试调用了一个不存在的功能：
+
+**示例**: `test_kb_current` 失败因为 `kb current` 命令未实现
+
+修复步骤：
+1. 查看测试期望的行为（从测试代码读取）
+2. 在 `zk/cli.py` 中添加缺失的命令
+3. 实现内部逻辑（可能涉及 `zk/kb_manager.py`）
+4. 确保有 `--format json` 支持
+
+### 策略 2: 测试断言错误
+如果功能存在但测试断言不正确：
+
+修复步骤：
+1. 查看实际返回值
+2. 对比测试期望
+3. 决定：修复功能行为 vs 更新测试期望
+
+### 策略 3: 环境问题
+如果测试因环境设置失败：
+
+修复步骤：
+1. 检查 `conftest.py` 中的 fixtures
+2. 确保临时知识库正确创建
+3. 检查路径/权限问题
+
+## 具体修复流程
+
+### 1. 读取失败列表
+从 agent_state.json 获取：
+
+```json
+{
+  "failures_to_fix": [
+    {
+      "test": "test_kb_current",
+      "file": "test_kb_current.py",
+      "error_type": "MISSING_FEATURE",
+      "details": "'kb current' command not found"
+    }
+  ]
+}
+```
+
+### 2. 逐个修复
+
+**对于每个失败的测试：**
+
+a. 查看测试代码，理解期望行为
+```bash
+cd C:/Users/zhuzh/work/personal/jfox/zk-cli
+type tests/test_kb_current.py
+```
+
+b. 分析问题根因
+- 如果是命令缺失，搜索相关命令的实现模式
+- 如果是逻辑错误，查看相关模块代码
+
+c. 实现修复
+- 遵循 AGENTS.md 中的代码规范
+- 使用中文注释
+- 确保 `--kb` 参数支持
+- 确保 `--format` 参数支持
+
+d. 记录修复
+在 agent_state.json 中记录：
+```json
+{
+  "fixes_applied": [
+    {
+      "test": "test_kb_current",
+      "action": "Added kb current command to cli.py",
+      "files_modified": ["zk/cli.py"],
+      "timestamp": "2026-03-26T09:00:00"
+    }
+  ]
+}
+```
+
+### 3. 批量修复建议
+如果时间有限（只剩5分钟），优先修复：
+1. 简单明显的断言错误
+2. 单个命令的添加
+3. 导入/路径问题
+
+将复杂的功能实现留到下一周期。
+
+## 代码规范提醒
+
+### 添加 CLI 命令模板
+```python
+@app.command()
+def kb_current(
+    output_format: str = typer.Option("table", "--format", "-f", help="输出格式"),
+    kb: Optional[str] = typer.Option(None, "--kb", "-k", help="目标知识库"),
+):
+    """显示当前知识库信息"""
+    try:
+        if kb:
+            from .config import use_kb
+            with use_kb(kb):
+                _kb_current_impl(output_format)
+        else:
+            _kb_current_impl(output_format)
+    except Exception as e:
+        handle_error(e, output_format)
+
+def _kb_current_impl(output_format: str):
+    # 实际实现
+    config = GlobalConfigManager()
+    current = config.get_default_kb()
+    # ... 获取知识库信息
+    
+    if output_format == "json":
+        print(json.dumps(result, ensure_ascii=False))
+    else:
+        # 表格输出
+        table = Table(title="当前知识库")
+        # ...
+```
+
+## 输出要求（必须）
+
+任务完成后，必须创建一个 JSON 结果文件，格式如下：
+
+```json
+{
+  "status": "completed",
+  "progress": 90,
+  "summary": "修复了 3 个失败测试，修改了 cli.py, kb_manager.py",
+  "details": "修复详情...",
+  "next_action": "continue"
+}
+```
+
+**状态选择**:
+- `"completed"` - 修复完成，进入下一阶段 (verify)
+- `"partial"` - 部分修复，时间不足，停留在 fix 阶段继续修复
+- `"async_started"` - 如果修复需要长时间测试验证
+
+**重要**: scheduler 会自动根据状态决定是否推进到 verify 阶段
+
+1. 记录所有修改的文件
+2. 简要描述每个修复
+3. 更新 agent_state.json
+4. 进入 verify 阶段验证修复

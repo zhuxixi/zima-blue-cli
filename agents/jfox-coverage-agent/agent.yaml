@@ -1,0 +1,75 @@
+metadata:
+  name: jfox-coverage-agent
+  description: >
+    ZK-CLI 项目测试覆盖率提升 Agent。
+    循环执行：分析测试现状 -> 运行指定测试 -> 修复失败用例 -> 验证修复。
+    采用分批策略避免一次性运行全部测试（30分钟+）。
+
+spec:
+  version: 1.0.0
+  
+  cycle:
+    interval: 900  # 15分钟一个周期
+    maxExecutionTime: 840  # 14分钟最大执行时间
+    earlyCompletion: true  # 提前完成时进入下一周期
+  
+  timeout:
+    maxCycles: 200
+    maxDuration: "48h"
+    maxRetries: 3
+  
+  # Pipeline 阶段定义
+  pipeline:
+    - name: analyze
+      description: 分析当前测试覆盖率和待修复项
+      prompt: tasks/analyze.txt
+    
+    - name: execute
+      description: 运行指定测试文件（单文件，控制时间）
+      prompt: tasks/execute.txt
+    
+    - name: fix
+      description: 修复失败的测试用例
+      prompt: tasks/fix.txt
+    
+    - name: verify
+      description: 验证修复结果
+      prompt: tasks/verify.txt
+
+  # 异步任务（在后台运行）
+  asyncTasks:
+    - name: coverage_report
+      description: 生成完整覆盖率报告（长时间任务）
+      command: "pytest tests/ --cov=zk --cov-report=html --cov-report=term -x -q"
+      schedule: "0 */6 * * *"  # 每6小时运行一次
+
+# 项目配置
+project:
+  path: "C:/Users/zhuzh/work/personal/jfox/zk-cli"
+  testDir: "tests"
+  sourceDir: "zk"
+  
+  # 测试文件优先级（按此顺序处理）
+  testPriority:
+    - test_core_workflow.py      # 核心功能
+    - test_backlinks.py          # 反向链接
+    - test_kb_current.py         # kb current 命令
+    - test_hybrid_search.py      # 混合搜索
+    - test_suggest_links.py      # 链接建议
+    - test_formatters.py         # 格式化输出
+    - test_cli_format.py         # CLI 格式
+    - test_template.py           # 模板功能
+    - test_advanced_features.py  # 高级功能
+    - test_integration.py        # 集成测试
+
+  # 已知问题区域（优先检查）
+  knownIssues:
+    - "--kb 参数未完全实现"
+    - "MCP Server 扩展待开发"
+    - "kb current 命令待实现"
+
+# 运行时配置
+runtime:
+  logLevel: INFO
+  maxTestTime: 300  # 单个测试文件最大5分钟
+  batchSize: 1      # 每批运行1个测试文件

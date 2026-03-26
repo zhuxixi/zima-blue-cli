@@ -1,0 +1,99 @@
+# ZK-CLI 测试分析任务
+
+## 目标
+分析当前测试覆盖状况，确定下一个需要处理的目标。
+
+## 项目路径
+`C:/Users/zhuzh/work/personal/jfox/zk-cli`
+
+## 分析步骤
+
+### 1. 读取当前状态
+如果存在 `agent_state.json`，读取已完成的测试和已知问题。
+
+### 2. 扫描测试文件
+列出 `tests/` 目录下的所有测试文件：
+- test_core_workflow.py
+- test_backlinks.py
+- test_kb_current.py
+- test_hybrid_search.py
+- test_suggest_links.py
+- test_formatters.py
+- test_cli_format.py
+- test_template.py
+- test_advanced_features.py
+- test_integration.py
+
+### 3. 检查测试文件内容
+读取每个测试文件，统计：
+- 测试函数数量
+- 被 @pytest.mark.skip 标记的测试
+- TODO / FIXME 注释
+- 明显的占位符测试（如 `pass` 或 `assert True`）
+
+### 4. 确定优先级
+按以下规则确定下一个要处理的测试文件：
+
+**P0 - 阻塞性问题（最高优先级）**
+- 测试文件无法导入（语法错误）
+- 核心功能测试全部失败
+
+**P1 - 高优先级**
+- test_core_workflow.py 中的失败测试
+- test_backlinks.py 中的失败测试
+- Issue #13, #14, #15 相关的测试
+
+**P2 - 中优先级**
+- 有跳过标记但未修复的测试
+- 部分失败的测试文件
+
+**P3 - 低优先级**
+- 完全通过的测试（仅确认状态）
+- 占位符测试需要实现
+
+### 5. 生成分析报告
+输出格式：
+
+```
+=== ZK-CLI 测试分析结果 ===
+
+扫描文件: {N} 个测试文件
+总测试数: {N} 个测试函数
+通过: {N} | 失败: {N} | 跳过: {N} | 占位符: {N}
+
+=== 下一批目标 ===
+文件: {filename}
+原因: {为什么选这个文件}
+预期测试数: {N}
+预估时间: {N} 分钟
+
+=== 已知问题 ===
+- {问题1}
+- {问题2}
+
+=== 建议 ===
+{action}
+```
+
+## 输出要求（必须）
+
+任务完成后，必须创建一个 JSON 结果文件，格式如下：
+
+```json
+{
+  "status": "completed",
+  "progress": 100,
+  "summary": "分析了 X 个测试文件，确定下一步执行 test_xxx.py",
+  "details": "详细分析内容...",
+  "next_action": "continue"
+}
+```
+
+**重要**: 
+- 如果分析完成并确定了目标文件，使用 `"status": "completed"`
+- 结果被 scheduler 读取后，会自动进入 pipeline 的下一阶段 (execute)
+- 同时更新 agent_state.json 中的 `target_file` 和 `current_stage`
+
+1. 创建/更新 `agent_state.json` 记录分析结果
+2. 明确指定下一个要执行的测试文件
+3. 如果是首次运行，建议从 test_kb_current.py 开始（最简单）

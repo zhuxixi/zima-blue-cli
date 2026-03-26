@@ -1,0 +1,106 @@
+{
+  "agent": "jfox-coverage-agent",
+  "version": "1.0.0",
+  "created_at": "2026-03-26T08:50:00+08:00",
+  "status": "initialized",
+  "project": {
+    "path": "C:/Users/zhuzh/work/personal/jfox/zk-cli",
+    "test_dir": "tests"
+  },
+  "current_stage": "analyze",
+  "progress": {
+    "total_test_files": 10,
+    "completed_files": [],
+    "in_progress": null,
+    "pending_files": [
+      "test_kb_current.py",
+      "test_core_workflow.py",
+      "test_backlinks.py",
+      "test_hybrid_search.py",
+      "test_suggest_links.py",
+      "test_formatters.py",
+      "test_cli_format.py",
+      "test_template.py",
+      "test_advanced_features.py",
+      "test_integration.py"
+    ]
+  },
+  "test_files": {
+    "test_kb_current.py": {
+      "priority": 1,
+      "status": "pending",
+      "description": "kb current 命令测试",
+      "known_issues": ["kb current 命令可能未实现"],
+      "estimated_tests": 3
+    },
+    "test_core_workflow.py": {
+      "priority": 1,
+      "status": "pending",
+      "description": "核心功能工作流测试",
+      "known_issues": [],
+      "estimated_tests": 25
+    },
+    "test_backlinks.py": {
+      "priority": 1,
+      "status": "pending",
+      "description": "反向链接功能测试",
+      "known_issues": [],
+      "estimated_tests": 5
+    },
+    "test_hybrid_search.py": {
+      "priority": 2,
+      "status": "pending",
+      "description": "混合搜索功能测试",
+      "known_issues": ["BM25 索引可能未完全实现"],
+      "estimated_tests": 5
+    },
+    "test_suggest_links.py": {
+      "priority": 2,
+      "status": "pending",
+      "description": "链接建议功能测试",
+      "known_issues": ["suggest-links 命令可能未实现"],
+      "estimated_tests": 3
+    },
+    "test_formatters.py": {
+      "priority": 2,
+      "status": "pending",
+      "description": "格式化输出测试",
+      "known_issues": [],
+      "estimated_tests": 10
+    },
+    "test_cli_format.py": {
+      "priority": 2,
+      "status": "pending",
+      "description": "CLI 格式输出测试",
+      "known_issues": [],
+      "estimated_tests": 10
+    },
+    "test_template.py": {
+      "priority": 3,
+      "status": "pending",
+      "description": "模板功能测试",
+      "known_issues": [],
+      "estimated_tests": 8
+    },
+    "test_advanced_features.py": {
+      "priority": 3,
+      "status": "pending",
+      "description": "高级功能测试",
+      "known_issues": [],
+      "estimated_tests": 4
+    },
+    "test_integration.py": {
+      "priority": 3,
+      "status": "pending",
+      "description": "集成测试",
+      "known_issues": [],
+      "estimated_tests": 2
+    }
+  },
+  "history": [],
+  "statistics": {
+    "total_cycles": 0,
+    "tests_fixed": 0,
+    "files_completed": 0
+  }
+}

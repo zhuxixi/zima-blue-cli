@@ -1,0 +1,112 @@
+# ZK-CLI 测试执行任务
+
+## 目标
+运行指定的单个测试文件，收集结果。
+
+## 项目路径
+`C:/Users/zhuzh/work/personal/jfox/zk-cli`
+
+## 前置条件
+分析阶段已确定目标测试文件（从 state.json 读取 target_file）
+
+## 执行步骤
+
+### 1. 确定目标测试文件
+从 agent_state.json 读取 `target_file`，默认为 `test_kb_current.py`
+
+### 2. 快速预检（30秒内）
+```bash
+cd C:/Users/zhuzh/work/personal/jfox/zk-cli
+pytest tests/{target_file} --collect-only -q
+```
+确认：
+- 测试文件可正常导入
+- 能收集到测试函数
+- 没有语法错误
+
+### 3. 执行测试（控制时间）
+运行单个测试文件，设置超时：
+
+```bash
+cd C:/Users/zhuzh/work/personal/jfox/zk-cli
+pytest tests/{target_file} -v --tb=short 2>&1 | Tee-Object -FilePath "test_output.log"
+```
+
+**时间控制策略：**
+- 如果测试在 5 分钟内完成：记录完整结果
+- 如果超过 5 分钟：发送 Ctrl+C 中断，记录已完成的测试
+- 如果完全卡住：超时强制终止
+
+### 4. 解析结果
+从输出中提取：
+
+```python
+{
+  "file": "test_kb_current.py",
+  "total": 10,
+  "passed": 7,
+  "failed": 2,
+  "skipped": 1,
+  "duration": 125.5,
+  "failures": [
+    {
+      "test": "test_kb_current",
+      "error": "AssertionError: assert 'work' == None",
+      "traceback": "..."
+    }
+  ],
+  "errors": []
+}
+```
+
+### 5. 分类问题
+对每个失败的测试，分类问题类型：
+
+| 类型 | 特征 | 处理建议 |
+|------|------|----------|
+| MISSING_FEATURE | 功能未实现（如 kb current 命令不存在） | 需要实现功能 |
+| ASSERTION_FAIL | 断言失败但功能存在 | 修复测试或功能 |
+| IMPORT_ERROR | 无法导入模块 | 检查依赖/路径 |
+| ENV_ERROR | 环境问题（权限、文件等） | 修复环境 |
+
+### 6. 记录结果
+更新 `agent_state.json`：
+
+```json
+{
+  "last_execution": {
+    "file": "test_kb_current.py",
+    "timestamp": "2026-03-26T08:50:00",
+    "result": "partial",
+    "stats": { "total": 10, "passed": 7, "failed": 2, "skipped": 1 },
+    "failures": [...],
+    "next_action": "fix"
+  }
+}
+```
+
+## 输出要求（必须）
+
+任务完成后，必须创建一个 JSON 结果文件，格式如下：
+
+```json
+{
+  "status": "completed",
+  "progress": 85,
+  "summary": "运行 test_xxx.py: 10 passed, 2 failed, 1 skipped",
+  "details": "失败的测试: test_a, test_b...",
+  "next_action": "continue"
+}
+```
+
+**状态选择**:
+- `"completed"` - 测试运行完成（无论通过还是失败），进入下一阶段 (fix)
+- `"partial"` - 测试运行超时或未完成，停留在 execute 阶段
+- `"failed"` - 测试文件无法导入等严重错误
+
+**重要**: scheduler 会自动根据状态决定是否推进到 fix 阶段
+
+1. 生成 `test_output.log` 保存原始输出
+2. 更新 agent_state.json 中的执行结果
+3. 如果有失败的测试，进入 "fix" 阶段
+4. 如果全部通过，标记完成，下一周期分析下一个文件
