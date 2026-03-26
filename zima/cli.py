@@ -13,12 +13,16 @@ from rich.table import Table
 
 from zima.models import AgentConfig, RunResult
 from zima.core import AgentRunner
+from zima.commands import agent as agent_cmd
 
 app = typer.Typer(
     name="zima",
     help="ZimaBlue CLI - Agent Runner",
     add_completion=False,
 )
+
+# Register subcommands
+app.add_typer(agent_cmd.app, name="agent")
 console = Console()
 
 
