@@ -9,6 +9,34 @@
 
 ## Recent Sessions (最近5次)
 
+### Session 4 - 2026-03-26
+
+**Zima CLI 接口层设计**
+
+完成 Zima CLI 的五组配置实体和完整 CLI 接口设计：
+
+1. **调研 CLI 工具差异**
+   - 调研 Kimi/Claude/Gemini CLI 的启动参数
+   - 对比各工具的命令行选项差异
+   - 整理通用参数和类型特定参数
+
+2. **五组配置实体设计**
+   - Agent: 类型、参数、默认关联配置
+   - Workflow: Jinja2 模板、变量定义
+   - Variable: 模板变量值 KV 结构
+   - Env: 按类型分组的环境变量
+   - PMG: 参数组、继承、条件参数
+
+3. **CLI 接口设计**
+   - agent/workflow/variable/env/pmg 的 CRUD 命令
+   - pjob 创建、运行、预览、日志管理
+   - 全局命令：init、doctor、version
+
+4. **设计文档产出**
+   - docs/design/CONFIG-ENTITIES.md: 配置实体 schema
+   - docs/design/CLI-INTERFACE.md: 完整 CLI 命令设计
+   - docs/API-INTERFACE.md: 现有接口整理
+
 ### Session 3 - 2026-03-26
 
 **文档整理与同步**
@@ -109,3 +137,7 @@
 ---
 
 *Total: 3 sessions | Last Updated: 2026-03-26*
+
+---
+
+*Total: 4 sessions | Last Updated: 2026-03-26*
