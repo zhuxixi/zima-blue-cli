@@ -62,14 +62,12 @@ class KimiRunner:
         workspace_abs.mkdir(parents=True, exist_ok=True)
         
         # Build command
-        # Read prompt content for --prompt argument
-        prompt_content = prompt_file.read_text(encoding="utf-8")
-        
+        # Use prompt file path (not content) for --prompt argument
         cmd = [
             "kimi",
             "--print",  # Non-interactive mode
             "--yolo",   # Auto-approve
-            "--prompt", prompt_content,
+            "--prompt", str(prompt_file),
             "--work-dir", str(workspace_abs),
             "--max-steps-per-turn", str(self.config.max_steps_per_turn),
             "--max-ralph-iterations", "10",
