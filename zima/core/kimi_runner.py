@@ -92,12 +92,12 @@ class KimiRunner:
             
             elapsed = (datetime.now() - start_time).total_seconds()
             
-            # Read result file if exists
-            kimi_result = self._read_result_file(result_file)
+            # Parse result from log (kimi outputs JSON in response)
+            kimi_result = self._parse_from_log(log_file)
             
-            # If no result file, try to parse from log
-            if not kimi_result:
-                kimi_result = self._parse_from_log(log_file)
+            # Zima creates the result file (not kimi)
+            result_file.parent.mkdir(parents=True, exist_ok=True)
+            result_file.write_text(json.dumps(kimi_result, ensure_ascii=False, indent=2), encoding="utf-8")
             
             return CycleResult(
                 cycle_num=cycle_num,
@@ -108,7 +108,7 @@ class KimiRunner:
                 next_action=kimi_result.get("next_action", "continue"),
                 log_file=log_file,
                 prompt_file=prompt_file,
-                result_file=result_file if result_file.exists() else None,
+                result_file=result_file,
                 elapsed_time=elapsed,
                 return_code=result.returncode
             )
@@ -147,17 +147,18 @@ class KimiRunner:
             )
     
     def _prepare_prompt(self, prompt: str, result_file: Path, task_name: str) -> str:
-        """Prepare the full prompt with result file instruction"""
+        """Prepare the full prompt with JSON output requirement"""
         return f"""{prompt}
 
 ---
 
-## Output Requirements
+## Output Requirements (IMPORTANT)
 
-When you complete the task, please write a result file at:
-{result_file}
+When you complete the task, you MUST output a JSON result block in your response.
 
-The result file should be a JSON object with this structure:
+The JSON should be in this exact format (wrap in ```json code block):
+
+```json
 {{
   "status": "completed|partial|failed|async_started",
   "progress": 0-100,
@@ -165,6 +166,7 @@ The result file should be a JSON object with this structure:
   "details": "Detailed description (optional)",
   "next_action": "continue|wait|complete|fix"
 }}
+```
 
 Guidelines:
 - Use "completed" when the task is fully done
@@ -175,6 +177,8 @@ Guidelines:
 - next_action: what should happen in the next cycle
 
 Current task: {task_name}
+
+NOTE: Do NOT create any result file. Just output the JSON in your response and Zima will handle the rest.
 """
     
     def _read_result_file(self, result_file: Path) -> Optional[dict]:
@@ -189,19 +193,32 @@ Current task: {task_name}
             return None
     
     def _parse_from_log(self, log_file: Path) -> dict:
-        """Parse result from log file as fallback"""
+        """Parse result from log file - extract JSON block if present"""
         if not log_file.exists():
             return {"status": "unknown", "progress": 0}
         
         try:
-            content = log_file.read_text(encoding="utf-8").lower()
+            content = log_file.read_text(encoding="utf-8")
             
-            # Heuristic detection
-            if "completed" in content and "100" in content:
+            # Try to extract JSON from code block
+            import re
+            json_pattern = r'```json\s*\n(.*?)\n```'
+            match = re.search(json_pattern, content, re.DOTALL)
+            
+            if match:
+                try:
+                    result = json.loads(match.group(1))
+                    return result
+                except json.JSONDecodeError:
+                    pass
+            
+            # Fallback: heuristic detection
+            content_lower = content.lower()
+            if "completed" in content_lower and "100" in content:
                 return {"status": "completed", "progress": 100}
-            elif "partial" in content:
+            elif "partial" in content_lower:
                 return {"status": "partial", "progress": 50}
-            elif "failed" in content:
+            elif "failed" in content_lower:
                 return {"status": "failed", "progress": 0}
             else:
                 return {"status": "unknown", "progress": 0}
