@@ -13,7 +13,7 @@
 
 目标架构：
 - 新命令：`zima agent [create|update|delete|list|show|edit|validate|test]`
-- 新模型：支持多类型（kimi/claude/gemini/openai/custom）
+- 新模型：支持多类型（kimi/claude/gemini）
 - 配置文件存储在 `~/.zima/configs/agents/{code}.yaml`
 
 ---
@@ -168,7 +168,7 @@ class AgentConfig(BaseConfig):
     kind: str = "Agent"
     
     # Spec 字段
-    type: str = "kimi"  # kimi | claude | gemini | openai | custom
+    type: str = "kimi"  # kimi | claude | gemini
     parameters: dict = field(default_factory=dict)
     defaults: dict = field(default_factory=dict)
     
@@ -188,10 +188,6 @@ class AgentConfig(BaseConfig):
             "model": "gemini-2.5-flash",
             "approvalMode": "default",
         },
-        "openai": {
-            "model": "gpt-4o",
-        },
-        "custom": {}
     }
     
     @classmethod
@@ -242,8 +238,6 @@ class AgentConfig(BaseConfig):
             "kimi": ["kimi", "--print", "--yolo"],
             "claude": ["claude", "--print"],
             "gemini": ["gemini", "-y"],
-            "openai": ["openai"],
-            "custom": []
         }
         return templates.get(self.type, [])
     
@@ -321,7 +315,7 @@ console = Console()
 def create(
     name: str = typer.Option(..., "--name", "-n", help="显示名称"),
     code: str = typer.Option(..., "--code", "-c", help="唯一编码（小写字母、数字、连字符）"),
-    type: str = typer.Option("kimi", "--type", "-t", help="类型: kimi/claude/gemini/openai/custom"),
+    type: str = typer.Option("kimi", "--type", "-t", help="类型: kimi/claude/gemini"),
     description: str = typer.Option("", "--description", "-d"),
     from_code: Optional[str] = typer.Option(None, "--from", help="复制现有配置"),
     # 常用参数快速设置

@@ -172,7 +172,7 @@ class AgentConfig(BaseConfig):
     kind: str = "Agent"
     
     # Spec
-    type: str = "kimi"  # kimi | claude | gemini | openai | custom
+    type: str = "kimi"  # kimi | claude | gemini
     parameters: dict = field(default_factory=dict)
     defaults: dict = field(default_factory=dict)
     
@@ -472,7 +472,7 @@ console.print(Syntax(yaml_content, "yaml"))
 from pydantic import BaseModel, validator, Field
 
 class AgentSpec(BaseModel):
-    type: str = Field(..., regex="^(kimi|claude|gemini|openai|custom)$")
+    type: str = Field(..., regex="^(kimi|claude|gemini)$")
     parameters: dict = Field(default_factory=dict)
     
     @validator('type')

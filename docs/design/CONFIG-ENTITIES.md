@@ -104,8 +104,7 @@ spec:
 | `kimi` | Kimi Code CLI | `kimi` |
 | `claude` | Claude Code CLI | `claude` |
 | `gemini` | Gemini CLI | `gemini` |
-| `openai` | OpenAI CLI | `openai` |
-| `custom` | 自定义命令 | - |
+
 
 #### spec.parameters（按类型）
 
@@ -408,7 +407,7 @@ spec:
 
 #### spec.forType
 
-指定该环境变量组适用于哪种 Agent 类型（kimi/claude/gemini/openai）。一个 Env 配置只对应一种类型。
+指定该环境变量组适用于哪种 Agent 类型（kimi/claude/gemini）。一个 Env 配置只对应一种类型。
 
 #### spec.variables
 

@@ -68,7 +68,7 @@ zima agent create [OPTIONS]
 |------|------|------|------|------|
 | `--name` | `-n` | string | ✅ | 显示名称 |
 | `--code` | `-c` | string | ✅ | 唯一编码 |
-| `--type` | `-t` | string | ✅ | 实例类型 (kimi/claude/gemini/openai/custom) |
+| `--type` | `-t` | string | ✅ | 实例类型 (kimi/claude/gemini) |
 | `--description` | `-d` | string | ❌ | 描述 |
 | `--from` | `-f` | string | ❌ | 从现有配置复制 |
 | `--interactive` | `-i` | bool | ❌ | 交互式创建 |
