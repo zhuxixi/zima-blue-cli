@@ -253,11 +253,17 @@ def status(
     table.add_column("Property", style="cyan")
     table.add_column("Value", style="green")
     
-    # Show combined status
+    # Show combined status and sync state if needed
     if daemon_running:
         display_status = f"{state.status} (daemon running)"
     else:
-        display_status = state.status
+        # Daemon not running but state says running - update state
+        if state.status == "running":
+            display_status = "idle"
+            state.status = "idle"
+            state_manager.save_state(state)
+        else:
+            display_status = state.status
     
     table.add_row("Status", display_status)
     table.add_row("Daemon Mode", "running" if daemon_running else "stopped")
@@ -383,9 +389,25 @@ def list(
         state_manager = StateManager(agent_dir)
         state = state_manager.load_state()
         
+        # Check actual daemon status
+        daemon_running = is_daemon_running(agent_dir)
+        
+        # Determine display status
+        if daemon_running:
+            display_status = f"{state.status} (daemon running)"
+        else:
+            # Daemon not running but state says running - update state
+            if state.status == "running":
+                display_status = "idle"
+                # Update state to reflect actual status
+                state.status = "idle"
+                state_manager.save_state(state)
+            else:
+                display_status = state.status
+        
         table.add_row(
             name,
-            state.status,
+            display_status,
             str(state.current_cycle),
             state.current_stage or "-"
         )
