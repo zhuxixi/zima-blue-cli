@@ -18,10 +18,10 @@
 📋 **完整会话历史**: [SESSION.md](./SESSION.md)
 
 > 最近 Session 摘要：
+> - **Session 5** (2026-03-26): 基础设施与测试框架 - 完成 ConfigManager、BaseConfig、测试框架，107个单元测试全部通过
 > - **Session 4** (2026-03-26): Zima CLI 接口层设计 - 完成五组配置实体 (agent/workflow/variable/env/pmg) 和完整 CLI 接口设计文档
 > - **Session 3** (2026-03-26): 文档整理与同步 - 重写架构文档、简化 README、归档设计草图
 > - **Session 2** (2026-03-26): Zima CLI v2 架构重构 - 从循环守护进程改为单次执行 Agent Runner，简化 CLI 命令和配置模型
-> - **Session 1** (2026-03-26): ZimaBlue CLI MVP 实现与测试 - 完成核心调度器、CLI 命令、后台守护进程模式，验证 example-agent 运行正常
 
 ## 1. 项目愿景
 
