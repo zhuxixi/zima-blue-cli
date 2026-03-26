@@ -112,8 +112,6 @@ class TestAgentTypeValidation:
         ("kimi", True),
         ("claude", True),
         ("gemini", True),
-        ("openai", True),
-        ("custom", True),
         ("invalid", False),
         ("KIMI", False),  # case sensitive
         ("", False),
@@ -126,7 +124,7 @@ class TestAgentTypeValidation:
     def test_get_valid_agent_types(self):
         """Test getting valid agent types."""
         types = utils.get_valid_agent_types()
-        assert types == {"kimi", "claude", "gemini", "openai", "custom"}
+        assert types == {"kimi", "claude", "gemini"}
         # Ensure it's a copy
         types.add("new")
         assert "new" not in utils.get_valid_agent_types()
