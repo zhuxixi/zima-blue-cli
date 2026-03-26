@@ -18,6 +18,7 @@
 📋 **完整会话历史**: [SESSION.md](./SESSION.md)
 
 > 最近 Session 摘要：
+> - **Session 2** (2026-03-26): Zima CLI v2 架构重构 - 从循环守护进程改为单次执行 Agent Runner，简化 CLI 命令和配置模型
 > - **Session 1** (2026-03-26): ZimaBlue CLI MVP 实现与测试 - 完成核心调度器、CLI 命令、后台守护进程模式，验证 example-agent 运行正常
 
 ## 1. 项目愿景
