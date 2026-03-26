@@ -6,35 +6,26 @@ metadata:
     采用分批策略避免一次性运行全部测试（30分钟+）。
 
 spec:
-  version: 1.0.0
+  version: 2.0.0
   
+  # 让 kimi 自主控制执行，zima 只负责唤起和基础约束
   cycle:
-    interval: 900  # 15分钟一个周期
-    maxExecutionTime: 840  # 14分钟最大执行时间
-    earlyCompletion: true  # 提前完成时进入下一周期
+    interval: 900        # 15 分钟后唤起 kimi（kimi 自己决定是否继续）
+    maxExecutionTime: 840  # 14 分钟后强制终止（安全边界）
+    earlyCompletion: true  # kimi 提前完成时，15 分钟后再次唤起
   
   timeout:
-    maxCycles: 200
-    maxDuration: "48h"
+    maxCycles: 200       # 最多 200 个周期（约 50 小时）
+    maxDuration: "48h"   # 总运行时间限制
     maxRetries: 3
   
-  # Pipeline 阶段定义
-  pipeline:
-    - name: analyze
-      description: 分析当前测试覆盖率和待修复项
-      prompt: tasks/analyze.txt
-    
-    - name: execute
-      description: 运行指定测试文件（单文件，控制时间）
-      prompt: tasks/execute.txt
-    
-    - name: fix
-      description: 修复失败的测试用例
-      prompt: tasks/fix.txt
-    
-    - name: verify
-      description: 验证修复结果
-      prompt: tasks/verify.txt
+  # 不再强制 pipeline，kimi 自己决定任务
+  initialTask:
+    type: autonomous
+    description: 自主执行测试覆盖率提升工作
+    prompt: tasks/main.txt
+  
+  pipeline: []  # 空 pipeline，不强制阶段
 
   # 异步任务（在后台运行）
   asyncTasks:

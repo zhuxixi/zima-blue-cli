@@ -96,12 +96,27 @@ class CycleScheduler:
         print("\n🛑 Stopping scheduler...")
     
     def _determine_task(self, agent_state: AgentState) -> dict:
-        """Determine the current task based on state"""
-        # Simple implementation: get from pipeline or initial task
+        """Determine the current task based on state
+        
+        Supports two modes:
+        1. Pipeline mode: sequential stages
+        2. Autonomous mode: same task each cycle (kimi controls execution)
+        """
         pipeline = self.config.pipeline
+        
+        # Autonomous mode: no pipeline, use initial task every time
+        if not pipeline:
+            initial = self.config.initial_task
+            return {
+                "name": initial.get("type", "autonomous"),
+                "description": initial.get("description", "Autonomous execution"),
+                "prompt_file": initial.get("prompt"),
+            }
+        
+        # Pipeline mode: sequential stages
         current_stage = agent_state.current_stage
         
-        if not current_stage and pipeline:
+        if not current_stage:
             # Start with first pipeline stage
             return {
                 "name": pipeline[0]["name"],
@@ -118,7 +133,7 @@ class CycleScheduler:
                     "prompt_file": stage.get("prompt"),
                 }
         
-        # Default to initial task
+        # Fallback to initial task
         return {
             "name": self.config.initial_task.get("type", "task"),
             "description": self.config.initial_task.get("description", "Execute task"),
