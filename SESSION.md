@@ -9,6 +9,31 @@
 
 ## Recent Sessions (最近5次)
 
+### Session 3 - 2026-03-26
+
+**文档整理与同步**
+
+完成 Zima v2 架构的文档同步和简化：
+
+1. **架构文档重写**
+   - 重写 docs/architecture/README.md（784行→200行）
+   - 从循环架构改为单次执行架构
+   - 移除守护进程、15分钟循环、异步任务等过时内容
+   - 新增 v1/v2 对比表、适用场景说明
+
+2. **设计草图归档**
+   - 删除 Zima-v2-Design.md（已合并到 ADR 004 和代码）
+
+3. **项目介绍简化**
+   - 简化 README.md（163行→100行）
+   - 移除"15分钟循环"、"苏醒/执行/休眠"等描述
+   - 聚焦 SOP Agent Runner 定位
+
+4. **历史记录完整**
+   - ADR 002/003 标记为废弃
+   - ADR 004 记录架构转变决策
+   - docs/history/ 保留原始设计参考
+
 ### Session 2 - 2026-03-26
 
 **Zima CLI v2 架构重构**
@@ -80,3 +105,7 @@
 ---
 
 *Total: 2 sessions | Last Updated: 2026-03-26*
+
+---
+
+*Total: 3 sessions | Last Updated: 2026-03-26*
