@@ -9,6 +9,57 @@
 
 ## Recent Sessions (最近5次)
 
+### Session 8 - 2026-03-27
+
+**Env 环境配置完整实现**
+
+完成 Env 配置的设计与实现，支持环境变量管理和敏感信息安全存储：
+
+1. **Env 设计文档**
+   - 编写 docs/design/ENV-DESIGN.md（696行）
+   - 定义 Schema：forType/variables/secrets/overrideExisting
+   - 设计 4 种 secret 来源：env/file/cmd/vault
+   - 设计 CLI 命令：create/list/show/update/delete/validate/set/unset/get/export
+   - 安全设计：掩码显示、显式解析、日志脱敏
+
+2. **Env 模型实现**
+   - `EnvConfig`：环境变量配置管理
+   - `SecretDef`：敏感信息定义（name/source/key/path/command/field）
+   - `SecretResolver`：支持 4 种来源解析（env/file/cmd/vault）
+   - 变量管理：set_variable/unset_variable/get_variable
+   - Secret 管理：set_secret/unset_secret/get_secret
+   - 导出功能：export_dotenv/export_shell/export_json
+
+3. **Env CLI 实现**
+   - `zima env create`：支持 --from 复制、--for-type 指定类型
+   - `zima env list`：表格/JSON 输出，--for-type 过滤
+   - `zima env show`：YAML/JSON 格式，--resolve-secrets 解析
+   - `zima env update`：更新名称/描述/override_existing
+   - `zima env delete`：删除确认/强制删除
+   - `zima env validate`：配置验证
+   - `zima env set`：支持普通变量和 secret（--secret 标记）
+   - `zima env unset`：删除变量/secret
+   - `zima env get`：获取值，--resolve 解析 secret
+   - `zima env export`：导出为 dotenv/shell/json，--resolve-secrets 解析
+
+4. **安全特性**
+   - Secrets 默认掩码显示 `<secret:source>`
+   - 需要显式 `--resolve-secrets` 才解析实际值
+   - 配置文件不存储敏感值，只存储引用
+   - 支持导出时选择是否解析 secrets
+
+5. **测试覆盖**
+   - 单元测试：45 个（EnvConfig 25 + SecretDef 10 + SecretResolver 10）
+   - 集成测试：52 个（覆盖所有 CLI 命令）
+   - 全部 385 个测试通过
+
+**产出文件**:
+- `docs/design/ENV-DESIGN.md`: Env 设计文档
+- `zima/models/env.py`: Env 模型（EnvConfig, SecretDef, SecretResolver）
+- `zima/commands/env.py`: Env CLI 命令
+- `tests/unit/test_models_env.py`: Env 单元测试
+- `tests/integration/test_env_commands.py`: Env 集成测试
+
 ### Session 7 - 2026-03-27
 
 **Workflow 与 Variable 完整实现**
@@ -236,4 +287,4 @@
 
 ---
 
-*Total: 7 sessions | Last Updated: 2026-03-27*
+*Total: 8 sessions | Last Updated: 2026-03-27*
