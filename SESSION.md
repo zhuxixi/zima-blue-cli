@@ -9,6 +9,65 @@
 
 ## Recent Sessions (最近5次)
 
+### Session 9 - 2026-03-27
+
+**PMG (Parameters Group) 完整实现**
+
+完成 PMG 的设计与实现，支持命令行参数组和条件参数：
+
+1. **PMG 设计文档**
+   - 编写 docs/design/PMG-DESIGN.md（823行）
+   - 定义 7 种参数类型：long/short/flag/positional/repeatable/json/key-value
+   - 设计参数继承机制：extends/override
+   - 设计条件参数：os/arch/env 条件表达式
+   - 设计 CLI 命令：create/list/show/update/delete/validate/add-param/remove-param/build
+
+2. **PMG 模型实现**
+   - `PMGConfig`：参数组配置管理
+   - `ParameterDef`：参数定义（name/type/value/values/enabled）
+   - `ExtendDef`：继承定义（code/override）
+   - `ConditionDef`：条件定义（when/parameters）
+   - `ConditionEvaluator`：条件表达式评估器
+   - 参数渲染：支持 7 种类型的命令行渲染
+   - 命令构建：build_command/build_command_string
+
+3. **PMG CLI 实现**
+   - `zima pmg create`：支持 --from 复制、--for-type 多类型
+   - `zima pmg list`：表格/JSON 输出，--for-type 过滤
+   - `zima pmg show`：YAML/JSON 格式详情
+   - `zima pmg update`：更新名称/描述/raw
+   - `zima pmg delete`：删除确认/强制删除
+   - `zima pmg validate`：配置验证
+   - `zima pmg add-param`：支持 7 种参数类型
+   - `zima pmg remove-param`：移除参数
+   - `zima pmg build`：构建命令行参数（list/shell 格式）
+
+4. **参数类型支持**
+   - `long`: `--name value` 格式
+   - `short`: `-n value` 或 `-n`（boolean）格式
+   - `flag`: `--name` 开关格式
+   - `positional`: 纯值格式
+   - `repeatable`: `--name v1 --name v2` 重复格式
+   - `json`: `--name '{"key": "value"}'` JSON 格式
+   - `key-value`: `--name k1=v1,k2=v2` 键值对格式
+
+5. **条件表达式**
+   - 支持变量：os (windows/linux/darwin)、arch (amd64/arm64)、env.XXX
+   - 支持运算符：==、!=、&&、||
+   - 运行时根据系统环境评估条件
+
+6. **测试覆盖**
+   - 单元测试：48 个（ParameterDef 15 + ConditionEvaluator 8 + PMGConfig 25）
+   - 集成测试：32 个（覆盖所有 CLI 命令）
+   - 全部 465 个测试通过
+
+**产出文件**:
+- `docs/design/PMG-DESIGN.md`: PMG 设计文档
+- `zima/models/pmg.py`: PMG 模型（PMGConfig, ParameterDef, ExtendDef, ConditionDef, ConditionEvaluator）
+- `zima/commands/pmg.py`: PMG CLI 命令
+- `tests/unit/test_models_pmg.py`: PMG 单元测试
+- `tests/integration/test_pmg_commands.py`: PMG 集成测试
+
 ### Session 8 - 2026-03-27
 
 **Env 环境配置完整实现**
@@ -287,4 +346,4 @@
 
 ---
 
-*Total: 8 sessions | Last Updated: 2026-03-27*
+*Total: 9 sessions | Last Updated: 2026-03-27*
