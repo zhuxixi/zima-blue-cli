@@ -9,6 +9,67 @@
 
 ## Recent Sessions (最近5次)
 
+### Session 7 - 2026-03-27
+
+**Workflow 与 Variable 完整实现**
+
+完成 Workflow 和 Variable 配置的设计与实现，包括模型层、CLI 命令和完整测试：
+
+1. **Workflow 设计文档**
+   - 编写 docs/design/WORKFLOW-DESIGN.md（690行）
+   - 定义 Schema：format/template/variables/tags/author/version
+   - 设计 CLI 命令：create/list/show/update/delete/validate/render/add-var
+   - 提供使用示例：问候工作流、代码审查工作流
+
+2. **Workflow 模型实现**
+   - `WorkflowConfig`：Jinja2 模板渲染引擎集成
+   - `VariableDef`：变量定义（name/type/required/default/description）
+   - 模板渲染：支持 Jinja2/Mustache/Plain 三种格式
+   - 变量验证：必填检查、类型验证、嵌套路径支持
+   - Tag 管理：add_tag/remove_tag 方法
+
+3. **Variable 模型实现**
+   - `VariableConfig`：变量值配置管理
+   - 嵌套值访问：get_value/set_value 支持点号路径（如 task.name）
+   - 值合并：merge_values 深度合并字典
+   - 路径扁平化：flatten_values 展开嵌套结构
+   - Workflow 关联：for_workflow 字段指向目标 workflow
+
+4. **Workflow CLI 实现**
+   - `zima workflow create`：支持 --from 复制、@file 模板加载
+   - `zima workflow list`：表格/JSON 输出，--tag 过滤
+   - `zima workflow show`：YAML/JSON 格式详情
+   - `zima workflow update`：更新名称/模板/标签/版本
+   - `zima workflow delete`：删除确认/强制删除
+   - `zima workflow validate`：模板语法验证
+   - `zima workflow render`：使用 Variable 配置或 --var 直接渲染
+   - `zima workflow add-var`：添加变量定义
+
+5. **Variable CLI 实现**
+   - `zima variable create`：支持 --for-workflow 关联
+   - `zima variable list`：--for-workflow 过滤
+   - `zima variable show/update/delete`：标准 CRUD
+   - `zima variable set`：支持 JSON 值、嵌套路径
+   - `zima variable get`：获取变量值
+   - `zima variable validate`：验证配置
+   - `zima variable merge`：合并其他配置的值
+
+6. **测试覆盖**
+   - 单元测试：74 个（Workflow 37 + Variable 37）
+   - 集成测试：55 个（Workflow 30 + Variable 25）
+   - 全部 288 个测试通过
+
+**产出文件**:
+- `docs/design/WORKFLOW-DESIGN.md`: Workflow 设计文档
+- `zima/models/workflow.py`: Workflow 模型
+- `zima/models/variable.py`: Variable 模型
+- `zima/commands/workflow.py`: Workflow CLI
+- `zima/commands/variable.py`: Variable CLI
+- `tests/unit/test_models_workflow.py`: Workflow 单元测试
+- `tests/unit/test_models_variable.py`: Variable 单元测试
+- `tests/integration/test_workflow_commands.py`: Workflow 集成测试
+- `tests/integration/test_variable_commands.py`: Variable 集成测试
+
 ### Session 6 - 2026-03-26
 
 **AgentConfig 模型实现与类型精简**
@@ -175,4 +236,4 @@
 
 ---
 
-*Total: 6 sessions | Last Updated: 2026-03-26*
+*Total: 7 sessions | Last Updated: 2026-03-27*
