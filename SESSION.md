@@ -9,6 +9,23 @@
 
 ## Recent Sessions (最近5次)
 
+### Session 15 - 2026-03-29
+
+修复 P0 问题 1.1 - 执行失败无详细日志。
+
+为 PJob 执行引擎添加详细的错误日志记录功能：
+1. ExecutionResult 新增 error_detail 字段用于存储完整堆栈跟踪
+2. ExecutionRecord 同步添加 error_detail 字段，历史记录中保存错误详情
+3. 在 execute() 异常处理中使用 traceback.format_exc() 捕获完整堆栈
+4. pjob history 命令新增 --detail <ID> 参数，可查看特定执行的详细错误
+5. pjob run 命令在执行失败时显示 stderr 和 error_detail 的格式化面板
+6. 错误详情在历史中最多保存 2000 字符，过长自动截断
+
+涉及文件：
+- zima/execution/executor.py - 添加 error_detail 字段和堆栈捕获
+- zima/execution/history.py - ExecutionRecord 添加 error_detail 支持
+- zima/commands/pjob.py - 增强 history 和 run 命令的错误显示
+
 ### Session 14 - 2026-03-29
 
 修复 Windows 下 CLI 命令的 Unicode 编码错误。
@@ -60,39 +77,27 @@
 - 总测试数: 544 个（原有 514 + 新增 30）
 - 全部通过: ✅
 
-### Session 10 - 2026-03-28
-
-## Session 10 - PJob Implementation
-
-完成了 PJob（Parameterized Job）执行层的完整实现，将 Agent、Workflow、Variable、Env、PMG 五组配置串联成可执行的任务单元。
-
-**已完成工作：**
-1. **Phase 1 - 基础模型**: 实现 PJobConfig、PJobMetadata、PJobSpec、ExecutionOptions、OutputOptions、Overrides 等数据类，支持完整的配置结构
-2. **Phase 2 - 配置解析**: 实现 ConfigBundle 类，支持四级配置优先级解析（PJob overrides > PJob refs > Agent defaults > system defaults）
-3. **Phase 3 - 执行引擎**: 实现 PJobExecutor 类，支持模板渲染、环境变量解析、 Secrets 解析、命令构建、子进程执行、前置/后置钩子、执行历史记录
-4. **Phase 4 - CLI 命令**: 实现 11 个子命令（create/list/show/update/delete/run/render/validate/copy/history）
-5. **Phase 5 - 测试**: 新增 49 个测试（23 单元 + 26 集成），所有 514 个测试通过
-
-**新增文件：**
-- zima/models/pjob.py (14KB)
-- zima/models/config_bundle.py (12KB)
-- zima/execution/executor.py (17KB)
-- zima/execution/history.py (8KB)
-- zima/commands/pjob.py (26KB)
-- docs/design/PJOB-DESIGN.md (1,379行设计文档)
-- tests/unit/test_models_pjob.py (23个测试)
-- tests/unit/test_config_bundle.py (10个测试)
-- tests/integration/test_pjob_lifecycle.py (16个测试)
-
 ## Earlier Sessions (历史会话)
 
+- **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
+- **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
 - **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
 - **Session 8** (2026-03-27): **Env 环境配置完整实现**
 - **Session 8** (2026-03-27): **Env 环境配置完整实现**
+- **Session 8** (2026-03-27): **Env 环境配置完整实现**
+- **Session 8** (2026-03-27): **Env 环境配置完整实现**
 - **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
 - **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
 - **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
 - **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
+- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
+- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
+- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
+- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
+- **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
+- **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
+- **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
+- **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
 - **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
 - **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
 - **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
@@ -105,22 +110,10 @@
 - **Session 5** (2026-03-26): **基础设施与测试框架实现**
 - **Session 5** (2026-03-26): **基础设施与测试框架实现**
 - **Session 5** (2026-03-26): **基础设施与测试框架实现**
-- **Session 4** (2026-03-26): **Zima CLI 接口层设计**
-- **Session 4** (2026-03-26): **Zima CLI 接口层设计**
-- **Session 4** (2026-03-26): **Zima CLI 接口层设计**
-- **Session 4** (2026-03-26): **Zima CLI 接口层设计**
-- **Session 4** (2026-03-26): **Zima CLI 接口层设计**
-- **Session 4** (2026-03-26): **Zima CLI 接口层设计**
-- **Session 4** (2026-03-26): **Zima CLI 接口层设计**
-- **Session 4** (2026-03-26): **Zima CLI 接口层设计**
-- **Session 3** (2026-03-26): **文档整理与同步**
-- **Session 3** (2026-03-26): **文档整理与同步**
-- **Session 3** (2026-03-26): **文档整理与同步**
-- **Session 3** (2026-03-26): **文档整理与同步**
-- **Session 3** (2026-03-26): **文档整理与同步**
-- **Session 3** (2026-03-26): **文档整理与同步**
-- **Session 3** (2026-03-26): **文档整理与同步**
-- **Session 3** (2026-03-26): **文档整理与同步**
+- **Session 5** (2026-03-26): **基础设施与测试框架实现**
+- **Session 5** (2026-03-26): **基础设施与测试框架实现**
+- **Session 5** (2026-03-26): **基础设施与测试框架实现**
+- **Session 5** (2026-03-26): **基础设施与测试框架实现**
 
 ---
 

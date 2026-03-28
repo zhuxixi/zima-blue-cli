@@ -423,6 +423,7 @@ def run(
     work_dir: Optional[str] = typer.Option(None, "--work-dir", help="Override working directory"),
     keep_temp: bool = typer.Option(False, "--keep-temp", help="Keep temporary files"),
     timeout: Optional[int] = typer.Option(None, "--timeout", "-t", help="Override timeout"),
+    skip_validation: bool = typer.Option(False, "--skip-validation", help="Skip pre-execution validation"),
 ):
     """Execute a PJob"""
     manager = ConfigManager()
@@ -430,6 +431,48 @@ def run(
     if not manager.config_exists("pjob", code):
         console.print(f"[red]✗[/red] PJob '{code}' not found")
         raise typer.Exit(1)
+    
+    # Pre-execution validation
+    if not skip_validation:
+        try:
+            data = manager.load_config("pjob", code)
+            config = PJobConfig.from_dict(data)
+            
+            validation_errors = []
+            
+            # Check required refs exist
+            if config.spec.agent and not manager.config_exists("agent", config.spec.agent):
+                validation_errors.append(f"Agent '{config.spec.agent}' not found")
+            if config.spec.workflow and not manager.config_exists("workflow", config.spec.workflow):
+                validation_errors.append(f"Workflow '{config.spec.workflow}' not found")
+            if config.spec.variable and not manager.config_exists("variable", config.spec.variable):
+                validation_errors.append(f"Variable '{config.spec.variable}' not found")
+            if config.spec.env and not manager.config_exists("env", config.spec.env):
+                validation_errors.append(f"Env '{config.spec.env}' not found")
+            if config.spec.pmg and not manager.config_exists("pmg", config.spec.pmg):
+                validation_errors.append(f"PMG '{config.spec.pmg}' not found")
+            
+            # Check work directory
+            check_dir = work_dir or config.spec.execution.work_dir
+            if check_dir:
+                from pathlib import Path
+                wd = Path(check_dir)
+                if not wd.exists():
+                    console.print(f"[yellow]⚠[/yellow] Work directory '{wd}' does not exist, creating...")
+                    wd.mkdir(parents=True, exist_ok=True)
+                    console.print(f"[green]✓[/green] Created work directory: {wd}")
+            
+            if validation_errors:
+                console.print(f"[red]✗[/red] Validation failed:")
+                for error in validation_errors:
+                    console.print(f"   [red]•[/red] {error}")
+                console.print(f"\n[yellow]Hint:[/yellow] Run with --skip-validation to bypass (not recommended)")
+                raise typer.Exit(1)
+                
+        except typer.Exit:
+            raise
+        except Exception as e:
+            console.print(f"[yellow]⚠[/yellow] Pre-execution validation warning: {e}")
     
     # Build overrides
     overrides = Overrides()
@@ -563,8 +606,9 @@ def render(
 @app.command()
 def validate(
     code: str = typer.Argument(..., help="PJob code"),
-    strict: bool = typer.Option(False, "--strict", help="Validate all referenced configs exist"),
+    strict: bool = typer.Option(True, "--strict/--no-strict", help="Validate all referenced configs exist (default: True)"),
     check_render: bool = typer.Option(False, "--check-render", help="Check if template renders successfully"),
+    check_workdir: bool = typer.Option(True, "--check-workdir/--no-check-workdir", help="Check if work directory exists (default: True)"),
 ):
     """Validate PJob configuration"""
     manager = ConfigManager()
@@ -577,34 +621,72 @@ def validate(
         data = manager.load_config("pjob", code)
         config = PJobConfig.from_dict(data)
         
+        all_errors = []
+        warnings = []
+        
         # Basic validation
         errors = config.validate()
+        all_errors.extend(errors)
         
-        # Strict validation (check refs exist)
+        # Strict validation (check refs exist) - now default
         if strict:
-            ref_errors = config.validate(resolve_refs=True)
-            errors.extend(ref_errors)
+            # Check agent exists
+            if config.spec.agent and not manager.config_exists("agent", config.spec.agent):
+                all_errors.append(f"Agent '{config.spec.agent}' not found")
+            
+            # Check workflow exists
+            if config.spec.workflow and not manager.config_exists("workflow", config.spec.workflow):
+                all_errors.append(f"Workflow '{config.spec.workflow}' not found")
+            
+            # Check variable exists (if specified)
+            if config.spec.variable and not manager.config_exists("variable", config.spec.variable):
+                all_errors.append(f"Variable '{config.spec.variable}' not found")
+            
+            # Check env exists (if specified)
+            if config.spec.env and not manager.config_exists("env", config.spec.env):
+                all_errors.append(f"Env '{config.spec.env}' not found")
+            
+            # Check pmg exists (if specified)
+            if config.spec.pmg and not manager.config_exists("pmg", config.spec.pmg):
+                all_errors.append(f"PMG '{config.spec.pmg}' not found")
         
-        # Check render
+        # Check work directory exists
+        if check_workdir and config.spec.execution.work_dir:
+            work_dir = Path(config.spec.execution.work_dir)
+            if not work_dir.exists():
+                warnings.append(f"Work directory '{work_dir}' does not exist (will be created)")
+        
+        # Check template render
         if check_render:
             try:
                 executor = PJobExecutor()
-                executor.render_prompt(code)
+                rendered = executor.render_prompt(code)
+                # Try to detect undefined variables
+                if "<!-- Template render error:" in rendered:
+                    all_errors.append(f"Template render error: {rendered.split('<!-- Template render error:')[1].split('-->')[0].strip()}")
             except Exception as e:
-                errors.append(f"Template render failed: {e}")
+                all_errors.append(f"Template render failed: {e}")
         
-        if errors:
-            console.print(f"[red]✗[/red] Validation failed:")
-            for error in errors:
-                console.print(f"   - {error}")
+        # Output results
+        if all_errors:
+            console.print(f"[red]✗[/red] Validation failed for PJob '{code}':")
+            for error in all_errors:
+                console.print(f"   [red]•[/red] {error}")
             raise typer.Exit(1)
-        else:
-            console.print(f"[green]✓[/green] PJob '{code}' is valid")
-            
-            if strict:
-                console.print("   All referenced configs exist")
-            if check_render:
-                console.print("   Template renders successfully")
+        
+        # Show success
+        console.print(f"[green]✓[/green] PJob '{code}' is valid")
+        
+        if strict:
+            console.print("   [green]•[/green] All referenced configs exist")
+        if check_render:
+            console.print("   [green]•[/green] Template renders successfully")
+        if not warnings:
+            console.print("   [green]•[/green] Ready to execute")
+        
+        # Show warnings if any
+        for warning in warnings:
+            console.print(f"   [yellow]⚠[/yellow] {warning}")
         
     except Exception as e:
         console.print(f"[red]✗[/red] Validation error: {e}")
