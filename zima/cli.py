@@ -18,6 +18,7 @@ from zima.commands import workflow as workflow_cmd
 from zima.commands import variable as variable_cmd
 from zima.commands import env as env_cmd
 from zima.commands import pmg as pmg_cmd
+from zima.commands import pjob as pjob_cmd
 
 app = typer.Typer(
     name="zima",
@@ -31,6 +32,7 @@ app.add_typer(workflow_cmd.app, name="workflow")
 app.add_typer(variable_cmd.app, name="variable")
 app.add_typer(env_cmd.app, name="env")
 app.add_typer(pmg_cmd.app, name="pmg")
+app.add_typer(pjob_cmd.app, name="pjob")
 console = Console()
 
 

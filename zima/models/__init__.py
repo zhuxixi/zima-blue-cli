@@ -5,6 +5,8 @@ from .workflow import WorkflowConfig, VariableDef, VALID_TEMPLATE_FORMATS, VALID
 from .variable import VariableConfig
 from .env import EnvConfig, SecretDef, SecretResolver, VALID_SECRET_SOURCES, VALID_ENV_FOR_TYPES
 from .pmg import PMGConfig, ParameterDef, ExtendDef, ConditionDef, ConditionEvaluator, VALID_PARAM_TYPES, VALID_PMG_FOR_TYPES
+from .pjob import PJobConfig, PJobMetadata, PJobSpec, ExecutionOptions, OutputOptions, Overrides
+from .config_bundle import ConfigBundle
 
 __all__ = [
     "AgentConfig", 
@@ -27,4 +29,11 @@ __all__ = [
     "ConditionEvaluator",
     "VALID_PARAM_TYPES",
     "VALID_PMG_FOR_TYPES",
+    "PJobConfig",
+    "PJobMetadata",
+    "PJobSpec",
+    "ExecutionOptions",
+    "OutputOptions",
+    "Overrides",
+    "ConfigBundle",
 ]

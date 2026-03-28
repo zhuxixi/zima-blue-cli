@@ -29,7 +29,7 @@ class ConfigManager:
     """
     
     # Supported configuration kinds
-    KINDS = {"agent", "workflow", "variable", "env", "pmg"}
+    KINDS = {"agent", "workflow", "variable", "env", "pmg", "pjob"}
     
     def __init__(self, config_dir: Optional[Path] = None):
         """
