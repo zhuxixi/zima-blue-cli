@@ -11,6 +11,7 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.tree import Tree
+from rich.traceback import Traceback
 
 from zima.config.manager import ConfigManager
 from zima.execution.executor import PJobExecutor
@@ -491,9 +492,24 @@ def run(
                 console.print(f"\n[red]✗[/red] Execution failed with status: {result.status.value}")
                 if result.returncode != 0:
                     console.print(f"   Return code: {result.returncode}")
+                if result.stderr:
+                    console.print(Panel(result.stderr, title="[red]Error[/red]", 
+                                       border_style="red"))
+                if result.error_detail:
+                    console.print(Panel(
+                        Syntax(result.error_detail, "python"),
+                        title="[red]Detailed Error (Stack Trace)[/red]",
+                        border_style="red"
+                    ))
         
     except Exception as e:
+        import traceback
         console.print(f"[red]✗[/red] Execution failed: {e}")
+        console.print(Panel(
+            Syntax(traceback.format_exc(), "python"),
+            title="[red]Stack Trace[/red]",
+            border_style="red"
+        ))
         raise typer.Exit(1)
 
 
@@ -632,6 +648,7 @@ def show_history(
     limit: int = typer.Option(20, "--limit", "-n", help="Number of records to show"),
     status: Optional[str] = typer.Option(None, "--status", help="Filter by status"),
     clear: bool = typer.Option(False, "--clear", help="Clear history"),
+    detail: Optional[str] = typer.Option(None, "--detail", help="Show detailed info for execution ID"),
 ):
     """Show or clear execution history"""
     history = ExecutionHistory()
@@ -641,6 +658,42 @@ def show_history(
             console.print(f"[green]✓[/green] History for '{code}' cleared")
         else:
             console.print(f"[yellow]No history to clear for '{code}'[/yellow]")
+        return
+    
+    # Show detailed view for a specific execution
+    if detail:
+        record = history.get_record(code, detail)
+        if not record:
+            console.print(f"[red]✗[/red] Execution '{detail}' not found for '{code}'")
+            raise typer.Exit(1)
+        
+        console.print(Panel(f"[bold]Execution Detail: {detail}[/bold]", 
+                           subtitle=f"PJob: {code}"))
+        
+        status_color = {
+            "success": "green",
+            "failed": "red",
+            "timeout": "yellow",
+            "cancelled": "dim",
+        }.get(record.status, "white")
+        
+        console.print(f"Status: [{status_color}]{record.status}[/{status_color}]")
+        console.print(f"Return Code: {record.returncode}")
+        console.print(f"Duration: {record.duration_seconds:.1f}s")
+        console.print(f"Started: {record.started_at}")
+        console.print(f"Finished: {record.finished_at}")
+        console.print(f"Command: {' '.join(record.command)}")
+        
+        if record.stderr_preview:
+            console.print(Panel(record.stderr_preview, title="[red]stderr[/red]", 
+                               border_style="red"))
+        
+        if record.error_detail:
+            console.print(Panel(
+                Syntax(record.error_detail, "python"),
+                title="[red]Error Detail (Stack Trace)[/red]",
+                border_style="red"
+            ))
         return
     
     records = history.get_history(code, limit=limit, status=status)
@@ -679,3 +732,4 @@ def show_history(
     console.print(f"\nStats: {stats['total']} runs, "
                   f"{stats['success']} success ({stats['success_rate']:.0f}%), "
                   f"avg {stats['avg_duration']:.1f}s")
+    console.print(f"\nUse [dim]zima pjob history {code} --detail <ID>[/dim] to see error details")

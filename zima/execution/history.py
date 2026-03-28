@@ -27,6 +27,7 @@ class ExecutionRecord:
         duration_seconds: Execution duration
         stdout_preview: First N chars of stdout
         stderr_preview: First N chars of stderr
+        error_detail: Detailed error information
     """
     execution_id: str
     pjob_code: str
@@ -38,6 +39,7 @@ class ExecutionRecord:
     duration_seconds: float = 0.0
     stdout_preview: str = ""
     stderr_preview: str = ""
+    error_detail: str = ""
     
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -52,6 +54,7 @@ class ExecutionRecord:
             "duration_seconds": self.duration_seconds,
             "stdout_preview": self.stdout_preview,
             "stderr_preview": self.stderr_preview,
+            "error_detail": self.error_detail,
         }
     
     @classmethod
@@ -68,6 +71,7 @@ class ExecutionRecord:
             duration_seconds=data.get("duration_seconds", 0.0),
             stdout_preview=data.get("stdout_preview", ""),
             stderr_preview=data.get("stderr_preview", ""),
+            error_detail=data.get("error_detail", ""),
         )
     
     @classmethod
@@ -76,6 +80,10 @@ class ExecutionRecord:
         # Truncate previews
         stdout_preview = result.stdout[:500] + "..." if len(result.stdout) > 500 else result.stdout
         stderr_preview = result.stderr[:500] + "..." if len(result.stderr) > 500 else result.stderr
+        # Truncate error_detail if too long
+        error_detail = result.error_detail
+        if len(error_detail) > 2000:
+            error_detail = error_detail[:2000] + "...\n[truncated]"
         
         return cls(
             execution_id=result.execution_id,
@@ -88,6 +96,7 @@ class ExecutionRecord:
             duration_seconds=result.duration_seconds,
             stdout_preview=stdout_preview,
             stderr_preview=stderr_preview,
+            error_detail=error_detail,
         )
 
 

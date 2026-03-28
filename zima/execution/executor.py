@@ -40,6 +40,7 @@ class ExecutionResult:
         returncode: Process return code
         stdout: Standard output
         stderr: Standard error
+        error_detail: Detailed error information (stack trace for failures)
         command: Executed command
         env: Environment variables used
         work_dir: Working directory
@@ -53,6 +54,7 @@ class ExecutionResult:
     returncode: int = 0
     stdout: str = ""
     stderr: str = ""
+    error_detail: str = ""  # Detailed error info including stack trace
     command: list[str] = field(default_factory=list)
     env: dict = field(default_factory=dict)
     work_dir: str = ""
@@ -69,6 +71,7 @@ class ExecutionResult:
             "returncode": self.returncode,
             "stdout": self.stdout,
             "stderr": self.stderr,
+            "error_detail": self.error_detail,
             "command": self.command,
             "env": {k: v for k, v in self.env.items() if not k.lower().endswith("key")},
             "work_dir": self.work_dir,
@@ -198,9 +201,12 @@ class PJobExecutor:
         except subprocess.TimeoutExpired:
             result.status = ExecutionStatus.TIMEOUT
             result.stderr = "Execution timed out"
+            result.error_detail = f"Timeout after {pjob.spec.execution.timeout}s"
         except Exception as e:
+            import traceback
             result.status = ExecutionStatus.FAILED
             result.stderr = str(e)
+            result.error_detail = traceback.format_exc()
         finally:
             result.finished_at = generate_timestamp()
             
