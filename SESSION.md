@@ -9,6 +9,23 @@
 
 ## Recent Sessions (最近5次)
 
+### Session 14 - 2026-03-29
+
+修复 Windows 下 CLI 命令的 Unicode 编码错误。
+
+本次会话解决了用户在 Windows 环境下使用 zima workflow create 等命令时遇到的 UnicodeEncodeError 问题。错误原因是 Python 在 Windows 上默认使用 GBK 编码处理 stdout/stderr，无法输出 ✓、✗ 等 Unicode 字符和中文字符。
+
+修复方案：
+1. 在 CLI 入口 (zima/cli.py) 强制设置 UTF-8 编码环境变量 PYTHONIOENCODING=utf-8
+2. 使用 sys.stdout.reconfigure() 和 sys.stderr.reconfigure() 将标准输出/错误流重配置为 UTF-8 编码
+3. 更新所有命令文件中的 Rich Console 实例，添加 legacy_windows=False 和 force_terminal=True 参数
+
+涉及的文件：
+- zima/cli.py - 添加 Windows 编码修复和 Console 配置
+- zima/commands/agent.py, env.py, pmg.py, pjob.py, variable.py, workflow.py - 更新 Console 配置
+
+验证：所有 362 个单元测试通过，中文字符和特殊符号可正常显示和保存。
+
 ### Session 13 - 2026-03-29
 
 修复 test_create_kimi_agent 单元测试断言，使其与更新后的 Kimi 默认模型 kimi-code/kimi-for-coding 保持一致。执行全部 362 个单元测试，全部通过。
@@ -67,76 +84,31 @@
 - tests/unit/test_config_bundle.py (10个测试)
 - tests/integration/test_pjob_lifecycle.py (16个测试)
 
-### Session 9 - 2026-03-27
-
-**PMG (Parameters Group) 完整实现**
-
-完成 PMG 的设计与实现，支持命令行参数组和条件参数：
-
-1. **PMG 设计文档**
-   - 编写 docs/design/PMG-DESIGN.md（823行）
-   - 定义 7 种参数类型：long/short/flag/positional/repeatable/json/key-value
-   - 设计参数继承机制：extends/override
-   - 设计条件参数：os/arch/env 条件表达式
-   - 设计 CLI 命令：create/list/show/update/delete/validate/add-param/remove-param/build
-
-2. **PMG 模型实现**
-   - `PMGConfig`：参数组配置管理
-   - `ParameterDef`：参数定义（name/type/value/values/enabled）
-   - `ExtendDef`：继承定义（code/override）
-   - `ConditionDef`：条件定义（when/parameters）
-   - `ConditionEvaluator`：条件表达式评估器
-   - 参数渲染：支持 7 种类型的命令行渲染
-   - 命令构建：build_command/build_command_string
-
-3. **PMG CLI 实现**
-   - `zima pmg create`：支持 --from 复制、--for-type 多类型
-   - `zima pmg list`：表格/JSON 输出，--for-type 过滤
-   - `zima pmg show`：YAML/JSON 格式详情
-   - `zima pmg update`：更新名称/描述/raw
-   - `zima pmg delete`：删除确认/强制删除
-   - `zima pmg validate`：配置验证
-   - `zima pmg add-param`：支持 7 种参数类型
-   - `zima pmg remove-param`：移除参数
-   - `zima pmg build`：构建命令行参数（list/shell 格式）
-
-4. **参数类型支持**
-   - `long`: `--name value` 格式
-   - `short`: `-n value` 或 `-n`（boolean）格式
-   - `flag`: `--name` 开关格式
-   - `positional`: 纯值格式
-   - `repeatable`: `--name v1 --name v2` 重复格式
-   - `json`: `--name '{"key": "value"}'` JSON 格式
-   - `key-value`: `--name k1=v1,k2=v2` 键值对格式
-
-5. **条件表达式**
-   - 支持变量：os (windows/linux/darwin)、arch (amd64/arm64)、env.XXX
-   - 支持运算符：==、!=、&&、||
-   - 运行时根据系统环境评估条件
-
-6. **测试覆盖**
-   - 单元测试：48 个（ParameterDef 15 + ConditionEvaluator 8 + PMGConfig 25）
-   - 集成测试：32 个（覆盖所有 CLI 命令）
-   - 全部 465 个测试通过
-
-**产出文件**:
-- `docs/design/PMG-DESIGN.md`: PMG 设计文档
-- `zima/models/pmg.py`: PMG 模型（PMGConfig, ParameterDef, ExtendDef, ConditionDef, ConditionEvaluator）
-- `zima/commands/pmg.py`: PMG CLI 命令
-- `tests/unit/test_models_pmg.py`: PMG 单元测试
-- `tests/integration/test_pmg_commands.py`: PMG 集成测试
-
 ## Earlier Sessions (历史会话)
 
+- **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
+- **Session 8** (2026-03-27): **Env 环境配置完整实现**
 - **Session 8** (2026-03-27): **Env 环境配置完整实现**
 - **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
 - **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
+- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
+- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
+- **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
+- **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
 - **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
 - **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
 - **Session 5** (2026-03-26): **基础设施与测试框架实现**
 - **Session 5** (2026-03-26): **基础设施与测试框架实现**
 - **Session 5** (2026-03-26): **基础设施与测试框架实现**
 - **Session 5** (2026-03-26): **基础设施与测试框架实现**
+- **Session 5** (2026-03-26): **基础设施与测试框架实现**
+- **Session 5** (2026-03-26): **基础设施与测试框架实现**
+- **Session 5** (2026-03-26): **基础设施与测试框架实现**
+- **Session 5** (2026-03-26): **基础设施与测试框架实现**
+- **Session 4** (2026-03-26): **Zima CLI 接口层设计**
+- **Session 4** (2026-03-26): **Zima CLI 接口层设计**
+- **Session 4** (2026-03-26): **Zima CLI 接口层设计**
+- **Session 4** (2026-03-26): **Zima CLI 接口层设计**
 - **Session 4** (2026-03-26): **Zima CLI 接口层设计**
 - **Session 4** (2026-03-26): **Zima CLI 接口层设计**
 - **Session 4** (2026-03-26): **Zima CLI 接口层设计**
@@ -145,19 +117,11 @@
 - **Session 3** (2026-03-26): **文档整理与同步**
 - **Session 3** (2026-03-26): **文档整理与同步**
 - **Session 3** (2026-03-26): **文档整理与同步**
-- **Session 2** (2026-03-26): **Zima CLI v2 架构重构**
-- **Session 2** (2026-03-26): **Zima CLI v2 架构重构**
-- **Session 2** (2026-03-26): **Zima CLI v2 架构重构**
-- **Session 2** (2026-03-26): **Zima CLI v2 架构重构**
-- **Session 1** (2026-03-26): ZimaBlue CLI MVP 实现与测试 - 完成核心调度器、CLI 命令、后台守护进程模式，验证 example-agent 运行正常
-- **Session 1** (2026-03-26): ZimaBlue CLI MVP 实现与测试 - 完成核心调度器、CLI 命令、后台守护进程模式，验证 example-agent 运行正常
-- **Session 1** (2026-03-26): ZimaBlue CLI MVP 实现与测试 - 完成核心调度器、CLI 命令、后台守护进程模式，验证 example-agent 运行正常
-- **Session 1** (2026-03-26): ZimaBlue CLI MVP 实现与测试 - 完成核心调度器、CLI 命令、后台守护进程模式，验证 example-agent 运行正常
-- **Session 1** (2026-03-26): ZimaBlue CLI MVP 实现与测试 - 完成核心调度器、CLI 命令、后台守护进程模式，验证 example-agent 运行正常
-- **Session 1** (2026-03-26): ZimaBlue CLI MVP 实现与测试 - 完成核心调度器、CLI 命令、后台守护进程模式，验证 example-agent 运行正常
-- **Session 1** (2026-03-26): ZimaBlue CLI MVP 实现与测试 - 完成核心调度器、CLI 命令、后台守护进程模式，验证 example-agent 运行正常
-- **Session 1** (2026-03-26): ZimaBlue CLI MVP 实现与测试 - 完成核心调度器、CLI 命令、后台守护进程模式，验证 example-agent 运行正常
+- **Session 3** (2026-03-26): **文档整理与同步**
+- **Session 3** (2026-03-26): **文档整理与同步**
+- **Session 3** (2026-03-26): **文档整理与同步**
+- **Session 3** (2026-03-26): **文档整理与同步**
 
 ---
 
-*Total: 34 sessions | Last Updated: 2026-03-29*
+*Total: 40 sessions | Last Updated: 2026-03-29*
