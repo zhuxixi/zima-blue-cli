@@ -73,17 +73,12 @@ class KimiRunner:
         workspace_abs = self.workspace.resolve()
         workspace_abs.mkdir(parents=True, exist_ok=True)
         
-        # Build command
-        # Use prompt file path (not content) for --prompt argument
-        cmd = [
-            "kimi",
-            "--print",  # Non-interactive mode
-            "--yolo",   # Auto-approve
-            "--prompt", str(prompt_file),
-            "--work-dir", str(workspace_abs),
-            "--max-steps-per-turn", str(self.config.max_steps_per_turn),
-            "--max-ralph-iterations", "10",
-        ]
+        # Build command using AgentConfig's build_command method
+        # This ensures all parameters (including --model) are properly passed
+        cmd = self.config.build_command(
+            prompt_file=prompt_file,
+            work_dir=workspace_abs
+        )
         
         safe_print(f"{icon('rocket')} Starting cycle {cycle_num}")
         safe_print(f"   Prompt: {prompt_file.name}")

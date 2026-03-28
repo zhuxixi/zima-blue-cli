@@ -13,7 +13,7 @@ from zima.utils import generate_timestamp, validate_code
 # Agent-specific parameters templates
 AGENT_PARAMETER_TEMPLATES = {
     "kimi": {
-        "model": "kimi-k2-072515-preview",
+        "model": "kimi-code/kimi-for-coding",
         "maxStepsPerTurn": 50,
         "maxRalphIterations": 10,
         "maxRetriesPerStep": 3,
