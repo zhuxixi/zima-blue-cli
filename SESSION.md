@@ -9,6 +9,32 @@
 
 ## Recent Sessions (最近5次)
 
+### Session 11 - 2026-03-28
+
+**Kimi Agent 集成测试与文档更新**
+
+完成了 Kimi Agent 的真实集成测试，验证 Zima CLI 与实际 kimi-cli 的交互能力，并全面更新了项目文档。
+
+**已完成工作：**
+1. **真实集成测试**: 创建 `tests/integration/test_kimi_agent_real.py`，包含 7 个真实调用 kimi-cli 的测试，全部通过（耗时 52.5s），验证了 AgentConfig、KimiRunner、PJob 的完整执行链路
+2. **Mock 集成测试**: 创建 `tests/integration/test_kimi_agent_integration.py`，包含 23 个 Mock 测试，覆盖配置层、运行层、CLI 层的各种场景
+3. **模型增强**: 新增 `CycleResult` 数据类用于存储周期执行结果；为 `AgentConfig` 添加运行时属性（max_execution_time, cycle_interval, max_steps_per_turn）
+4. **测试报告**: 生成详细测试报告 `docs/test-report-kimi-real.md`，包含测试用例详情、性能指标、MCP 服务状态、执行流程分析
+5. **清理脚本**: 创建 `scripts/cleanup.py` 及快捷命令（cleanup.bat/sh），支持清理项目缓存、系统临时文件、日志文件
+6. **API 文档更新**: 大幅更新 `docs/API-INTERFACE.md`（850+ 行），完整记录 6 大命令组（agent/workflow/variable/env/pmg/pjob）的所有子命令和参数
+7. **项目文档更新**: 更新 `AGENTS.md` 项目结构和命令设计；更新 `README.md` 核心概念、特性列表、快速开始示例
+
+**新增文件：**
+- tests/integration/test_kimi_agent_real.py (7个真实测试)
+- tests/integration/test_kimi_agent_integration.py (23个Mock测试)
+- docs/test-report-kimi-real.md (详细测试报告)
+- scripts/cleanup.py + scripts/README.md (清理工具)
+- cleanup.bat / cleanup.sh (快捷命令)
+
+**测试统计：**
+- 总测试数: 544 个（原有 514 + 新增 30）
+- 全部通过: ✅
+
 ### Session 10 - 2026-03-28
 
 ## Session 10 - PJob Implementation
