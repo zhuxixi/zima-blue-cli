@@ -16,7 +16,7 @@ from zima.models.agent import AgentConfig
 from zima.utils import validate_code_with_error, get_valid_agent_types
 
 app = typer.Typer(name="agent", help="Agent management commands")
-console = Console()
+console = Console(legacy_windows=False, force_terminal=True)
 
 
 @app.command()

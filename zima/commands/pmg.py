@@ -15,7 +15,7 @@ from zima.models.pmg import PMGConfig, ParameterDef, VALID_PMG_FOR_TYPES, VALID_
 from zima.utils import validate_code_with_error
 
 app = typer.Typer(name="pmg", help="PMG (Parameters Group) management commands")
-console = Console()
+console = Console(legacy_windows=False, force_terminal=True)
 
 
 @app.command()

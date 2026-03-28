@@ -20,7 +20,7 @@ from zima.models.pjob import PJobConfig, Overrides
 from zima.utils import validate_code_with_error
 
 app = typer.Typer(name="pjob", help="PJob management - execute Agent tasks")
-console = Console()
+console = Console(legacy_windows=False, force_terminal=True)
 
 
 @app.command()

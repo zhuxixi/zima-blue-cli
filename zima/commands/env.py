@@ -16,7 +16,7 @@ from zima.models.env import EnvConfig, SecretDef, VALID_ENV_FOR_TYPES
 from zima.utils import validate_code_with_error
 
 app = typer.Typer(name="env", help="Environment configuration management commands")
-console = Console()
+console = Console(legacy_windows=False, force_terminal=True)
 
 
 @app.command()

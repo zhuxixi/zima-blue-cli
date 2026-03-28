@@ -17,7 +17,7 @@ from zima.models.variable import VariableConfig
 from zima.utils import validate_code_with_error
 
 app = typer.Typer(name="workflow", help="Workflow management commands")
-console = Console()
+console = Console(legacy_windows=False, force_terminal=True)
 
 
 @app.command()

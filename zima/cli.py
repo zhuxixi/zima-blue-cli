@@ -7,6 +7,12 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+# Fix Windows UTF-8 encoding issue
+if sys.platform == "win32":
+    os.environ["PYTHONIOENCODING"] = "utf-8"
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -33,7 +39,7 @@ app.add_typer(variable_cmd.app, name="variable")
 app.add_typer(env_cmd.app, name="env")
 app.add_typer(pmg_cmd.app, name="pmg")
 app.add_typer(pjob_cmd.app, name="pjob")
-console = Console()
+console = Console(legacy_windows=False, force_terminal=True)
 
 
 def get_agents_dir() -> Path:
