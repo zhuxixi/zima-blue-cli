@@ -342,6 +342,40 @@ class AgentConfig(BaseConfig):
         """
         self.defaults[key] = code
         self.update_timestamp()
+    
+    # Runtime properties for convenience
+    @property
+    def max_execution_time(self) -> int:
+        """Get max execution time in seconds (default: 600)."""
+        return self.parameters.get("maxExecutionTime", 600)
+    
+    @max_execution_time.setter
+    def max_execution_time(self, value: int) -> None:
+        """Set max execution time."""
+        self.parameters["maxExecutionTime"] = value
+        self.update_timestamp()
+    
+    @property
+    def cycle_interval(self) -> int:
+        """Get cycle interval in seconds (default: 900)."""
+        return self.parameters.get("cycleInterval", 900)
+    
+    @cycle_interval.setter
+    def cycle_interval(self, value: int) -> None:
+        """Set cycle interval."""
+        self.parameters["cycleInterval"] = value
+        self.update_timestamp()
+    
+    @property
+    def max_steps_per_turn(self) -> int:
+        """Get max steps per turn (default: 50)."""
+        return self.parameters.get("maxStepsPerTurn", 50)
+    
+    @max_steps_per_turn.setter
+    def max_steps_per_turn(self, value: int) -> None:
+        """Set max steps per turn."""
+        self.parameters["maxStepsPerTurn"] = value
+        self.update_timestamp()
 
 
 # =============================================================================
@@ -402,3 +436,40 @@ class RunResult:
             "returnCode": self.return_code,
             "timestamp": self.timestamp,
         }
+
+
+@dataclass
+class CycleResult:
+    """Result of a single agent cycle execution."""
+    
+    cycle_num: int
+    status: str  # completed, partial, failed, timeout, error, unknown
+    progress: int = 0  # 0-100
+    summary: str = ""
+    details: str = ""
+    next_action: str = "continue"  # continue, wait, complete, fix, retry
+    log_file: _Optional[Path] = None
+    prompt_file: _Optional[Path] = None
+    result_file: _Optional[Path] = None
+    elapsed_time: float = 0.0
+    return_code: int = 0
+    
+    def to_dict(self) -> dict:
+        result = {
+            "cycleNum": self.cycle_num,
+            "status": self.status,
+            "progress": self.progress,
+            "summary": self.summary,
+            "nextAction": self.next_action,
+            "elapsedTime": self.elapsed_time,
+            "returnCode": self.return_code,
+        }
+        if self.details:
+            result["details"] = self.details
+        if self.log_file:
+            result["logFile"] = str(self.log_file)
+        if self.prompt_file:
+            result["promptFile"] = str(self.prompt_file)
+        if self.result_file:
+            result["resultFile"] = str(self.result_file)
+        return result

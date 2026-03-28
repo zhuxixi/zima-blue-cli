@@ -18,6 +18,7 @@
 📋 **完整会话历史**: [SESSION.md](./SESSION.md)
 
 > 最近 Session 摘要：
+> - **Session 7** (2026-03-28): Kimi Agent 集成测试 - 完成真实集成测试（7个测试全部通过），测试报告，清理脚本
 > - **Session 6** (2026-03-26): AgentConfig 模型实现 - 支持 kimi/claude/gemini 多类型，参数模板，命令构建，37个单元测试
 > - **Session 5** (2026-03-26): 基础设施与测试框架 - 完成 ConfigManager、BaseConfig、测试框架，107个单元测试全部通过
 > - **Session 4** (2026-03-26): Zima CLI 接口层设计 - 完成五组配置实体 (agent/workflow/variable/env/pmg) 和完整 CLI 接口设计文档
@@ -146,55 +147,83 @@ zima-blue-cli/
 │
 ├── AGENTS.md                   # 本文件: Agent 开发指南
 ├── README.md                   # 项目介绍(面向人类)
+├── docs/                       # 项目文档
+│   ├── API-INTERFACE.md        # CLI 接口文档
+│   ├── test-report-kimi-real.md # 测试报告
+│   └── ...
 │
-├── src/                        # CLI 源码
+├── zima/                       # CLI 源码 (包名)
 │   ├── __init__.py
 │   ├── cli.py                  # 主 CLI 入口 (Typer)
 │   ├── commands/               # CLI 子命令
 │   │   ├── __init__.py
-│   │   ├── init.py             # `zima init`
 │   │   ├── agent.py            # `zima agent *`
-│   │   ├── org.py              # `zima org *`
-│   │   ├── team.py             # `zima team *`
-│   │   ├── kb.py               # `zima kb *` (知识库管理)
-│   │   └── dashboard.py        # `zima dashboard`
+│   │   ├── workflow.py         # `zima workflow *`
+│   │   ├── variable.py         # `zima variable *`
+│   │   ├── env.py              # `zima env *`
+│   │   ├── pmg.py              # `zima pmg *`
+│   │   └── pjob.py             # `zima pjob *`
+│   │
+│   ├── config/                 # 配置管理
+│   │   ├── __init__.py
+│   │   └── manager.py          # ConfigManager - 统一配置管理
 │   │
 │   ├── core/                   # 核心逻辑
 │   │   ├── __init__.py
-│   │   ├── config.py           # 配置管理
-│   │   ├── scheduler.py        # Agent 调度器
-│   │   ├── prompt_builder.py   # Prompt 生成器
-│   │   ├── kimi_runner.py      # Kimi CLI 调用
-│   │   └── state_manager.py    # 状态管理
+│   │   ├── runner.py           # AgentRunner (单次执行)
+│   │   ├── kimi_runner.py      # KimiRunner (周期执行)
+│   │   ├── scheduler.py        # CycleScheduler
+│   │   ├── state_manager.py    # 状态管理
+│   │   └── daemon.py           # 守护进程
+│   │
+│   ├── execution/              # 执行层
+│   │   ├── __init__.py
+│   │   ├── executor.py         # PJob 执行器
+│   │   └── history.py          # 执行历史
 │   │
 │   ├── models/                 # 数据模型
 │   │   ├── __init__.py
-│   │   ├── agent.py            # Agent 配置模型
-│   │   ├── organization.py     # 组织模型
-│   │   ├── team.py             # 团队模型
-│   │   └── task.py             # 任务模型
+│   │   ├── base.py             # BaseConfig, Metadata
+│   │   ├── agent.py            # AgentConfig, AgentState, RunResult, CycleResult
+│   │   ├── workflow.py         # WorkflowConfig, VariableDef
+│   │   ├── variable.py         # VariableConfig
+│   │   ├── env.py              # EnvConfig, SecretDef
+│   │   ├── pmg.py              # PMGConfig, ParameterDef, ConditionDef
+│   │   ├── pjob.py             # PJobConfig, PJobSpec, ExecutionOptions
+│   │   └── config_bundle.py    # ConfigBundle
 │   │
-│   └── templates/              # Prompt 模板
-│       └── agent_prompt.j2     # Agent 执行模板
+│   └── utils.py                # 工具函数
 │
 ├── tests/                      # 测试
 │   ├── __init__.py
-│   ├── test_scheduler.py
-│   ├── test_prompt_builder.py
-│   └── fixtures/               # 测试数据
+│   ├── conftest.py             # pytest 配置
+│   ├── base.py                 # TestIsolator 基类
+│   ├── unit/                   # 单元测试
+│   │   ├── test_models_*.py
+│   │   └── test_config_manager.py
+│   └── integration/            # 集成测试
+│       ├── test_kimi_agent_integration.py    # Mock 测试
+│       ├── test_kimi_agent_real.py           # 真实 Kimi 测试
+│       └── test_*_commands.py
 │
-├── skills/                     # 内置 Skills
-│   ├── ralph-executor/         # Ralph Loop 执行 Skill
-│   │   └── SKILL.md
-│   └── knowledge-base/         # 知识库管理 Skill
-│       └── SKILL.md
+├── scripts/                    # 维护脚本
+│   ├── cleanup.py              # 清理临时文件脚本
+│   └── README.md
+│
+├── agents/                     # Agent 运行时目录 (gitignored)
+│   └── example-agent/
+│       ├── agent.yaml
+│       ├── prompts/
+│       ├── logs/
+│       └── workspace/
+│
+├── logs/                       # 日志目录 (gitignored)
+├── workspace/                  # 工作目录 (gitignored)
 │
 ├── pyproject.toml              # Python 项目配置
 ├── requirements.txt            # 依赖
-└── .zima/                      # Zima Blue 运行时数据
-    ├── config.yaml             # 全局配置
-    ├── state.json              # 运行状态
-    └── cache/                  # 缓存目录
+├── cleanup.bat                 # Windows 清理快捷命令
+└── cleanup.sh                  # Unix 清理快捷命令
 ```
 
 ---
@@ -282,36 +311,78 @@ zima-blue-cli/
 
 ## 6. 命令设计
 
-### 6.1 核心命令
+### 6.1 命令概览
 
 ```bash
-# 初始化 Zima Blue
-zima init
+# 简写命令 (快捷方式)
+zima create <name>                  # 快速创建 Agent
+zima run <name>                     # 执行 Agent
+zima list                           # 列出 Agent
+zima show <name>                    # 查看 Agent
+zima logs <name>                    # 查看日志
 
-# 组织管理
-zima org create <name>              # 创建组织
-zima org list                       # 列出组织
-zima org delete <name>              # 删除组织
+# 完整命令组
+zima agent *                        # Agent 管理 (create/list/show/update/delete/validate/test)
+zima workflow *                     # Workflow 管理 (create/list/show/update/delete/validate/render/add-var)
+zima variable *                     # Variable 管理 (create/list/show/update/delete/set/get/validate/merge)
+zima env *                          # Environment 管理 (create/list/show/update/delete/set/set-secret/unset/validate)
+zima pmg *                          # PMG 参数组管理 (create/list/show/update/delete/add-param/remove-param/validate)
+zima pjob *                         # PJob 执行管理 (create/list/show/update/delete/run/render/validate/copy/history)
+```
 
-# 团队管理
-zima team create <org>/<name>       # 创建团队
-zima team list <org>                # 列出团队
+### 6.2 使用示例
 
-# Agent 管理
-zima agent create <org>/<team>/<name>   # 创建 Agent
-zima agent start <name>                 # 启动 Agent
-zima agent stop <name>                  # 停止 Agent
-zima agent status <name>                # 查看状态
-zima agent logs <name>                  # 查看日志
-zima agent config <name>                # 编辑配置
+```bash
+# ===== Agent 管理 =====
+# 创建不同类型的 Agent
+zima agent create --name "Code Reviewer" --code code-reviewer --type kimi
+zima agent create --name "Doc Writer" --code doc-writer --type claude --model claude-sonnet-4-6
 
-# 知识库管理
-zima kb init <name>                 # 初始化知识库
-zima kb list                        # 列出知识库
-zima kb sync                        # 同步索引
+# 查看和测试
+zima agent show code-reviewer
+zima agent test code-reviewer       # 预览生成的 CLI 命令
+zima agent validate code-reviewer
 
-# 仪表盘
-zima dashboard                      # 启动 Web 仪表盘
+# ===== Workflow 管理 =====
+# 创建带模板的 Workflow
+zima workflow create --name "Code Review" --code code-review --template "# Review: {{ task_name }}"
+
+# 渲染模板
+zima workflow render code-review --var review-vars
+
+# ===== Variable 管理 =====
+# 创建变量配置
+zima variable create --name "Review Vars" --code review-vars
+zima variable set review-vars task_name "Bug Fix"
+zima variable set review-vars priority "high"
+
+# ===== Env 管理 =====
+# 创建环境配置
+zima env create --name "Prod Env" --code prod-env
+zima env set-secret prod-env API_KEY --source env
+
+# ===== PJob 执行 =====
+# 创建 PJob (组合所有配置)
+zima pjob create \
+  --name "Daily Code Review" \
+  --code daily-review \
+  --agent code-reviewer \
+  --workflow code-review \
+  --variable review-vars \
+  --env prod-env \
+  --label automated
+
+# 渲染预览
+zima pjob render daily-review --show-command
+
+# 执行
+zima pjob run daily-review
+
+# 查看历史
+zima pjob history daily-review
+
+# 清理
+./cleanup.sh --auto                   # 清理缓存和临时文件
 ```
 
 ### 6.2 Agent 配置 (agent.yaml)
