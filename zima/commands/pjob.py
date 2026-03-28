@@ -39,6 +39,7 @@ def create(
     timeout: int = typer.Option(600, "--timeout", "-t", help="Timeout in seconds"),
     output: Optional[str] = typer.Option(None, "--output", "-o", help="Output save path"),
     from_code: Optional[str] = typer.Option(None, "--from-code", help="Copy from existing pjob"),
+    force: bool = typer.Option(False, "--force", "-f", help="Force overwrite if PJob already exists"),
 ):
     """Create a new PJob"""
     manager = ConfigManager()
@@ -51,8 +52,17 @@ def create(
     
     # 2. Check if code already exists
     if manager.config_exists("pjob", code):
-        console.print(f"[red]✗[/red] PJob with code '{code}' already exists")
-        raise typer.Exit(1)
+        if force:
+            try:
+                manager.delete_config("pjob", code)
+                console.print(f"[yellow]⚠[/yellow] Overwriting existing PJob '{code}'")
+            except Exception as e:
+                console.print(f"[red]✗[/red] Failed to overwrite: {e}")
+                raise typer.Exit(1)
+        else:
+            console.print(f"[red]✗[/red] PJob with code '{code}' already exists")
+            console.print(f"   Use [bold]--force[/bold] to overwrite, or [bold]zima pjob update {code}[/bold] to modify")
+            raise typer.Exit(1)
     
     # 3. Validate agent and workflow are provided (unless copying)
     if not from_code:

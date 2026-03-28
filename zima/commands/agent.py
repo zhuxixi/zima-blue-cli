@@ -28,6 +28,7 @@ def create(
     from_code: Optional[str] = typer.Option(None, "--from", help="Copy from existing agent"),
     model: Optional[str] = typer.Option(None, "--model", "-m", help="Model name"),
     work_dir: Optional[str] = typer.Option(None, "--work-dir", "-w", help="Working directory"),
+    force: bool = typer.Option(False, "--force", "-f", help="Force overwrite if agent already exists"),
 ):
     """Create a new agent"""
     manager = ConfigManager()
@@ -40,8 +41,18 @@ def create(
     
     # 2. Check if code already exists
     if manager.config_exists("agent", code):
-        console.print(f"[red]✗[/red] Agent with code '{code}' already exists")
-        raise typer.Exit(1)
+        if force:
+            # Delete existing agent
+            try:
+                manager.delete_config("agent", code)
+                console.print(f"[yellow]⚠[/yellow] Overwriting existing agent '{code}'")
+            except Exception as e:
+                console.print(f"[red]✗[/red] Failed to overwrite: {e}")
+                raise typer.Exit(1)
+        else:
+            console.print(f"[red]✗[/red] Agent with code '{code}' already exists")
+            console.print(f"   Use [bold]--force[/bold] to overwrite, or [bold]zima agent update {code}[/bold] to modify")
+            raise typer.Exit(1)
     
     # 3. Handle --from (copy existing)
     if from_code:

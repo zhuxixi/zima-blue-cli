@@ -9,6 +9,22 @@
 
 ## Recent Sessions (最近5次)
 
+### Session 18 - 2026-03-29
+
+修复 P1/P2 问题 3.2 和 4.2 - 改进错误信息和模板语法检查。
+
+增强 workflow validate 命令：
+1. 新增 --check-syntax 选项（jinja2 格式默认开启），检查模板语法
+2. 新增 --check-vars 选项，检查变量定义有效性
+3. 使用 jinja2 解析器检查语法错误，提供用户友好的错误消息
+4. 检测模板中使用的变量但未在配置中定义，给出警告和修复建议
+5. 错误输出使用编号格式，更清晰
+6. 在错误列表后给出修复建议
+7. 创建 workflow 时也会自动进行语法检查
+
+涉及文件：
+- zima/commands/workflow.py - 重写 validate 命令，添加模板语法检查
+
 ### Session 17 - 2026-03-29
 
 修复 P2 问题 7.1 - Agent 类型文档缺失。
@@ -72,15 +88,19 @@
 
 验证：所有 362 个单元测试通过，中文字符和特殊符号可正常显示和保存。
 
-### Session 13 - 2026-03-29
-
-修复 test_create_kimi_agent 单元测试断言，使其与更新后的 Kimi 默认模型 kimi-code/kimi-for-coding 保持一致。执行全部 362 个单元测试，全部通过。
-
 ## Earlier Sessions (历史会话)
 
+- **Session 13** (2026-03-29): 修复 test_create_kimi_agent 单元测试断言，使其与更新后的 Kimi 默认模型 kimi-c...
+- **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
 - **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
 - **Session 11** (2026-03-28): **Kimi Agent 集成测试与文档更新**
 - **Session 11** (2026-03-28): **Kimi Agent 集成测试与文档更新**
+- **Session 11** (2026-03-28): **Kimi Agent 集成测试与文档更新**
+- **Session 11** (2026-03-28): **Kimi Agent 集成测试与文档更新**
+- **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
+- **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
+- **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
+- **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
 - **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
 - **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
 - **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
@@ -93,26 +113,18 @@
 - **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
 - **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
 - **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
+- **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
+- **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
+- **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
+- **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
+- **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
+- **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
+- **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
+- **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
 - **Session 8** (2026-03-27): **Env 环境配置完整实现**
 - **Session 8** (2026-03-27): **Env 环境配置完整实现**
 - **Session 8** (2026-03-27): **Env 环境配置完整实现**
 - **Session 8** (2026-03-27): **Env 环境配置完整实现**
-- **Session 8** (2026-03-27): **Env 环境配置完整实现**
-- **Session 8** (2026-03-27): **Env 环境配置完整实现**
-- **Session 8** (2026-03-27): **Env 环境配置完整实现**
-- **Session 8** (2026-03-27): **Env 环境配置完整实现**
-- **Session 8** (2026-03-27): **Env 环境配置完整实现**
-- **Session 8** (2026-03-27): **Env 环境配置完整实现**
-- **Session 8** (2026-03-27): **Env 环境配置完整实现**
-- **Session 8** (2026-03-27): **Env 环境配置完整实现**
-- **Session 8** (2026-03-27): **Env 环境配置完整实现**
-- **Session 8** (2026-03-27): **Env 环境配置完整实现**
-- **Session 8** (2026-03-27): **Env 环境配置完整实现**
-- **Session 8** (2026-03-27): **Env 环境配置完整实现**
-- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
-- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
-- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
-- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
 
 ---
 

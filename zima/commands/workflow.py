@@ -30,6 +30,7 @@ def create(
     template: Optional[str] = typer.Option(None, "--template", "-t", help="Template content (or @file to load from file)"),
     format: str = typer.Option("jinja2", "--format", "-f", help="Template format: jinja2/mustache/plain"),
     from_code: Optional[str] = typer.Option(None, "--from", help="Copy from existing workflow"),
+    force: bool = typer.Option(False, "--force", "-f", help="Force overwrite if workflow already exists"),
 ):
     """Create a new workflow"""
     manager = ConfigManager()
@@ -42,8 +43,17 @@ def create(
     
     # 2. Check if code already exists
     if manager.config_exists("workflow", code):
-        console.print(f"[red]✗[/red] Workflow with code '{code}' already exists")
-        raise typer.Exit(1)
+        if force:
+            try:
+                manager.delete_config("workflow", code)
+                console.print(f"[yellow]⚠[/yellow] Overwriting existing workflow '{code}'")
+            except Exception as e:
+                console.print(f"[red]✗[/red] Failed to overwrite: {e}")
+                raise typer.Exit(1)
+        else:
+            console.print(f"[red]✗[/red] Workflow with code '{code}' already exists")
+            console.print(f"   Use [bold]--force[/bold] to overwrite, or [bold]zima workflow update {code}[/bold] to modify")
+            raise typer.Exit(1)
     
     # 3. Validate format
     if format not in VALID_TEMPLATE_FORMATS:

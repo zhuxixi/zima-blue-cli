@@ -25,6 +25,7 @@ def create(
     for_types: List[str] = typer.Option(..., "--for-type", "-t", help="Target agent types (can specify multiple)"),
     description: str = typer.Option("", "--description", "-d", help="Description"),
     from_code: Optional[str] = typer.Option(None, "--from", help="Copy from existing PMG"),
+    force: bool = typer.Option(False, "--force", "-f", help="Force overwrite if PMG already exists"),
 ):
     """Create a new parameters group"""
     manager = ConfigManager()
@@ -37,8 +38,17 @@ def create(
     
     # 2. Check if code already exists
     if manager.config_exists("pmg", code):
-        console.print(f"[red]✗[/red] PMG with code '{code}' already exists")
-        raise typer.Exit(1)
+        if force:
+            try:
+                manager.delete_config("pmg", code)
+                console.print(f"[yellow]⚠[/yellow] Overwriting existing PMG '{code}'")
+            except Exception as e:
+                console.print(f"[red]✗[/red] Failed to overwrite: {e}")
+                raise typer.Exit(1)
+        else:
+            console.print(f"[red]✗[/red] PMG with code '{code}' already exists")
+            console.print(f"   Use [bold]--force[/bold] to overwrite, or [bold]zima pmg update {code}[/bold] to modify")
+            raise typer.Exit(1)
     
     # 3. Validate for_types
     for ft in for_types:

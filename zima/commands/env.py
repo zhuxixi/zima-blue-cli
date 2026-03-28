@@ -26,6 +26,7 @@ def create(
     for_type: str = typer.Option(..., "--for-type", "-t", help="Target agent type: kimi/claude/gemini"),
     description: str = typer.Option("", "--description", "-d", help="Description"),
     from_code: Optional[str] = typer.Option(None, "--from", help="Copy from existing env config"),
+    force: bool = typer.Option(False, "--force", "-f", help="Force overwrite if env config already exists"),
 ):
     """Create a new environment configuration"""
     manager = ConfigManager()
@@ -38,8 +39,17 @@ def create(
     
     # 2. Check if code already exists
     if manager.config_exists("env", code):
-        console.print(f"[red]✗[/red] Env config with code '{code}' already exists")
-        raise typer.Exit(1)
+        if force:
+            try:
+                manager.delete_config("env", code)
+                console.print(f"[yellow]⚠[/yellow] Overwriting existing env config '{code}'")
+            except Exception as e:
+                console.print(f"[red]✗[/red] Failed to overwrite: {e}")
+                raise typer.Exit(1)
+        else:
+            console.print(f"[red]✗[/red] Env config with code '{code}' already exists")
+            console.print(f"   Use [bold]--force[/bold] to overwrite, or [bold]zima env update {code}[/bold] to modify")
+            raise typer.Exit(1)
     
     # 3. Validate for_type
     if for_type not in VALID_ENV_FOR_TYPES:
