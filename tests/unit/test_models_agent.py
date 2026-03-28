@@ -22,7 +22,7 @@ class TestAgentConfigCreation(TestIsolator):
         assert config.metadata.code == "kimi-agent"
         assert config.metadata.name == "Kimi Agent"
         assert config.type == "kimi"
-        assert config.parameters["model"] == "kimi-k2-072515-preview"
+        assert config.parameters["model"] == "kimi-code/kimi-for-coding"
         assert config.parameters["yolo"] is True
         assert config.parameters["maxStepsPerTurn"] == 50
     
