@@ -9,6 +9,22 @@
 
 ## Recent Sessions (最近5次)
 
+### Session 16 - 2026-03-29
+
+修复 P1 问题 3.1 和 7.2 - 增强 PJob 验证机制。
+
+改进 PJob 的验证和执行前检查：
+1. pjob validate 命令 --strict 选项改为默认开启，默认会验证所有引用的配置是否存在
+2. 新增 --check-workdir 选项（默认开启），检查工作目录是否存在
+3. 验证输出更加详细，使用颜色区分错误（红色）和警告（黄色）
+4. pjob run 命令新增执行前验证，检查所有引用的配置（agent, workflow, variable, env, pmg）
+5. pjob run 新增 --skip-validation 选项用于跳过验证（不推荐）
+6. 如果工作目录不存在，自动创建并提示用户
+7. 验证失败时给出明确的修复建议
+
+涉及文件：
+- zima/commands/pjob.py - 重写 validate 和 run 命令的验证逻辑
+
 ### Session 15 - 2026-03-29
 
 修复 P0 问题 1.1 - 执行失败无详细日志。
@@ -51,37 +67,19 @@
 
 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命令构建逻辑重构为调用 AgentConfig.build_command()，确保 --model、--max-steps-per-turn 等参数正确传递。同时将 Kimi agent 的默认模型从 kimi-k2-072515-preview 更新为 kimi-code/kimi-for-coding。
 
-### Session 11 - 2026-03-28
-
-**Kimi Agent 集成测试与文档更新**
-
-完成了 Kimi Agent 的真实集成测试，验证 Zima CLI 与实际 kimi-cli 的交互能力，并全面更新了项目文档。
-
-**已完成工作：**
-1. **真实集成测试**: 创建 `tests/integration/test_kimi_agent_real.py`，包含 7 个真实调用 kimi-cli 的测试，全部通过（耗时 52.5s），验证了 AgentConfig、KimiRunner、PJob 的完整执行链路
-2. **Mock 集成测试**: 创建 `tests/integration/test_kimi_agent_integration.py`，包含 23 个 Mock 测试，覆盖配置层、运行层、CLI 层的各种场景
-3. **模型增强**: 新增 `CycleResult` 数据类用于存储周期执行结果；为 `AgentConfig` 添加运行时属性（max_execution_time, cycle_interval, max_steps_per_turn）
-4. **测试报告**: 生成详细测试报告 `docs/test-report-kimi-real.md`，包含测试用例详情、性能指标、MCP 服务状态、执行流程分析
-5. **清理脚本**: 创建 `scripts/cleanup.py` 及快捷命令（cleanup.bat/sh），支持清理项目缓存、系统临时文件、日志文件
-6. **API 文档更新**: 大幅更新 `docs/API-INTERFACE.md`（850+ 行），完整记录 6 大命令组（agent/workflow/variable/env/pmg/pjob）的所有子命令和参数
-7. **项目文档更新**: 更新 `AGENTS.md` 项目结构和命令设计；更新 `README.md` 核心概念、特性列表、快速开始示例
-
-**新增文件：**
-- tests/integration/test_kimi_agent_real.py (7个真实测试)
-- tests/integration/test_kimi_agent_integration.py (23个Mock测试)
-- docs/test-report-kimi-real.md (详细测试报告)
-- scripts/cleanup.py + scripts/README.md (清理工具)
-- cleanup.bat / cleanup.sh (快捷命令)
-
-**测试统计：**
-- 总测试数: 544 个（原有 514 + 新增 30）
-- 全部通过: ✅
-
 ## Earlier Sessions (历史会话)
 
+- **Session 11** (2026-03-28): **Kimi Agent 集成测试与文档更新**
+- **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
 - **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
 - **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
 - **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
+- **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
+- **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
+- **Session 8** (2026-03-27): **Env 环境配置完整实现**
+- **Session 8** (2026-03-27): **Env 环境配置完整实现**
+- **Session 8** (2026-03-27): **Env 环境配置完整实现**
+- **Session 8** (2026-03-27): **Env 环境配置完整实现**
 - **Session 8** (2026-03-27): **Env 环境配置完整实现**
 - **Session 8** (2026-03-27): **Env 环境配置完整实现**
 - **Session 8** (2026-03-27): **Env 环境配置完整实现**
@@ -94,26 +92,18 @@
 - **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
 - **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
 - **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
+- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
+- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
+- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
+- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
+- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
+- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
+- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
+- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
 - **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
 - **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
 - **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
 - **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
-- **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
-- **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
-- **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
-- **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
-- **Session 5** (2026-03-26): **基础设施与测试框架实现**
-- **Session 5** (2026-03-26): **基础设施与测试框架实现**
-- **Session 5** (2026-03-26): **基础设施与测试框架实现**
-- **Session 5** (2026-03-26): **基础设施与测试框架实现**
-- **Session 5** (2026-03-26): **基础设施与测试框架实现**
-- **Session 5** (2026-03-26): **基础设施与测试框架实现**
-- **Session 5** (2026-03-26): **基础设施与测试框架实现**
-- **Session 5** (2026-03-26): **基础设施与测试框架实现**
-- **Session 5** (2026-03-26): **基础设施与测试框架实现**
-- **Session 5** (2026-03-26): **基础设施与测试框架实现**
-- **Session 5** (2026-03-26): **基础设施与测试框架实现**
-- **Session 5** (2026-03-26): **基础设施与测试框架实现**
 
 ---
 

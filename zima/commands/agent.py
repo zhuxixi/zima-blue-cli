@@ -377,3 +377,39 @@ def test(
         console.print("\n[bold]Default References:[/bold]")
         for key, value in config.defaults.items():
             console.print(f"   {key}: {value}")
+
+
+@app.command()
+def types():
+    """List all supported agent types"""
+    from zima.models.agent import VALID_AGENT_TYPES, AGENT_PARAMETER_TEMPLATES
+    
+    console.print("[bold]Supported Agent Types:[/bold]\n")
+    
+    table = Table()
+    table.add_column("Type", style="cyan", no_wrap=True)
+    table.add_column("Description", style="green")
+    table.add_column("Default Model", style="yellow")
+    table.add_column("Parameters", style="dim")
+    
+    descriptions = {
+        "kimi": "Kimi CLI - 月之暗面大模型",
+        "claude": "Claude CLI - Anthropic AI",
+        "gemini": "Gemini CLI - Google AI",
+    }
+    
+    for agent_type in sorted(VALID_AGENT_TYPES):
+        template = AGENT_PARAMETER_TEMPLATES.get(agent_type, {})
+        default_model = template.get("model", "default")
+        params = ", ".join(template.keys()) if template else "-"
+        
+        table.add_row(
+            agent_type,
+            descriptions.get(agent_type, "-"),
+            default_model,
+            params
+        )
+    
+    console.print(table)
+    console.print(f"\n[dim]Use [bold]zima agent create --type <type>[/bold] to create an agent[/dim]")
+    console.print(f"[dim]Example: [bold]zima agent create --type kimi --name 'My Agent' --code my-agent[/bold][/dim]")
