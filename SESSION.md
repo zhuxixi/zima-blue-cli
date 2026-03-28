@@ -9,6 +9,19 @@
 
 ## Recent Sessions (最近5次)
 
+### Session 17 - 2026-03-29
+
+修复 P2 问题 7.1 - Agent 类型文档缺失。
+
+新增 zima agent types 命令，列出所有支持的 Agent 类型：
+1. 显示类型名称、描述、默认模型和可用参数
+2. 使用表格形式展示，易于阅读
+3. 包含使用提示和示例命令
+4. 支持 kimi、claude、gemini 三种类型
+
+涉及文件：
+- zima/commands/agent.py - 添加 types 命令
+
 ### Session 16 - 2026-03-29
 
 修复 P1 问题 3.1 和 7.2 - 增强 PJob 验证机制。
@@ -63,15 +76,19 @@
 
 修复 test_create_kimi_agent 单元测试断言，使其与更新后的 Kimi 默认模型 kimi-code/kimi-for-coding 保持一致。执行全部 362 个单元测试，全部通过。
 
-### Session 12 - 2026-03-29
-
-修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命令构建逻辑重构为调用 AgentConfig.build_command()，确保 --model、--max-steps-per-turn 等参数正确传递。同时将 Kimi agent 的默认模型从 kimi-k2-072515-preview 更新为 kimi-code/kimi-for-coding。
-
 ## Earlier Sessions (历史会话)
 
+- **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
+- **Session 11** (2026-03-28): **Kimi Agent 集成测试与文档更新**
 - **Session 11** (2026-03-28): **Kimi Agent 集成测试与文档更新**
 - **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
 - **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
+- **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
+- **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
+- **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
+- **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
+- **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
+- **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
 - **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
 - **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
 - **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
@@ -84,26 +101,18 @@
 - **Session 8** (2026-03-27): **Env 环境配置完整实现**
 - **Session 8** (2026-03-27): **Env 环境配置完整实现**
 - **Session 8** (2026-03-27): **Env 环境配置完整实现**
+- **Session 8** (2026-03-27): **Env 环境配置完整实现**
+- **Session 8** (2026-03-27): **Env 环境配置完整实现**
+- **Session 8** (2026-03-27): **Env 环境配置完整实现**
+- **Session 8** (2026-03-27): **Env 环境配置完整实现**
+- **Session 8** (2026-03-27): **Env 环境配置完整实现**
+- **Session 8** (2026-03-27): **Env 环境配置完整实现**
+- **Session 8** (2026-03-27): **Env 环境配置完整实现**
+- **Session 8** (2026-03-27): **Env 环境配置完整实现**
 - **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
 - **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
 - **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
 - **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
-- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
-- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
-- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
-- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
-- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
-- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
-- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
-- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
-- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
-- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
-- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
-- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
-- **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
-- **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
-- **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
-- **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
 
 ---
 

@@ -11,6 +11,8 @@ from rich.table import Table
 from rich.syntax import Syntax
 from rich.panel import Panel
 
+from jinja2 import Environment
+
 from zima.config.manager import ConfigManager
 from zima.models.workflow import WorkflowConfig, VariableDef, VALID_TEMPLATE_FORMATS
 from zima.models.variable import VariableConfig
@@ -316,8 +318,10 @@ def delete(
 @app.command()
 def validate(
     code: str = typer.Argument(..., help="Workflow code"),
+    check_syntax: bool = typer.Option(True, "--check-syntax/--no-check-syntax", help="Check Jinja2 template syntax (default: True)"),
+    check_vars: bool = typer.Option(False, "--check-vars", help="Check variable definitions are valid"),
 ):
-    """Validate workflow configuration"""
+    """Validate workflow configuration including Jinja2 template syntax"""
     manager = ConfigManager()
     
     if not manager.config_exists("workflow", code):
@@ -331,15 +335,74 @@ def validate(
         console.print(f"[red]✗[/red] Failed to load: {e}")
         raise typer.Exit(1)
     
-    errors = config.validate()
+    all_errors = []
+    warnings = []
     
-    if errors:
-        console.print(f"[red]✗[/red] Validation failed for '{code}':")
-        for error in errors:
-            console.print(f"   - {error}")
+    # Basic validation
+    errors = config.validate()
+    all_errors.extend(errors)
+    
+    # Check Jinja2 syntax
+    if check_syntax and config.format == "jinja2":
+        try:
+            from jinja2 import Template, meta
+            env = Environment()
+            
+            # Try to parse the template
+            try:
+                ast = env.parse(config.template)
+            except Exception as e:
+                # Provide user-friendly error message
+                error_msg = str(e)
+                if "unexpected" in error_msg.lower():
+                    all_errors.append(f"Template syntax error: {error_msg}")
+                elif "expected" in error_msg.lower():
+                    all_errors.append(f"Template syntax error: {error_msg}")
+                else:
+                    all_errors.append(f"Template syntax error: {error_msg}")
+            else:
+                # Check for undefined variables
+                undeclared = meta.find_undeclared_variables(ast)
+                if undeclared:
+                    # These are the variables required by the template
+                    template_vars = sorted(undeclared)
+                    defined_vars = {v.name for v in config.variables}
+                    
+                    # Check which required vars are not defined
+                    missing = set(template_vars) - defined_vars
+                    if missing:
+                        warnings.append(f"Template uses variables not defined: {', '.join(sorted(missing))}")
+                        warnings.append(f"  Add them with: zima workflow add-var {code} --name <var>")
+                    
+                    console.print(f"   [dim]Template variables: {', '.join(template_vars)}[/dim]")
+        except ImportError:
+            pass  # jinja2 not installed
+    
+    # Check variable definitions
+    if check_vars:
+        for var in config.variables:
+            var_errors = var.validate()
+            if var_errors:
+                all_errors.extend([f"Variable '{var.name}': {e}" for e in var_errors])
+    
+    # Output results
+    if all_errors:
+        console.print(f"[red]✗[/red] Validation failed for Workflow '{code}':")
+        for i, error in enumerate(all_errors, 1):
+            console.print(f"   [red]{i}.[/red] {error}")
+        console.print(f"\n[yellow]Fix the above errors and run again.[/yellow]")
         raise typer.Exit(1)
-    else:
-        console.print(f"[green]✓[/green] Workflow '{code}' is valid")
+    
+    # Show success
+    console.print(f"[green]✓[/green] Workflow '{code}' is valid")
+    if check_syntax and config.format == "jinja2":
+        console.print("   [green]•[/green] Jinja2 template syntax is valid")
+    if check_vars:
+        console.print("   [green]•[/green] Variable definitions are valid")
+    
+    # Show warnings
+    for warning in warnings:
+        console.print(f"   [yellow]⚠[/yellow] {warning}")
 
 
 @app.command()
