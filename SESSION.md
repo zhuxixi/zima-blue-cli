@@ -9,6 +9,10 @@
 
 ## Recent Sessions (最近5次)
 
+### Session 12 - 2026-03-29
+
+修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命令构建逻辑重构为调用 AgentConfig.build_command()，确保 --model、--max-steps-per-turn 等参数正确传递。同时将 Kimi agent 的默认模型从 kimi-k2-072515-preview 更新为 kimi-code/kimi-for-coding。
+
 ### Session 11 - 2026-03-28
 
 **Kimi Agent 集成测试与文档更新**
@@ -169,105 +173,23 @@
 - `tests/unit/test_models_env.py`: Env 单元测试
 - `tests/integration/test_env_commands.py`: Env 集成测试
 
-### Session 7 - 2026-03-27
-
-**Workflow 与 Variable 完整实现**
-
-完成 Workflow 和 Variable 配置的设计与实现，包括模型层、CLI 命令和完整测试：
-
-1. **Workflow 设计文档**
-   - 编写 docs/design/WORKFLOW-DESIGN.md（690行）
-   - 定义 Schema：format/template/variables/tags/author/version
-   - 设计 CLI 命令：create/list/show/update/delete/validate/render/add-var
-   - 提供使用示例：问候工作流、代码审查工作流
-
-2. **Workflow 模型实现**
-   - `WorkflowConfig`：Jinja2 模板渲染引擎集成
-   - `VariableDef`：变量定义（name/type/required/default/description）
-   - 模板渲染：支持 Jinja2/Mustache/Plain 三种格式
-   - 变量验证：必填检查、类型验证、嵌套路径支持
-   - Tag 管理：add_tag/remove_tag 方法
-
-3. **Variable 模型实现**
-   - `VariableConfig`：变量值配置管理
-   - 嵌套值访问：get_value/set_value 支持点号路径（如 task.name）
-   - 值合并：merge_values 深度合并字典
-   - 路径扁平化：flatten_values 展开嵌套结构
-   - Workflow 关联：for_workflow 字段指向目标 workflow
-
-4. **Workflow CLI 实现**
-   - `zima workflow create`：支持 --from 复制、@file 模板加载
-   - `zima workflow list`：表格/JSON 输出，--tag 过滤
-   - `zima workflow show`：YAML/JSON 格式详情
-   - `zima workflow update`：更新名称/模板/标签/版本
-   - `zima workflow delete`：删除确认/强制删除
-   - `zima workflow validate`：模板语法验证
-   - `zima workflow render`：使用 Variable 配置或 --var 直接渲染
-   - `zima workflow add-var`：添加变量定义
-
-5. **Variable CLI 实现**
-   - `zima variable create`：支持 --for-workflow 关联
-   - `zima variable list`：--for-workflow 过滤
-   - `zima variable show/update/delete`：标准 CRUD
-   - `zima variable set`：支持 JSON 值、嵌套路径
-   - `zima variable get`：获取变量值
-   - `zima variable validate`：验证配置
-   - `zima variable merge`：合并其他配置的值
-
-6. **测试覆盖**
-   - 单元测试：74 个（Workflow 37 + Variable 37）
-   - 集成测试：55 个（Workflow 30 + Variable 25）
-   - 全部 288 个测试通过
-
-**产出文件**:
-- `docs/design/WORKFLOW-DESIGN.md`: Workflow 设计文档
-- `zima/models/workflow.py`: Workflow 模型
-- `zima/models/variable.py`: Variable 模型
-- `zima/commands/workflow.py`: Workflow CLI
-- `zima/commands/variable.py`: Variable CLI
-- `tests/unit/test_models_workflow.py`: Workflow 单元测试
-- `tests/unit/test_models_variable.py`: Variable 单元测试
-- `tests/integration/test_workflow_commands.py`: Workflow 集成测试
-- `tests/integration/test_variable_commands.py`: Variable 集成测试
-
-### Session 6 - 2026-03-26
-
-**AgentConfig 模型实现与类型精简**
-
-完成 AgentConfig 模型升级，支持多类型并精简类型列表：
-
-1. **AgentConfig 模型实现**
-   - 支持三种类型：kimi、claude、gemini
-   - 类型特定参数模板（每个类型的默认参数）
-   - 命令构建器：`build_command()` 为每种类型生成 CLI 命令
-   - 序列化/反序列化：支持 dict、yaml、文件读写
-   - 验证框架：验证 code、name、type 必填字段
-   - 默认关联管理：get_default() / set_default() 管理 workflow/env/pmg
-
-2. **删除不用的类型**
-   - 从设计文档删除 openai 和 custom 类型
-   - 更新 VALID_AGENT_TYPES 常量
-   - 更新相关测试用例
-   - 现在仅支持：kimi、claude、gemini
-
-3. **新增测试**
-   - 37 个 AgentConfig 单元测试
-   - 覆盖创建、验证、序列化、命令构建、默认值管理
-   - 所有 142 个单元测试通过
-
-**产出文件**:
-- `zima/models/agent.py`: AgentConfig 模型实现
-- `tests/unit/test_models_agent.py`: AgentConfig 单元测试
-
 ## Earlier Sessions (历史会话)
 
+- **Session 7** (2026-03-27): **Workflow 与 Variable 完整实现**
+- **Session 6** (2026-03-26): **AgentConfig 模型实现与类型精简**
+- **Session 5** (2026-03-26): **基础设施与测试框架实现**
 - **Session 5** (2026-03-26): **基础设施与测试框架实现**
 - **Session 4** (2026-03-26): **Zima CLI 接口层设计**
+- **Session 4** (2026-03-26): **Zima CLI 接口层设计**
+- **Session 3** (2026-03-26): **文档整理与同步**
 - **Session 3** (2026-03-26): **文档整理与同步**
 - **Session 2** (2026-03-26): **Zima CLI v2 架构重构**
+- **Session 2** (2026-03-26): **Zima CLI v2 架构重构**
+- **Session 1** (2026-03-26): ZimaBlue CLI MVP 实现与测试 - 完成核心调度器、CLI 命令、后台守护进程模式，验证 example-agent 运行正常
+- **Session 1** (2026-03-26): ZimaBlue CLI MVP 实现与测试 - 完成核心调度器、CLI 命令、后台守护进程模式，验证 example-agent 运行正常
 - **Session 1** (2026-03-26): ZimaBlue CLI MVP 实现与测试 - 完成核心调度器、CLI 命令、后台守护进程模式，验证 example-agent 运行正常
 - **Session 1** (2026-03-26): ZimaBlue CLI MVP 实现与测试 - 完成核心调度器、CLI 命令、后台守护进程模式，验证 example-agent 运行正常
 
 ---
 
-*Total: 11 sessions | Last Updated: 2026-03-28*
+*Total: 19 sessions | Last Updated: 2026-03-29*
