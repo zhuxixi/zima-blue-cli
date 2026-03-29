@@ -868,6 +868,8 @@ def show_history(
         
         console.print(f"Status: [{status_color}]{record.status}[/{status_color}]")
         console.print(f"Return Code: {record.returncode}")
+        if record.pid:
+            console.print(f"PID: {record.pid}")
         console.print(f"Duration: {record.duration_seconds:.1f}s")
         console.print(f"Started: {record.started_at}")
         console.print(f"Finished: {record.finished_at}")
@@ -895,6 +897,7 @@ def show_history(
     table.add_column("ID", style="cyan")
     table.add_column("Status", style="green")
     table.add_column("Return", style="yellow")
+    table.add_column("PID", style="magenta")
     table.add_column("Duration", style="blue")
     table.add_column("Started", style="dim")
     
@@ -910,6 +913,7 @@ def show_history(
             record.execution_id,
             f"[{status_color}]{record.status}[/{status_color}]",
             str(record.returncode),
+            str(record.pid) if record.pid else "-",
             f"{record.duration_seconds:.1f}s",
             record.started_at[:19] if record.started_at else "-",
         )

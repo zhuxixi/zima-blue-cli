@@ -62,6 +62,7 @@ class ExecutionResult:
     finished_at: str = ""
     execution_id: str = ""
     temp_dir: Optional[Path] = None
+    pid: Optional[int] = None  # 执行的进程 PID
     
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -79,6 +80,7 @@ class ExecutionResult:
             "finished_at": self.finished_at,
             "execution_id": self.execution_id,
             "temp_dir": str(self.temp_dir) if self.temp_dir else None,
+            "pid": self.pid,
         }
     
     @property
@@ -179,7 +181,7 @@ class PJobExecutor:
             result.status = ExecutionStatus.RUNNING
             self._current_process = None
             
-            returncode, stdout, stderr = self._run_command(
+            returncode, stdout, stderr, process_pid = self._run_command(
                 command=command,
                 env=env_vars,
                 work_dir=bundle.work_dir,
@@ -189,6 +191,7 @@ class PJobExecutor:
             result.returncode = returncode
             result.stdout = stdout
             result.stderr = stderr
+            result.pid = process_pid
             result.status = ExecutionStatus.SUCCESS if returncode == 0 else ExecutionStatus.FAILED
             
             # 10. Execute post-hooks
@@ -381,12 +384,12 @@ class PJobExecutor:
         env: dict[str, str],
         work_dir: str,
         timeout: int,
-    ) -> tuple[int, str, str]:
+    ) -> tuple[int, str, str, int]:
         """
         Run the main agent command.
         
         Returns:
-            Tuple of (returncode, stdout, stderr)
+            Tuple of (returncode, stdout, stderr, pid)
         """
         import sys
         
@@ -434,7 +437,7 @@ class PJobExecutor:
         
         returncode = process.wait(timeout=timeout if timeout > 0 else None)
         
-        return returncode, "".join(stdout_lines), "".join(stderr_lines)
+        return returncode, "".join(stdout_lines), "".join(stderr_lines), process.pid
     
     def _save_output(self, result: ExecutionResult, output_options) -> None:
         """Save output to file."""

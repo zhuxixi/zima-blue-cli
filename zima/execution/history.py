@@ -40,6 +40,7 @@ class ExecutionRecord:
     stdout_preview: str = ""
     stderr_preview: str = ""
     error_detail: str = ""
+    pid: Optional[int] = None  # 执行的进程 PID
     
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -55,6 +56,7 @@ class ExecutionRecord:
             "stdout_preview": self.stdout_preview,
             "stderr_preview": self.stderr_preview,
             "error_detail": self.error_detail,
+            "pid": self.pid,
         }
     
     @classmethod
@@ -72,6 +74,7 @@ class ExecutionRecord:
             stdout_preview=data.get("stdout_preview", ""),
             stderr_preview=data.get("stderr_preview", ""),
             error_detail=data.get("error_detail", ""),
+            pid=data.get("pid"),
         )
     
     @classmethod
@@ -97,6 +100,7 @@ class ExecutionRecord:
             stdout_preview=stdout_preview,
             stderr_preview=stderr_preview,
             error_detail=error_detail,
+            pid=result.pid,
         )
 
 

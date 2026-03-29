@@ -9,6 +9,25 @@
 
 ## Recent Sessions (最近5次)
 
+### Session 23 - 2026-03-29
+
+添加 Kimi 进程 PID 记录功能。
+
+本次会话完成了以下工作：
+1. **ExecutionResult 添加 pid 字段** - 记录执行进程的 PID
+2. **ExecutionRecord 添加 pid 字段** - 在历史记录中保存 PID
+3. **修改 _run_command 返回 pid** - 捕获并返回子进程 PID
+4. **pjob history 显示 PID** - 在 history 表格和 detail 视图中显示 PID
+
+用途：
+- 当后台执行卡住时，可以通过 `pjob history <code> --detail <id>` 查看 PID
+- 然后使用 `Stop-Process -Id <PID>` (Windows) 或 `kill -9 <PID>` (Unix) 终止进程
+
+涉及文件：
+- zima/execution/executor.py - ExecutionResult 添加 pid 字段，_run_command 返回 pid
+- zima/execution/history.py - ExecutionRecord 添加 pid 字段
+- zima/commands/pjob.py - history 表格和 detail 视图显示 PID
+
 ### Session 22 - 2026-03-29
 
 修复后台执行中的 Windows 平台问题。
