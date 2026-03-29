@@ -202,6 +202,16 @@ class PJobExecutor:
             result.status = ExecutionStatus.TIMEOUT
             result.stderr = "Execution timed out"
             result.error_detail = f"Timeout after {pjob.spec.execution.timeout}s"
+        except KeyboardInterrupt:
+            result.status = ExecutionStatus.CANCELLED
+            result.stderr = "Execution cancelled by user (Ctrl+C)"
+            # Attempt to terminate subprocess gracefully
+            if self._current_process and self._current_process.poll() is None:
+                self._current_process.terminate()
+                try:
+                    self._current_process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self._current_process.kill()
         except Exception as e:
             import traceback
             result.status = ExecutionStatus.FAILED

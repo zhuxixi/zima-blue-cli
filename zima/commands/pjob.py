@@ -434,6 +434,7 @@ def run(
     keep_temp: bool = typer.Option(False, "--keep-temp", help="Keep temporary files"),
     timeout: Optional[int] = typer.Option(None, "--timeout", "-t", help="Override timeout"),
     skip_validation: bool = typer.Option(False, "--skip-validation", help="Skip pre-execution validation"),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress real-time output, only show result"),
 ):
     """Execute a PJob"""
     manager = ConfigManager()
@@ -541,6 +542,11 @@ def run(
         else:
             if result.status.value == "success":
                 console.print(f"\n[green]✓[/green] Execution completed in {result.duration_seconds:.1f}s")
+            elif result.status.value == "cancelled":
+                console.print(f"\n[yellow]⚠[/yellow] Execution cancelled in {result.duration_seconds:.1f}s")
+                if result.stderr:
+                    console.print(Panel(result.stderr, title="[yellow]Info[/yellow]", 
+                                       border_style="yellow"))
             else:
                 console.print(f"\n[red]✗[/red] Execution failed with status: {result.status.value}")
                 if result.returncode != 0:
@@ -555,6 +561,10 @@ def run(
                         border_style="red"
                     ))
         
+    except KeyboardInterrupt:
+        # Handle Ctrl+C at CLI level
+        console.print(f"\n[yellow]⚠[/yellow] Interrupted by user")
+        raise typer.Exit(130)  # Standard exit code for Ctrl+C
     except Exception as e:
         import traceback
         console.print(f"[red]✗[/red] Execution failed: {e}")
