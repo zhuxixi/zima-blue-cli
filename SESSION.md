@@ -9,6 +9,24 @@
 
 ## Recent Sessions (最近5次)
 
+### Session 20 - 2026-03-29
+
+根据 ZIMA_CLI_ISSUES.md 修复多个 P0/P1/P2 问题，并添加 Ctrl+C 优雅中断功能。
+
+本次会话主要完成了以下工作：
+1. **修复 P0 问题 1.1** - 添加详细错误日志，ExecutionResult 和 ExecutionRecord 新增 error_detail 字段存储堆栈跟踪，pjob history --detail 可查看错误详情
+2. **修复 P0 Windows 编码错误** - 添加 Windows stdout/stderr 写入保护，防止 [Errno 22] Invalid argument
+3. **修复 P1 问题 3.1 和 7.2** - 增强 PJob 验证，pjob validate 默认检查所有引用配置，pjob run 执行前验证并自动创建工作目录
+4. **修复 P1/P2 问题 3.2 和 4.2** - workflow validate 添加 Jinja2 语法检查，提供用户友好的错误消息
+5. **修复 P2 问题 7.1** - 新增 zima agent types 命令，列出所有支持的 Agent 类型
+6. **修复 P2 问题 8.1** - 所有 create 命令添加 --force 选项，可覆盖已存在的配置
+7. **修复命令冲突** - workflow create 移除 --force 的 -f 简写，避免与 --format 冲突
+8. **禁用默认超时** - PJob 默认超时改为 0（无超时），适合长时间运行的 Agent 任务
+9. **修复 PMGConfig bug** - 添加缺失的 build_params() 方法
+10. **添加 Ctrl+C 优雅中断** - 捕获 KeyboardInterrupt，优雅终止子进程，记录 CANCELLED 状态
+
+涉及文件：executor.py, history.py, pjob.py, workflow.py, agent.py, pmg.py, variable.py, env.py 等多个文件
+
 ### Session 19 - 2026-03-29
 
 修复 P2 问题 8.1 - Agent 创建重复问题。
@@ -79,28 +97,19 @@
 涉及文件：
 - zima/commands/pjob.py - 重写 validate 和 run 命令的验证逻辑
 
-### Session 15 - 2026-03-29
-
-修复 P0 问题 1.1 - 执行失败无详细日志。
-
-为 PJob 执行引擎添加详细的错误日志记录功能：
-1. ExecutionResult 新增 error_detail 字段用于存储完整堆栈跟踪
-2. ExecutionRecord 同步添加 error_detail 字段，历史记录中保存错误详情
-3. 在 execute() 异常处理中使用 traceback.format_exc() 捕获完整堆栈
-4. pjob history 命令新增 --detail <ID> 参数，可查看特定执行的详细错误
-5. pjob run 命令在执行失败时显示 stderr 和 error_detail 的格式化面板
-6. 错误详情在历史中最多保存 2000 字符，过长自动截断
-
-涉及文件：
-- zima/execution/executor.py - 添加 error_detail 字段和堆栈捕获
-- zima/execution/history.py - ExecutionRecord 添加 error_detail 支持
-- zima/commands/pjob.py - 增强 history 和 run 命令的错误显示
-
 ## Earlier Sessions (历史会话)
 
+- **Session 15** (2026-03-29): 修复 P0 问题 1.1 - 执行失败无详细日志。
+- **Session 14** (2026-03-29): 修复 Windows 下 CLI 命令的 Unicode 编码错误。
 - **Session 14** (2026-03-29): 修复 Windows 下 CLI 命令的 Unicode 编码错误。
 - **Session 13** (2026-03-29): 修复 test_create_kimi_agent 单元测试断言，使其与更新后的 Kimi 默认模型 kimi-c...
 - **Session 13** (2026-03-29): 修复 test_create_kimi_agent 单元测试断言，使其与更新后的 Kimi 默认模型 kimi-c...
+- **Session 13** (2026-03-29): 修复 test_create_kimi_agent 单元测试断言，使其与更新后的 Kimi 默认模型 kimi-c...
+- **Session 13** (2026-03-29): 修复 test_create_kimi_agent 单元测试断言，使其与更新后的 Kimi 默认模型 kimi-c...
+- **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
+- **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
+- **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
+- **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
 - **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
 - **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
 - **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
@@ -113,26 +122,18 @@
 - **Session 11** (2026-03-28): **Kimi Agent 集成测试与文档更新**
 - **Session 11** (2026-03-28): **Kimi Agent 集成测试与文档更新**
 - **Session 11** (2026-03-28): **Kimi Agent 集成测试与文档更新**
+- **Session 11** (2026-03-28): **Kimi Agent 集成测试与文档更新**
+- **Session 11** (2026-03-28): **Kimi Agent 集成测试与文档更新**
+- **Session 11** (2026-03-28): **Kimi Agent 集成测试与文档更新**
+- **Session 11** (2026-03-28): **Kimi Agent 集成测试与文档更新**
+- **Session 11** (2026-03-28): **Kimi Agent 集成测试与文档更新**
+- **Session 11** (2026-03-28): **Kimi Agent 集成测试与文档更新**
+- **Session 11** (2026-03-28): **Kimi Agent 集成测试与文档更新**
+- **Session 11** (2026-03-28): **Kimi Agent 集成测试与文档更新**
 - **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
 - **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
 - **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
 - **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
-- **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
-- **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
-- **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
-- **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
-- **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
-- **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
-- **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
-- **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
-- **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
-- **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
-- **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
-- **Session 10** (2026-03-28): ## Session 10 - PJob Implementation
-- **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
-- **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
-- **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
-- **Session 9** (2026-03-27): **PMG (Parameters Group) 完整实现**
 
 ---
 
