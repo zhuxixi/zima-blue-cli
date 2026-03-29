@@ -399,18 +399,28 @@ class PJobExecutor:
         stdout_lines = []
         stderr_lines = []
         
-        # Stream output in real-time
+        # Stream output in real-time with error protection
         if process.stdout:
             for line in process.stdout:
                 stdout_lines.append(line)
-                sys.stdout.write(line)
-                sys.stdout.flush()
+                try:
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+                except (OSError, IOError) as e:
+                    # Windows may raise [Errno 22] Invalid argument for certain output
+                    # Continue execution without real-time display
+                    pass
         
         if process.stderr:
             for line in process.stderr:
                 stderr_lines.append(line)
-                sys.stderr.write(line)
-                sys.stderr.flush()
+                try:
+                    sys.stderr.write(line)
+                    sys.stderr.flush()
+                except (OSError, IOError) as e:
+                    # Windows may raise [Errno 22] Invalid argument for certain output
+                    # Continue execution without real-time display
+                    pass
         
         returncode = process.wait(timeout=timeout if timeout > 0 else None)
         
