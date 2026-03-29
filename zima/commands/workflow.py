@@ -30,7 +30,7 @@ def create(
     template: Optional[str] = typer.Option(None, "--template", "-t", help="Template content (or @file to load from file)"),
     format: str = typer.Option("jinja2", "--format", "-f", help="Template format: jinja2/mustache/plain"),
     from_code: Optional[str] = typer.Option(None, "--from", help="Copy from existing workflow"),
-    force: bool = typer.Option(False, "--force", "-f", help="Force overwrite if workflow already exists"),
+    force: bool = typer.Option(False, "--force", help="Force overwrite if workflow already exists"),
 ):
     """Create a new workflow"""
     manager = ConfigManager()
