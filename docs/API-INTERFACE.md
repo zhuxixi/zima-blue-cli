@@ -284,6 +284,14 @@ zima pjob render review-task --show-command
 # 执行 PJob
 zima pjob run review-task
 
+# 后台执行（立即返回）
+zima pjob run review-task --background
+zima pjob run review-task -b
+
+# 后台执行并实时跟踪日志
+zima pjob run review-task --background --follow
+zima pjob run review-task -b -f
+
 # 执行并覆盖参数
 zima pjob run review-task \
   --set-param model=kimi-k2-072515-preview \
@@ -683,6 +691,7 @@ RunResult
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v2.2 | 2026-03-29 | 新增 PJob 后台执行 (`--background`, `--follow`) 和输出目录自动处理 |
 | v2.1 | 2026-03-28 | 新增完整 CLI 命令文档 (agent/workflow/variable/env/pmg/pjob) |
 | v2.0 | 2026-03-26 | 简化架构，新增配置实体系统，PJob 执行层 |
 | v1.0 | 2026-03-25 | 初始版本，基础 Agent 管理 |

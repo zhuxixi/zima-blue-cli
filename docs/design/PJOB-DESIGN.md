@@ -420,6 +420,57 @@ kimi \
   --prompt /tmp/zima-pjobs/pjob-daily-code-review-abc123/prompt.md
 ```
 
+### 4.3 后台执行设计
+
+PJob 支持后台执行模式，适用于长时间运行的任务。
+
+#### 后台执行原理
+
+```
+用户: zima pjob run <pjob-code> --background
+    ↓
+CLI: 生成 execution_id 和日志路径
+    ↓
+CLI: 启动 detached 子进程
+    ├─ Windows: creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    └─ Unix: start_new_session=True
+    ↓
+子进程: 执行 PJob (background_runner.py)
+    ↓
+子进程: 输出写入日志文件
+    ↓
+子进程: 完成后更新执行历史
+    ↓
+CLI: 立即返回，显示 PID 和日志路径
+```
+
+#### 后台执行特点
+
+| 特性 | 说明 |
+|------|------|
+| **进程独立** | 后台进程有自己的进程组，不受终端影响 |
+| **日志持久** | 输出写入 `~/.zima/logs/background/<pjob>-<id>.log` |
+| **历史记录** | 完成后自动更新 `zima pjob history` |
+| **Ctrl+C 安全** | 终端关闭不会影响后台进程 |
+
+#### 日志跟踪 (--follow)
+
+使用 `--background --follow` 可以后台运行并实时跟踪日志：
+
+```bash
+# 后台运行并实时跟踪日志
+zima pjob run daily-review --background --follow
+
+# 按 Ctrl+C 停止跟踪（进程继续运行）
+⚠ Stopped following log output.
+   ✓ Background process (PID: 12345) is still running.
+```
+
+跟踪模式特点：
+- 实时显示日志输出（类似 `tail -f`）
+- 按 Ctrl+C 只停止跟踪，不停止后台进程
+- 可随时重新查看日志：`Get-Content <log-path> -Tail 100`
+
 ---
 
 ## 5. 配置组合优先级
@@ -639,8 +690,13 @@ zima pjob run daily-review --set-env "DEBUG=true"
 # 覆盖 Agent 参数
 zima pjob run daily-review --set-param "model=kimi-k1.5"
 
-# 异步执行
-zima pjob run daily-review --async
+# 后台执行（detached 进程，立即返回）
+zima pjob run daily-review --background
+zima pjob run daily-review -b
+
+# 后台执行并实时跟踪日志
+zima pjob run daily-review --background --follow
+zima pjob run daily-review -b -f
 
 # 保留临时文件（调试）
 zima pjob run daily-review --keep-temp
@@ -658,7 +714,8 @@ zima pjob run daily-review --work-dir /path/to/project
 | `--set-env` | | 覆盖环境变量（key=value） |
 | `--set-param` | | 覆盖 Agent 参数（key=value） |
 | `--work-dir` | | 临时指定工作目录 |
-| `--async` | | 异步执行 |
+| `--background` | `-b` | 后台执行（detached 进程） |
+| `--follow` | `-f` | 跟踪日志输出（需配合 `--background`） |
 | `--keep-temp` | | 保留临时文件 |
 | `--timeout` | `-t` | 临时指定超时 |
 

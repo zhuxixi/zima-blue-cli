@@ -435,6 +435,8 @@ def run(
     timeout: Optional[int] = typer.Option(None, "--timeout", "-t", help="Override timeout"),
     skip_validation: bool = typer.Option(False, "--skip-validation", help="Skip pre-execution validation"),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress real-time output, only show result"),
+    background: bool = typer.Option(False, "--background", "-b", help="Run in background (detached process)"),
+    follow: bool = typer.Option(False, "--follow", "-f", help="Follow log output (only valid with --background)"),
 ):
     """Execute a PJob"""
     manager = ConfigManager()
@@ -515,6 +517,89 @@ def run(
     
     # Execute
     executor = PJobExecutor()
+    
+    # Background execution: spawn a detached subprocess
+    if background and not dry_run:
+        import json
+        import subprocess
+        import sys
+        import uuid
+        import time
+        from pathlib import Path
+        
+        execution_id = str(uuid.uuid4())[:8]
+        log_dir = Path.home() / ".zima" / "logs" / "background"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / f"{code}-{execution_id}.log"
+        
+        overrides_json = json.dumps(overrides.to_dict()) if not overrides.is_empty() else "{}"
+        
+        cmd = [
+            sys.executable,
+            "-m",
+            "zima.execution.background_runner",
+            code,
+            "--overrides",
+            overrides_json,
+        ]
+        if keep_temp:
+            cmd.append("--keep-temp")
+        
+        kwargs = {}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            kwargs["start_new_session"] = True
+        
+        with open(log_path, "w", encoding="utf-8") as log_file:
+            process = subprocess.Popen(
+                cmd,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                close_fds=True,
+                **kwargs,
+            )
+        
+        console.print(f"\n[green]✓[/green] PJob '{code}' started in background")
+        console.print(f"   Execution ID: {execution_id}")
+        console.print(f"   Process PID: {process.pid}")
+        console.print(f"   Log file: {log_path}")
+        
+        # Follow log output if requested
+        if follow:
+            console.print(f"\n[blue]ℹ[/blue] Following log output... (Press Ctrl+C to stop following)")
+            console.print(f"   [yellow]Note:[/yellow] The background process will continue running even after you stop following.\n")
+            console.print("─" * 60)
+            
+            try:
+                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                    # Go to end of file
+                    f.seek(0, 2)
+                    
+                    while True:
+                        line = f.readline()
+                        if line:
+                            console.print(line.rstrip())
+                        else:
+                            # Check if process has finished
+                            if process.poll() is not None:
+                                break
+                            time.sleep(0.5)
+            except KeyboardInterrupt:
+                console.print(f"\n\n[yellow]⚠[/yellow] Stopped following log output.")
+                console.print(f"   [green]✓[/green] Background process (PID: {process.pid}) is still running.")
+                console.print(f"   View logs anytime: [bold]Get-Content '{log_path}' -Tail 100[/bold]")
+                console.print(f"   Check history: [bold]zima pjob history {code}[/bold]")
+                raise typer.Exit(0)
+            
+            console.print("─" * 60)
+            console.print(f"\n[green]✓[/green] Background process completed.")
+            console.print(f"   Check result with: [bold]zima pjob history {code}[/bold]")
+        else:
+            console.print(f"   Check history later with: [bold]zima pjob history {code}[/bold]")
+        
+        return
     
     try:
         result = executor.execute(

@@ -452,7 +452,18 @@ class PJobExecutor:
         path = path.replace("{{execution_id}}", result.execution_id)
         
         output_path = Path(path)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # If path is an existing directory, or ends with separator (user intent: directory),
+        # auto-generate a default filename inside it.
+        if output_path.exists() and output_path.is_dir():
+            default_name = f"result-{now.strftime('%Y-%m-%d-%H-%M-%S')}.md"
+            output_path = output_path / default_name
+        elif str(path).endswith(("/", "\\")):
+            output_path.mkdir(parents=True, exist_ok=True)
+            default_name = f"result-{now.strftime('%Y-%m-%d-%H-%M-%S')}.md"
+            output_path = output_path / default_name
+        else:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
         
         # Prepare content
         content = result.stdout
@@ -467,10 +478,16 @@ class PJobExecutor:
         
         # Write file
         mode = "a" if output_options.append else "w"
-        with open(output_path, mode, encoding="utf-8") as f:
-            if output_options.append and output_path.exists():
-                f.write("\n\n---\n\n")
-            f.write(content)
+        try:
+            with open(output_path, mode, encoding="utf-8") as f:
+                if output_options.append and output_path.exists():
+                    f.write("\n\n---\n\n")
+                f.write(content)
+        except PermissionError as e:
+            raise PermissionError(
+                f"Cannot write output to '{output_path}'. "
+                f"If this path is a directory, please specify a file name or remove the directory."
+            ) from e
     
     def cancel(self) -> bool:
         """
