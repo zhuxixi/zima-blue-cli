@@ -547,7 +547,9 @@ def run(
         
         kwargs = {}
         if sys.platform == "win32":
-            kwargs["creationflags"] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+            # CREATE_NO_WINDOW: 不显示控制台窗口（后台静默运行）
+            # CREATE_NEW_PROCESS_GROUP: 创建新进程组，防止接收父进程的Ctrl+C
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
         else:
             kwargs["start_new_session"] = True
         
@@ -580,7 +582,7 @@ def run(
                     while True:
                         line = f.readline()
                         if line:
-                            console.print(line.rstrip())
+                            console.print(line.rstrip(), markup=False)
                         else:
                             # Check if process has finished
                             if process.poll() is not None:

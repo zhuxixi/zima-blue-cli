@@ -9,6 +9,22 @@
 
 ## Recent Sessions (最近5次)
 
+### Session 22 - 2026-03-29
+
+修复后台执行中的 Windows 平台问题。
+
+本次会话完成了以下修复：
+1. **修复新终端弹出问题** - 将 `DETACHED_PROCESS` 改为 `CREATE_NO_WINDOW`，后台执行不再弹出新的控制台窗口
+2. **修复 --follow 日志解析错误** - 日志中的 Rich markup 标签导致 `console.print()` 解析失败，添加 `markup=False` 参数禁用解析
+
+问题原因：
+- `DETACHED_PROCESS` 会创建独立的新进程并弹出新控制台窗口
+- `CREATE_NO_WINDOW` 创建进程但不显示窗口，实现真正的后台静默运行
+
+涉及文件：
+- zima/commands/pjob.py - 修复后台执行标志和 follow 输出
+- zima/core/daemon.py - 同样修复后台进程创建标志
+
 ### Session 21 - 2026-03-29
 
 实现 PJob 后台执行功能并修复输出目录处理 bug。

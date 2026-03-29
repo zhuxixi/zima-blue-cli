@@ -35,7 +35,7 @@ def start_daemon(agent_dir: Path) -> int:
             cmd,
             stdout=open(log_file, "w"),
             stderr=subprocess.STDOUT,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
             close_fds=True
         )
     else:
