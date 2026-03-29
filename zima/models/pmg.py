@@ -600,6 +600,18 @@ class PMGConfig(BaseConfig):
         
         return args
     
+    def build_params(self, eval_conditions: bool = True) -> list[str]:
+        """
+        Build command-line parameters (alias for build_command).
+        
+        Args:
+            eval_conditions: Whether to evaluate conditions
+            
+        Returns:
+            List of command-line arguments
+        """
+        return self.build_command(eval_conditions=eval_conditions)
+    
     def build_command_string(
         self, 
         eval_conditions: bool = True,
