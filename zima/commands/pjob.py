@@ -36,7 +36,7 @@ def create(
     description: str = typer.Option("", "--description", "-d", help="Description"),
     label: Optional[List[str]] = typer.Option(None, "--label", "-l", help="Labels (can be used multiple times)"),
     work_dir: Optional[str] = typer.Option(None, "--work-dir", help="Working directory"),
-    timeout: int = typer.Option(600, "--timeout", "-t", help="Timeout in seconds"),
+    timeout: int = typer.Option(0, "--timeout", "-t", help="Timeout in seconds (0 = no timeout)"),
     output: Optional[str] = typer.Option(None, "--output", "-o", help="Output save path"),
     from_code: Optional[str] = typer.Option(None, "--from-code", help="Copy from existing pjob"),
     force: bool = typer.Option(False, "--force", "-f", help="Force overwrite if PJob already exists"),
@@ -119,7 +119,7 @@ def create(
     exec_options = {}
     if work_dir:
         exec_options["workDir"] = work_dir
-    if timeout != 600:
+    if timeout != 0:
         exec_options["timeout"] = timeout
     
     output_options = {}

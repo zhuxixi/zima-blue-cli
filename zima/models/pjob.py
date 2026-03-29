@@ -23,7 +23,7 @@ class ExecutionOptions:
         async_: Whether to execute asynchronously
     """
     work_dir: str = ""
-    timeout: int = 600
+    timeout: int = 0  # 0 means no timeout
     keep_temp: bool = False
     retries: int = 0
     async_: bool = False
@@ -43,7 +43,7 @@ class ExecutionOptions:
         """Create from dictionary."""
         return cls(
             work_dir=data.get("workDir", ""),
-            timeout=data.get("timeout", 600),
+            timeout=data.get("timeout", 0),
             keep_temp=data.get("keepTemp", False),
             retries=data.get("retries", 0),
             async_=data.get("async", False),
@@ -174,7 +174,7 @@ class PJobSpec:
             result["pmg"] = self.pmg
         if not self.overrides.is_empty():
             result["overrides"] = self.overrides.to_dict()
-        if self.execution.work_dir or self.execution.timeout != 600:
+        if self.execution.work_dir or self.execution.timeout != 0:
             result["execution"] = self.execution.to_dict()
         if self.hooks:
             result["hooks"] = self.hooks

@@ -73,7 +73,7 @@ class TestExecutionOptions:
         opts = ExecutionOptions()
         
         assert opts.work_dir == ""
-        assert opts.timeout == 600
+        assert opts.timeout == 0  # Default: no timeout
         assert opts.keep_temp is False
         assert opts.retries == 0
         assert opts.async_ is False
