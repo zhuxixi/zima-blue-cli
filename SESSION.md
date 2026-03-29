@@ -9,6 +9,25 @@
 
 ## Recent Sessions (最近5次)
 
+### Session 21 - 2026-03-29
+
+实现 PJob 后台执行功能并修复输出目录处理 bug。
+
+本次会话完成了以下工作：
+1. **添加 PJob 后台执行** (`--background` / `-b`) - 启动 detached 子进程执行 PJob，主进程立即返回，适合长时间运行的 Agent 任务
+2. **添加日志跟踪功能** (`--follow` / `-f`) - 配合 `--background` 实时跟踪日志输出，Ctrl+C 停止跟踪但后台进程继续运行
+3. **修复 PermissionError** - `_save_output()` 当 `save_to` 指向已存在的目录时，自动生成 `result-YYYY-MM-DD-HH-MM-SS.md` 文件名
+4. **创建 background_runner.py** - 后台执行模块，负责在 detached 进程中执行 PJob 并记录历史
+5. **更新文档** - API-INTERFACE.md 和 PJOB-DESIGN.md 添加后台执行设计和使用示例
+6. **优化 coverage-workflow** - 添加 50 分钟测试耗时警告和续跑模式，指导 Agent 基于已有分析报告继续工作
+
+涉及文件：
+- zima/commands/pjob.py - 添加 --background 和 --follow 参数
+- zima/execution/background_runner.py - 新建后台执行模块
+- zima/execution/executor.py - 修复 _save_output() 目录处理
+- docs/API-INTERFACE.md - 更新 CLI 文档
+- docs/design/PJOB-DESIGN.md - 添加后台执行设计章节
+
 ### Session 20 - 2026-03-29
 
 根据 ZIMA_CLI_ISSUES.md 修复多个 P0/P1/P2 问题，并添加 Ctrl+C 优雅中断功能。
