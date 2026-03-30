@@ -1,0 +1,425 @@
+apiVersion: zima.io/v1
+kind: Workflow
+metadata:
+  code: coverage-workflow
+  name: Coverage Boost Workflow
+  description: zk-cli 测试覆盖率提升工作流（5模块标准模板）
+spec:
+  format: jinja2
+  template: |
+    # zk-cli 测试覆盖率提升任务
+
+    > ⚠️ **重要提示：完整测试运行耗时约 50 分钟**
+    > 本项目测试覆盖率分析需要运行完整的 pytest 测试套件，预计耗时 **45-60 分钟**。
+    > 不要期望在 2 分钟内完成，这不是性能问题，而是测试本身的特性。
+
+    ---
+
+    ## 背景
+
+    你是 zk-cli 项目的测试覆盖率提升 Agent。
+
+    ### 项目信息
+    - **项目名称**: zk-cli (Zettelkasten CLI)
+    - **项目路径**: {{ project_path }}
+    - **当前整体覆盖率**: {{ current_coverage }}%
+    - **目标覆盖率**: {{ target_coverage }}%
+
+    ### 当前阶段
+    **{{ current_phase }}**: {{ phase_description }}
+
+    ### 前期分析（必须阅读）
+    覆盖率分析报告已生成: `{{ project_path }}/coverage_analysis_report.md`
+    **第一步必须先阅读此报告**，了解：
+    - 当前覆盖情况
+    - 哪些模块零覆盖/低覆盖
+    - 推荐的测试策略
+
+    ### 历史进度
+    {% if session_history %}
+    {{ session_history }}
+    {% else %}
+    暂无历史记录，这是第一轮执行。
+    {% endif %}
+
+    ---
+
+    ## 需求
+
+    ### 主要任务
+    为以下零覆盖/低覆盖模块编写单元测试：
+
+    {% if current_phase == "analyze" %}
+    - **Phase 0**: 分析当前覆盖情况，生成详细报告
+    {% endif %}
+
+    {% if current_phase == "phase1" %}
+    - **Phase 1**: 纯逻辑模块测试
+      - `zk/performance.py` (183行, 0%) - 性能优化、批量处理
+      - `zk/template_cli.py` (180行, 0%) - 模板 CLI 命令
+      - `zk/global_config.py` (149行, 45% → 目标 99%)
+    {% endif %}
+
+    {% if current_phase == "phase2" %}
+    - **Phase 2**: 核心算法模块测试
+      - `zk/kb_manager.py` (121行, 26% → 目标 95%)
+      - `zk/graph.py` (172行, 59% → 目标 80%)
+    {% endif %}
+
+    {% if current_phase == "phase3" %}
+    - **Phase 3**: 业务逻辑模块测试
+      - `zk/template.py` (103行, 77% → 目标 90%)
+      - `zk/indexer.py` (189行, 42% → 目标 70%)
+    {% endif %}
+
+    {% if current_phase == "verify" %}
+    - **验证阶段**: 运行完整测试套件，验证整体覆盖率
+    {% endif %}
+
+    ### 量化指标
+    1. **模块覆盖率**: 每个目标模块 >= 70%
+    2. **测试通过**: 所有测试必须通过 pytest (无 FAILED)
+    3. **整体提升**: 整体覆盖率比当前提升 >= 5%
+    4. **提交要求**: 每个模块验证通过后必须 git commit
+
+    ### 范围边界
+    - ✅ **做**: 
+      - 使用 mock 避免外部依赖（ChromaDB、文件系统）
+      - 纯单元测试，不依赖 subprocess
+      - 每次增量验证覆盖率
+    - ❌ **不做**:
+      - 不修复 CLI 集成测试（另安排）
+      - 不处理 `zk/cli.py`（907行，需单独规划）
+      - 不运行完整测试套件超过 1 次/轮
+
+    ---
+
+    ## 规则（必须严格遵守）
+
+    ### R1 [MUST]: 增量验证规则
+    **每完成一个模块，必须立即验证，不能累积多个模块再验证。**
+    - 验证方法: 检查 git log，每个模块应有独立 commit
+    - 违规后果: 工作无效，需要返工
+
+    ### R2 [MUST]: 真实数据规则
+    **覆盖率数据必须通过实际运行 `pytest --cov` 获取，禁止估计。**
+    - 验证要求: 在响应中粘贴命令输出的覆盖率数据
+    - 禁止行为: "估计覆盖率为 XX%"、"根据代码分析..."
+    - 违规后果: 估计的数据视为无效，必须重新验证
+
+    ### R3 [MUST]: 立即提交规则
+    **每个模块测试通过并验证后，必须立即 `git commit`。**
+    - 提交格式: `test: add unit tests for <module> (X% coverage)`
+    - 违规后果: 未提交的模块视为未完成
+
+    ### R4 [MUST]: 工作量控制规则
+    **不要在一轮中完成所有工作，控制每轮工作量。**
+    - 限制: 每轮最多完成 2 个模块
+    - 检查: 如果已完成 2 个模块，主动停止，等待下一轮
+    - 违规后果: 工作量过大可能导致超时，工作丢失
+
+    ### R5 [MUST]: 必须使用工具规则
+    **所有文件操作必须通过工具完成，禁止在思考中模拟。**
+    - 要求: 使用 read_file/write_file/edit_file
+    - 违规后果: 思考中的代码视为未写入，工作无效
+
+    ### R6 [MUST]: 验收强制规则
+    **所有验收步骤必须执行，禁止跳过。**
+    - 验收不通过时: 分析原因 → 修复 → 重新验收
+    - 违规后果: 未经验收的工作视为未完成
+
+    ---
+
+    ## 验收过程（必须执行）
+
+    ### 验收 1: 模块级验收（每模块一次）
+
+    **触发时机**: 完成单个模块的测试编写
+
+    **验收步骤**:
+
+    #### 1.1 单元测试通过性验证
+    ```bash
+    cd {{ project_path }}
+    pytest tests/test_<module>_unit.py -v 2>&1 | tee test_<module>_result.log
+    ```
+    **通过标准**:
+    - 所有测试状态为 PASSED
+    - 无 FAILED/ERROR
+    - 输出格式: `X passed in Ys`
+
+    **必须在响应中粘贴输出结果**
+
+    #### 1.2 模块覆盖率验证
+    ```bash
+    cd {{ project_path }}
+    pytest tests/test_<module>_unit.py --cov=zk.<module> --cov-report=term-missing 2>&1 | tee cov_<module>_result.log
+    ```
+    **通过标准**:
+    - Cover >= 70%
+    - 记录实际 Cover 数值
+
+    **必须在响应中粘贴覆盖率报告**
+
+    #### 1.3 代码质量检查
+    - [ ] 测试代码有明确断言（assert）
+    - [ ] 使用了合适的 mock（避免外部依赖）
+    - [ ] 测试命名规范（test_<function>_<scenario>）
+
+    **验收后动作**:
+    ```bash
+    cd {{ project_path }}
+    git add tests/test_<module>_unit.py
+    git commit -m "test: add unit tests for <module> (X% coverage)"
+    ```
+
+    ---
+
+    ### 验收 2: 阶段级验收（每阶段一次）
+
+    **触发时机**: 完成阶段内所有模块
+
+    **验收步骤**:
+
+    #### 2.1 集成测试验证
+    ```bash
+    cd {{ project_path }}
+    pytest tests/test_*_unit.py -v 2>&1 | tee phase_test_result.log
+    ```
+    **通过标准**: 全部通过，无冲突
+
+    #### 2.2 阶段覆盖率验证
+    ```bash
+    cd {{ project_path }}
+    pytest tests/test_*_unit.py --cov=zk --cov-report=term-missing 2>&1 | tee phase_cov_result.log
+    ```
+    **通过标准**:
+    - 阶段目标模块 Cover >= 70%
+    - 整体覆盖率提升 >= 5%
+
+    #### 2.3 提交记录验证
+    ```bash
+    cd {{ project_path }}
+    git log --oneline --since="本轮开始时间"
+    ```
+    **通过标准**: 每个模块有独立 commit
+
+    **验收后动作**:
+    - 更新 SESSION.md
+    - 标记阶段完成
+
+    ---
+
+    {% if current_phase == "analyze" %}
+
+    ### 分析阶段具体验收
+
+    1. **收集测试信息**
+       ```bash
+       cd {{ project_path }}
+       pytest tests/ --collect-only -q | head -20
+       ```
+
+    2. **生成覆盖率报告**
+       ```bash
+       cd {{ project_path }}
+       pytest tests/ -v --cov=zk --cov-report=term-missing --cov-report=html --timeout=3600
+       ```
+
+    3. **分析报告**
+       - 识别零覆盖模块
+       - 识别低覆盖模块
+       - 估算提升到 50% 需要的工作量
+
+    {% endif %}
+
+    {% if current_phase == "verify" %}
+
+    ### 最终验收（验证阶段）
+
+    #### 3.1 完整测试套件
+    ```bash
+    cd {{ project_path }}
+    pytest tests/test_*_unit.py -v --tb=short 2>&1 | tee final_test.log
+    ```
+
+    #### 3.2 最终覆盖率
+    ```bash
+    cd {{ project_path }}
+    pytest tests/test_*_unit.py --cov=zk --cov-report=term-missing --cov-report=html 2>&1 | tee final_cov.log
+    ```
+
+    #### 3.3 检查目标达成
+    - [ ] 整体覆盖率 >= {{ target_coverage }}%
+    - [ ] 所有新测试通过
+    - [ ] HTML 报告已生成
+
+    {% endif %}
+
+    ---
+
+    ## 结束指标（必须全部满足才能结束）
+
+    ### 强制自检清单
+    在结束任务前，必须逐项检查并标记：
+
+    ```markdown
+    ## 完成自检清单
+
+    ### 模块完成情况
+    - [ ] 所有计划模块的测试已编写完成
+      - 验证: `ls tests/test_*_unit.py`
+      - 结果: __个测试文件
+
+    ### 覆盖率验证
+    - [ ] 每个模块覆盖率已通过 `pytest --cov` 验证 >= 70%
+      - 验证: `pytest tests/test_*_unit.py --cov=zk --cov-report=term-missing`
+      - 结果: 粘贴输出...
+
+    - [ ] 所有测试通过 pytest（无失败）
+      - 验证: `pytest tests/test_*_unit.py -v`
+      - 结果: X passed, 0 failed
+
+    - [ ] 整体覆盖率提升 >= 5%（已验证）
+      - 之前: {{ current_coverage }}%
+      - 之后: ___%
+      - 提升: +___%
+
+    ### 代码管理
+    - [ ] 所有更改已 git commit
+      - 验证: `git log --oneline -5`
+      - 结果: ___个 commit
+
+    - [ ] SESSION.md 已创建/更新
+      - 验证: `cat SESSION.md`
+      - 结果: 已记录
+    ```
+
+    ### 禁止结束的情况
+    如果发现以下任一情况，**立即停止结束流程**，继续工作：
+
+    | 情况 | 处理方案 |
+    |------|---------|
+    | 有测试失败未修复 | 修复失败测试，重新验收 |
+    | 覆盖率未实际验证 | 执行 `pytest --cov`，获取真实数据 |
+    | 有未提交的更改 | 执行 `git add` + `git commit` |
+    | 还有计划模块未完成 | 继续完成剩余模块 |
+    | 整体覆盖率提升 < 5% | 补充测试，提升覆盖率 |
+
+    ### 结束前必须执行的命令
+
+    ```bash
+    cd {{ project_path }}
+
+    # 1. 运行所有新测试
+    echo "=== 测试通过性验证 ==="
+    pytest tests/test_*_unit.py -v 2>&1 | tail -20
+
+    # 2. 验证整体覆盖率
+    echo "=== 覆盖率验证 ==="
+    pytest tests/test_*_unit.py --cov=zk --cov-report=term-missing 2>&1 | tail -30
+
+    # 3. 检查 git 状态
+    echo "=== Git 状态 ==="
+    git status
+
+    # 4. 确认提交记录
+    echo "=== 提交记录 ==="
+    git log --oneline -5
+    ```
+
+    **只有以上全部勾选后才能输出总结！**
+
+    ### 任务完成总结格式
+
+    任务真正完成后，按以下格式输出总结：
+
+    ```markdown
+    ## ✅ 任务完成验证
+
+    ### 实际完成的模块
+    | 模块 | 测试数 | 实际覆盖率 |
+    |------|--------|-----------|
+    | ...  | ...    | ...       |
+
+    ### 验收验证结果
+    - 单元测试通过率: X/Y (100%)
+    - 整体覆盖率: X% → Y% (+Z%)
+    - Git 提交: 已提交 X 个 commit
+
+    ### 命令输出证据
+    [粘贴 pytest 输出]
+
+    ### 下一步建议
+    （仅建议，不执行）
+    - 建议下一阶段...
+    ```
+
+    ---
+
+    ## 注意事项
+
+    ### 时间管理建议
+
+    | 任务 | 预计耗时 | 建议 |
+    |------|----------|------|
+    | 运行完整覆盖率分析 | 45-60 分钟 | 仅在 analyze/verify 阶段执行 |
+    | 编写单个模块单元测试 | 10-20 分钟 | 分多轮完成 |
+    | 增量覆盖率验证 | 1-2 分钟 | 每模块必做 |
+    | 最终完整验证 | 45-60 分钟 | verify 阶段执行 |
+
+    ### 续跑模式说明
+
+    如果无法在一次会话中完成：
+    1. 确保当前模块已验证并提交
+    2. 更新 SESSION.md 记录进度
+    3. 下一轮从下一个模块继续
+
+    ### 问题处理
+
+    **如果测试运行超时**:
+    - 减少单次运行的测试数量
+    - 使用 `pytest -x` 遇到第一个失败就停止
+    - 分批次运行测试
+
+    **如果覆盖率不达标**:
+    - 检查未覆盖的代码行
+    - 针对性补充测试用例
+    - 使用 `pytest --cov-report=term-missing` 查看缺失
+
+  variables:
+    - name: current_phase
+      type: string
+      required: true
+      description: 当前执行阶段 (analyze/phase1/phase2/phase3/verify)
+    - name: target_coverage
+      type: number
+      required: true
+      description: 目标覆盖率百分比
+    - name: project_path
+      type: string
+      required: true
+      description: 项目绝对路径
+    - name: current_coverage
+      type: number
+      required: false
+      default: 34
+      description: 当前整体覆盖率
+    - name: phase_description
+      type: string
+      required: false
+      default: ""
+      description: 当前阶段描述
+    - name: session_history
+      type: string
+      required: false
+      default: ""
+      description: 历史执行记录
+  tags:
+    - coverage
+    - testing
+    - zk-cli
+    - 5-module-template
+  author: zima-team
+  version: "2.0.0"
+updatedAt: '2026-03-30T09:30:00Z'
