@@ -181,11 +181,15 @@ class PJobExecutor:
             result.status = ExecutionStatus.RUNNING
             self._current_process = None
             
+            # For Claude Code, pipe the prompt file as stdin
+            stdin_file = prompt_file if bundle.agent.needs_stdin_pipe else None
+
             returncode, stdout, stderr, process_pid = self._run_command(
                 command=command,
                 env=env_vars,
                 work_dir=bundle.work_dir,
                 timeout=pjob.spec.execution.timeout,
+                stdin_file=stdin_file,
             )
             
             result.returncode = returncode
@@ -384,60 +388,82 @@ class PJobExecutor:
         env: dict[str, str],
         work_dir: str,
         timeout: int,
+        stdin_file: Optional[Path] = None,
     ) -> tuple[int, str, str, int]:
         """
         Run the main agent command.
-        
+
+        Args:
+            command: Command arguments
+            env: Environment variables
+            work_dir: Working directory
+            timeout: Timeout in seconds (0 = no timeout)
+            stdin_file: Optional file to pipe as stdin (for Claude Code)
+
         Returns:
             Tuple of (returncode, stdout, stderr, pid)
         """
         import sys
-        
+
         cwd = work_dir if work_dir and Path(work_dir).exists() else None
-        
-        # Run command with real-time output
-        process = subprocess.Popen(
-            command,
-            env=env,
-            cwd=cwd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-        
-        self._current_process = process
-        
-        stdout_lines = []
-        stderr_lines = []
-        
-        # Stream output in real-time with error protection
-        if process.stdout:
-            for line in process.stdout:
-                stdout_lines.append(line)
+
+        # Open stdin file if provided (e.g., for Claude Code prompt piping)
+        stdin_handle = None
+        if stdin_file and stdin_file.exists():
+            stdin_handle = open(stdin_file, "r", encoding="utf-8")
+
+        try:
+            # Run command with real-time output
+            process = subprocess.Popen(
+                command,
+                env=env,
+                cwd=cwd,
+                stdin=stdin_handle,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+
+            self._current_process = process
+
+            stdout_lines = []
+            stderr_lines = []
+
+            # Stream output in real-time with error protection
+            if process.stdout:
+                for line in process.stdout:
+                    stdout_lines.append(line)
+                    try:
+                        sys.stdout.write(line)
+                        sys.stdout.flush()
+                    except (OSError, IOError) as e:
+                        # Windows may raise [Errno 22] Invalid argument for certain output
+                        # Continue execution without real-time display
+                        pass
+
+            if process.stderr:
+                for line in process.stderr:
+                    stderr_lines.append(line)
+                    try:
+                        sys.stderr.write(line)
+                        sys.stderr.flush()
+                    except (OSError, IOError) as e:
+                        # Windows may raise [Errno 22] Invalid argument for certain output
+                        # Continue execution without real-time display
+                        pass
+
+            returncode = process.wait(timeout=timeout if timeout > 0 else None)
+
+            return returncode, "".join(stdout_lines), "".join(stderr_lines), process.pid
+        finally:
+            # Ensure stdin file handle is closed
+            if stdin_handle:
                 try:
-                    sys.stdout.write(line)
-                    sys.stdout.flush()
-                except (OSError, IOError) as e:
-                    # Windows may raise [Errno 22] Invalid argument for certain output
-                    # Continue execution without real-time display
+                    stdin_handle.close()
+                except (OSError, IOError):
                     pass
-        
-        if process.stderr:
-            for line in process.stderr:
-                stderr_lines.append(line)
-                try:
-                    sys.stderr.write(line)
-                    sys.stderr.flush()
-                except (OSError, IOError) as e:
-                    # Windows may raise [Errno 22] Invalid argument for certain output
-                    # Continue execution without real-time display
-                    pass
-        
-        returncode = process.wait(timeout=timeout if timeout > 0 else None)
-        
-        return returncode, "".join(stdout_lines), "".join(stderr_lines), process.pid
     
     def _save_output(self, result: ExecutionResult, output_options) -> None:
         """Save output to file."""
