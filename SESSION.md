@@ -9,6 +9,54 @@
 
 ## Recent Sessions (最近5次)
 
+### Session 24 - 2026-03-30
+
+优化 Zima CLI，添加 Agent 提示词模板框架支持。
+
+**问题分析**:
+基于 coverage-pjob 执行情况，发现 Agent 提示词模板存在以下问题：
+1. 缺乏强制验证步骤 - Agent 估计覆盖率而未实际运行 pytest
+2. 结束条件不明确 - Agent 自主判断完成，可能过早结束
+3. 缺少验收机制 - 没有明确的指标计算流程
+4. 规则约束力弱 - 提示为建议性质，Agent 可选择性执行
+
+**解决方案**:
+设计了 5 大模块的 Agent 提示词模板框架：
+1. 背景 (Context) - 宏观背景信息
+2. 需求 (Requirements) - 明确任务目标和指标
+3. 规则 (Rules) - 必须遵守的硬性约束
+4. 验收过程 (Verification) - 如何验证指标的具体命令
+5. 结束指标 (Completion Criteria) - 明确结束条件
+
+**代码实现**:
+1. `zima/models/workflow.py` - 添加 `STANDARD_AGENT_SECTIONS` 和模板结构验证方法
+2. `zima/commands/workflow.py` - 添加 `check-structure` 命令，增强 `validate` 和 `show` 命令
+3. `docs/AGENT-PROMPT-TEMPLATE.md` - 模板框架设计文档
+4. `docs/AGENT-PROMPT-TEMPLATE-DETAIL.md` - 详细设计文档
+
+**新增功能**:
+```bash
+# 检查 workflow 模板结构完整性
+zima workflow check-structure coverage-workflow
+
+# validate 命令自动检查结构
+zima workflow validate coverage-workflow
+
+# show 命令显示结构分析
+zima workflow show coverage-workflow
+```
+
+**验证结果**:
+coverage-workflow 当前结构完整性: 40%
+- 已有: 需求、验收过程
+- 缺少: 背景、规则、结束指标
+
+涉及文件：
+- zima/models/workflow.py - 模板结构验证
+- zima/commands/workflow.py - CLI 命令增强
+- docs/AGENT-PROMPT-TEMPLATE.md - 设计文档
+- docs/AGENT-PROMPT-TEMPLATE-DETAIL.md - 详细设计
+
 ### Session 23 - 2026-03-29
 
 添加 Kimi 进程 PID 记录功能。

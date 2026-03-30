@@ -18,6 +18,19 @@ VALID_TEMPLATE_FORMATS = {"jinja2", "mustache", "plain"}
 # Valid variable types
 VALID_VARIABLE_TYPES = {"string", "number", "boolean", "array", "object"}
 
+# Standard template sections for agent task workflow
+STANDARD_AGENT_SECTIONS = {
+    "required": ["背景", "需求", "规则", "验收过程", "结束指标"],
+    "optional": ["注意事项", "参考资料", "时间管理建议"],
+    "aliases": {
+        "背景": ["背景", "Context", "context", "项目背景"],
+        "需求": ["需求", "Requirements", "requirements", "任务", "目标"],
+        "规则": ["规则", "Rules", "rules", "约束", "守则"],
+        "验收过程": ["验收过程", "Verification", "verification", "验收", "验证"],
+        "结束指标": ["结束指标", "Completion Criteria", "completion criteria", "完成条件"],
+    }
+}
+
 
 @dataclass
 class VariableDef:
@@ -431,3 +444,102 @@ class WorkflowConfig(BaseConfig):
         """Add a variable definition."""
         self.variables.append(variable)
         self.update_timestamp()
+    
+    def validate_template_structure(self, enforce_standard: bool = False) -> list[str]:
+        """
+        Validate template structure for agent task workflows.
+        
+        Checks if the template contains required sections for the 
+        5-module framework (背景, 需求, 规则, 验收过程, 结束指标).
+        
+        Args:
+            enforce_standard: If True, strictly enforce all 5 required sections
+            
+        Returns:
+            List of validation error messages (empty if valid)
+        """
+        errors = []
+        
+        if not self.template:
+            errors.append("Template is empty")
+            return errors
+        
+        template_lower = self.template.lower()
+        
+        # Check for required sections
+        for section in STANDARD_AGENT_SECTIONS["required"]:
+            aliases = STANDARD_AGENT_SECTIONS["aliases"].get(section, [section])
+            found = False
+            
+            for alias in aliases:
+                # Check for markdown heading format: ## Section
+                patterns = [
+                    f"## {alias}",
+                    f"## {alias}（",
+                    f"## {alias}(",
+                    f"## {alias}\n",
+                    f"## {alias} ",
+                ]
+                if any(pattern.lower() in template_lower for pattern in patterns):
+                    found = True
+                    break
+            
+            if not found:
+                errors.append(f"Missing required section: '{section}' (or its aliases: {aliases})")
+        
+        return errors
+    
+    def get_template_completeness(self) -> dict[str, any]:
+        """
+        Get template completeness analysis.
+        
+        Returns:
+            Dictionary with completeness metrics
+        """
+        result = {
+            "has_all_required_sections": False,
+            "missing_sections": [],
+            "present_sections": [],
+            "optional_sections_present": [],
+            "completeness_score": 0.0,
+        }
+        
+        if not self.template:
+            return result
+        
+        template_lower = self.template.lower()
+        
+        # Check required sections
+        required_count = 0
+        for section in STANDARD_AGENT_SECTIONS["required"]:
+            aliases = STANDARD_AGENT_SECTIONS["aliases"].get(section, [section])
+            found = False
+            
+            for alias in aliases:
+                patterns = [f"## {alias}", f"## {alias}（", f"## {alias}(", f"## {alias}\n", f"## {alias} "]
+                if any(pattern.lower() in template_lower for pattern in patterns):
+                    found = True
+                    break
+            
+            if found:
+                required_count += 1
+                result["present_sections"].append(section)
+            else:
+                result["missing_sections"].append(section)
+        
+        # Check optional sections
+        for section in STANDARD_AGENT_SECTIONS["optional"]:
+            aliases = [section, section.lower()]
+            for alias in aliases:
+                if f"## {alias}".lower() in template_lower:
+                    result["optional_sections_present"].append(section)
+                    break
+        
+        result["has_all_required_sections"] = required_count == len(STANDARD_AGENT_SECTIONS["required"])
+        result["completeness_score"] = required_count / len(STANDARD_AGENT_SECTIONS["required"])
+        
+        return result
+    
+    def is_standard_agent_template(self) -> bool:
+        """Check if this workflow follows the standard 5-module agent template."""
+        return len(self.validate_template_structure()) == 0

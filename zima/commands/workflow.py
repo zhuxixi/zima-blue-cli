@@ -109,18 +109,34 @@ def create(
             console.print(f"   - {error}")
         raise typer.Exit(1)
     
-    # 8. Save
+    # 8. Check template structure (new: 5-module framework validation)
+    completeness = config.get_template_completeness()
+    if template_content:  # Only check if template is provided
+        if completeness["has_all_required_sections"]:
+            console.print(f"[green]✓[/green] Template structure: 5-module framework complete")
+        else:
+            console.print(f"[yellow]⚠[/yellow] Template structure incomplete ({completeness['completeness_score']:.0%})")
+            if completeness["missing_sections"]:
+                console.print(f"   Missing sections: {', '.join(completeness['missing_sections'])}")
+            console.print(f"   [dim]Tip: Use standard 5-module structure: 背景/需求/规则/验收过程/结束指标")
+            console.print(f"   [dim]See: docs/AGENT-PROMPT-TEMPLATE.md for best practices")
+    
+    # 9. Save
     try:
         manager.save_config("workflow", code, config.to_dict())
     except Exception as e:
         console.print(f"[red]✗[/red] Failed to save: {e}")
         raise typer.Exit(1)
     
-    # 9. Output success
+    # 10. Output success
     console.print(f"[green]✓[/green] Workflow '{code}' created successfully")
     console.print(f"   Name: {name}")
     console.print(f"   Format: {format}")
     console.print(f"   File: {manager.get_config_path('workflow', code)}")
+    if completeness["has_all_required_sections"]:
+        console.print(f"   [green]✓[/green] Standard agent template (5 modules)")
+    elif template_content:
+        console.print(f"   [yellow]⚠[/yellow] Template structure: {completeness['completeness_score']:.0%} complete")
 
 
 @app.command()
@@ -181,9 +197,83 @@ def list(
 
 
 @app.command()
+def check_structure(
+    code: str = typer.Argument(..., help="Workflow code"),
+    fix: bool = typer.Option(False, "--fix", help="Interactively fix missing sections"),
+):
+    """Check workflow template structure against 5-module framework"""
+    manager = ConfigManager()
+    
+    if not manager.config_exists("workflow", code):
+        console.print(f"[red]✗[/red] Workflow '{code}' not found")
+        raise typer.Exit(1)
+    
+    try:
+        config_data = manager.load_config("workflow", code)
+        config = WorkflowConfig.from_dict(config_data)
+    except Exception as e:
+        console.print(f"[red]✗[/red] Failed to load: {e}")
+        raise typer.Exit(1)
+    
+    if not config.template:
+        console.print(f"[yellow]⚠[/yellow] Workflow '{code}' has no template")
+        raise typer.Exit(1)
+    
+    # Get completeness analysis
+    completeness = config.get_template_completeness()
+    
+    # Display results
+    console.print(f"\n[bold]Workflow:[/bold] {code}")
+    console.print(f"[bold]Template Structure Analysis:[/bold]\n")
+    
+    # Overall status
+    if completeness["has_all_required_sections"]:
+        console.print(f"[green]✓[/green] [bold]Status:[/bold] 5-module framework complete")
+        console.print(f"   All required sections are present.\n")
+    else:
+        score = completeness["completeness_score"]
+        if score >= 0.6:
+            console.print(f"[yellow]⚠[/yellow] [bold]Status:[/bold] Partially complete ({score:.0%})")
+        else:
+            console.print(f"[red]✗[/red] [bold]Status:[/bold] Incomplete ({score:.0%})")
+        console.print()
+    
+    # Required sections
+    console.print("[bold]Required Sections (5-Module Framework):[/bold]")
+    for section in ["背景", "需求", "规则", "验收过程", "结束指标"]:
+        if section in completeness["present_sections"]:
+            console.print(f"   [green]✓[/green] {section}")
+        else:
+            console.print(f"   [red]✗[/red] {section} [dim]- Missing[/dim]")
+    
+    # Optional sections
+    if completeness["optional_sections_present"]:
+        console.print(f"\n[bold]Optional Sections Present:[/bold]")
+        for section in completeness["optional_sections_present"]:
+            console.print(f"   [dim]• {section}[/dim]")
+    
+    # Recommendations
+    console.print(f"\n[bold]Recommendations:[/bold]")
+    if completeness["has_all_required_sections"]:
+        console.print("   [green]✓[/green] Template follows best practices for Agent tasks")
+    else:
+        console.print("   [yellow]→[/yellow] Consider adding missing sections:")
+        for section in completeness["missing_sections"]:
+            console.print(f"      • {section}")
+        console.print(f"\n   [dim]See: docs/AGENT-PROMPT-TEMPLATE.md for guidance[/dim]")
+    
+    # Fix mode (future enhancement)
+    if fix and not completeness["has_all_required_sections"]:
+        console.print(f"\n[yellow]Fix mode not yet implemented.[/yellow]")
+        console.print(f"[dim]Manually edit the workflow to add missing sections:[/dim]")
+        console.print(f"[dim]  zima workflow update {code} --template @file.yaml[/dim]")
+
+
+@app.command()
 def show(
     code: str = typer.Argument(..., help="Workflow code"),
     output_format: str = typer.Option("yaml", "--format", help="Output format: yaml/json"),
+    show_structure: bool = typer.Option(True, "--structure/--no-structure", help="Show template structure analysis (default: True)"),
 ):
     """Show workflow details"""
     manager = ConfigManager()
@@ -193,18 +283,42 @@ def show(
         raise typer.Exit(1)
     
     try:
-        config = manager.load_config("workflow", code)
+        config_data = manager.load_config("workflow", code)
+        config = WorkflowConfig.from_dict(config_data)
     except Exception as e:
         console.print(f"[red]✗[/red] Failed to load: {e}")
         raise typer.Exit(1)
     
+    # Show template structure analysis
+    if show_structure and config.template:
+        console.print(f"\n[bold]Template Structure Analysis:[/bold]")
+        completeness = config.get_template_completeness()
+        
+        if completeness["has_all_required_sections"]:
+            console.print(f"[green]✓[/green] 5-module framework complete (100%)")
+        else:
+            score = completeness["completeness_score"]
+            if score >= 0.6:
+                color = "yellow"
+            else:
+                color = "red"
+            console.print(f"[{color}]⚠[/{color}] Structure: {score:.0%} complete")
+        
+        if completeness["present_sections"]:
+            console.print(f"   [green]✓[/green] Present: {', '.join(completeness['present_sections'])}")
+        if completeness["missing_sections"]:
+            console.print(f"   [red]✗[/red] Missing: {', '.join(completeness['missing_sections'])}")
+        if completeness["optional_sections_present"]:
+            console.print(f"   [dim]Optional: {', '.join(completeness['optional_sections_present'])}[/dim]")
+        console.print()
+    
     if output_format == "json":
         import json
-        console.print(json.dumps(config, indent=2, ensure_ascii=False))
+        console.print(json.dumps(config_data, indent=2, ensure_ascii=False))
     else:
         # YAML format with syntax highlighting
         import yaml
-        yaml_content = yaml.safe_dump(config, sort_keys=False, allow_unicode=True)
+        yaml_content = yaml.safe_dump(config_data, sort_keys=False, allow_unicode=True)
         console.print(Syntax(yaml_content, "yaml"))
 
 
@@ -330,8 +444,9 @@ def validate(
     code: str = typer.Argument(..., help="Workflow code"),
     check_syntax: bool = typer.Option(True, "--check-syntax/--no-check-syntax", help="Check Jinja2 template syntax (default: True)"),
     check_vars: bool = typer.Option(False, "--check-vars", help="Check variable definitions are valid"),
+    check_structure: bool = typer.Option(True, "--check-structure/--no-check-structure", help="Check 5-module template structure (default: True)"),
 ):
-    """Validate workflow configuration including Jinja2 template syntax"""
+    """Validate workflow configuration including Jinja2 template syntax and 5-module structure"""
     manager = ConfigManager()
     
     if not manager.config_exists("workflow", code):
@@ -403,12 +518,26 @@ def validate(
         console.print(f"\n[yellow]Fix the above errors and run again.[/yellow]")
         raise typer.Exit(1)
     
+    # Check template structure (5-module framework)
+    if check_structure and config.template:
+        completeness = config.get_template_completeness()
+        if completeness["has_all_required_sections"]:
+            console.print(f"   [green]•[/green] Template structure: 5-module framework complete")
+        else:
+            console.print(f"   [yellow]•[/yellow] Template structure: {completeness['completeness_score']:.0%} complete")
+            if completeness["missing_sections"]:
+                console.print(f"     [dim]Missing sections: {', '.join(completeness['missing_sections'])}[/dim]")
+            if completeness["present_sections"]:
+                console.print(f"     [dim]Present sections: {', '.join(completeness['present_sections'])}[/dim]")
+    
     # Show success
     console.print(f"[green]✓[/green] Workflow '{code}' is valid")
     if check_syntax and config.format == "jinja2":
         console.print("   [green]•[/green] Jinja2 template syntax is valid")
     if check_vars:
         console.print("   [green]•[/green] Variable definitions are valid")
+    if check_structure and config.template and completeness["has_all_required_sections"]:
+        console.print("   [green]•[/green] Standard agent template (5 modules)")
     
     # Show warnings
     for warning in warnings:
