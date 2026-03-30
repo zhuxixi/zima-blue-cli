@@ -11,7 +11,7 @@
 
 ### Session 24 - 2026-03-30
 
-优化 Zima CLI，添加 Agent 提示词模板框架支持。
+优化 Zima CLI，添加 Agent 提示词模板框架支持，并重构 coverage-workflow。
 
 **问题分析**:
 基于 coverage-pjob 执行情况，发现 Agent 提示词模板存在以下问题：
@@ -46,16 +46,35 @@ zima workflow validate coverage-workflow
 zima workflow show coverage-workflow
 ```
 
+**重构 coverage-workflow**:
+- 版本从 1.0.0 升级到 2.0.0
+- 添加完整的 5 大模块（背景、需求、规则、验收过程、结束指标）
+- 添加 R1-R6 强制规则（增量验证、真实数据、立即提交、工作量控制、工具使用、验收强制）
+- 添加三级验收机制（模块级、阶段级、最终验收）
+- 添加强制自检清单和禁止结束情况
+- 更新变量配置，添加 current_coverage、phase_description、session_history 等变量
+
 **验证结果**:
-coverage-workflow 当前结构完整性: 40%
-- 已有: 需求、验收过程
-- 缺少: 背景、规则、结束指标
+```
+✓ 5-module framework complete (100%)
+
+Required Sections:
+  ✓ 背景
+  ✓ 需求
+  ✓ 规则
+  ✓ 验收过程
+  ✓ 结束指标
+
+Optional: 注意事项、时间管理建议
+```
 
 涉及文件：
 - zima/models/workflow.py - 模板结构验证
 - zima/commands/workflow.py - CLI 命令增强
 - docs/AGENT-PROMPT-TEMPLATE.md - 设计文档
 - docs/AGENT-PROMPT-TEMPLATE-DETAIL.md - 详细设计
+- ~/.zima/configs/workflows/coverage-workflow.yaml - 重构后的工作流
+- ~/.zima/configs/variables/coverage-vars.yaml - 更新后的变量配置
 
 ### Session 23 - 2026-03-29
 
