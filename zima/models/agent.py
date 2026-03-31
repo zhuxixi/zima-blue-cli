@@ -25,11 +25,14 @@ AGENT_PARAMETER_TEMPLATES = {
     "claude": {
         "model": "claude-sonnet-4-6",
         "maxTurns": 100,
-        "plan": False,
-        "acceptEdits": False,
+        "permissionMode": "plan",
+        "outputFormat": "stream-json",
+        "allowedTools": [],
+        "disallowedTools": [],
+        "systemPrompt": "",
+        "appendSystemPrompt": "",
         "workDir": "./workspace",
         "addDirs": [],
-        "outputFormat": "text",
     },
     "gemini": {
         "model": "gemini-2.5-flash",
@@ -198,13 +201,13 @@ class AgentConfig(BaseConfig):
     def get_cli_command_template(self) -> list[str]:
         """
         Get base CLI command template for this agent type.
-        
+
         Returns:
             Base command list (e.g., ["kimi", "--print", "--yolo"])
         """
         templates = {
             "kimi": ["kimi", "--print", "--yolo"],
-            "claude": ["claude", "--print"],
+            "claude": ["claude", "-p"],
             "gemini": ["gemini", "--yolo"],
         }
         return templates.get(self.type, [])
@@ -241,16 +244,23 @@ class AgentConfig(BaseConfig):
         elif self.type == "gemini":
             cmd = self._build_gemini_command(cmd, params)
         
-        # Add common parameters
+        # Add prompt file - agent-type-specific handling
+        # Claude Code: prompt passed via stdin pipe, not as CLI argument
+        # Kimi: uses --prompt flag
+        # Gemini: uses positional argument
         if prompt_file:
-            cmd.extend(["--prompt", str(prompt_file)])
-        
+            if self.type == "kimi":
+                cmd.extend(["--prompt", str(prompt_file)])
+            elif self.type == "gemini":
+                cmd.extend(["-p", str(prompt_file)])
+            # Claude: prompt_file is passed via stdin pipe by the executor, not added to cmd
+
         if work_dir:
             if self.type == "gemini":
                 cmd.extend(["--worktree", str(work_dir)])
             else:
                 cmd.extend(["--work-dir", str(work_dir)])
-        
+
         return cmd
     
     def _build_kimi_command(self, cmd: list[str], params: dict) -> list[str]:
@@ -277,26 +287,57 @@ class AgentConfig(BaseConfig):
         return cmd
     
     def _build_claude_command(self, cmd: list[str], params: dict) -> list[str]:
-        """Build Claude-specific command arguments."""
+        """Build Claude Code-specific command arguments.
+
+        Claude Code CLI flags (from official docs):
+          -p              : Print mode (non-interactive), reads prompt from stdin
+          --model         : Model selection (sonnet, opus, haiku, or full name)
+          --max-turns     : Limit agentic turns (print mode only)
+          --permission-mode : Unattended execution (plan, bypassPermissions, etc.)
+          --output-format : Output format (text, json, stream-json)
+          --allowedTools  : Tool whitelist
+          --disallowedTools : Tool blacklist
+          --system-prompt : Replace system prompt
+          --append-system-prompt : Append to default system prompt
+          --add-dir       : Additional working directories
+          --verbose       : Verbose logging (debug)
+          --max-tokens    : Max output tokens
+        """
         if params.get("model"):
             cmd.extend(["--model", str(params["model"])])
-        
+
         if params.get("maxTurns"):
             cmd.extend(["--max-turns", str(params["maxTurns"])])
-        
-        if params.get("plan"):
-            cmd.append("--plan")
-        
-        if params.get("acceptEdits"):
-            cmd.append("--accept-edits")
-        
+
+        if params.get("permissionMode"):
+            cmd.extend(["--permission-mode", str(params["permissionMode"])])
+
+        if params.get("outputFormat"):
+            cmd.extend(["--output-format", str(params["outputFormat"])])
+
+        if params.get("allowedTools"):
+            tools = params["allowedTools"]
+            if isinstance(tools, list) and tools:
+                cmd.extend(["--allowedTools", ",".join(str(t) for t in tools)])
+
+        if params.get("disallowedTools"):
+            tools = params["disallowedTools"]
+            if isinstance(tools, list) and tools:
+                cmd.extend(["--disallowedTools", ",".join(str(t) for t in tools)])
+
+        if params.get("systemPrompt"):
+            cmd.extend(["--system-prompt", str(params["systemPrompt"])])
+
+        if params.get("appendSystemPrompt"):
+            cmd.extend(["--append-system-prompt", str(params["appendSystemPrompt"])])
+
         # Handle addDirs
         for add_dir in params.get("addDirs", []):
             cmd.extend(["--add-dir", str(add_dir)])
-        
-        if params.get("outputFormat"):
-            cmd.extend(["--output-format", str(params["outputFormat"])])
-        
+
+        if params.get("verbose"):
+            cmd.append("--verbose")
+
         return cmd
     
     def _build_gemini_command(self, cmd: list[str], params: dict) -> list[str]:
@@ -318,7 +359,12 @@ class AgentConfig(BaseConfig):
             cmd.extend(["--output-format", str(params["outputFormat"])])
         
         return cmd
-    
+
+    @property
+    def needs_stdin_pipe(self) -> bool:
+        """Whether this agent type receives prompt via stdin pipe instead of CLI argument."""
+        return self.type == "claude"
+
     def get_default(self, key: str, default: any = None) -> any:
         """
         Get default workflow/variable/env/pmg reference.

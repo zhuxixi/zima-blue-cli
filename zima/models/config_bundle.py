@@ -248,46 +248,31 @@ class ConfigBundle:
     ) -> list[str]:
         """
         Build the complete agent command.
-        
+
+        Delegates type-specific command building to AgentConfig.build_command()
+        which handles each agent's unique CLI flags and prompt passing mechanism.
+        Then appends PMG parameters on top.
+
         Args:
             prompt_file: Path to the rendered prompt file
             work_dir: Override work directory (optional)
-            
+
         Returns:
             Command as list of arguments (for subprocess)
         """
-        # Get agent binary
-        agent_type = self.agent.type
-        
-        # Build base command
-        cmd = [agent_type]
-        
-        # Add print/non-interactive flag
-        if agent_type == "kimi":
-            cmd.append("--print")
-        elif agent_type == "claude":
-            cmd.append("--print")
-        elif agent_type == "gemini":
-            cmd.append("-p")
-        
-        # Add PMG parameters
-        params = self.build_agent_params()
-        cmd.extend(params)
-        
-        # Add work directory
+        # Resolve work_dir: explicit param > bundle's resolved dir
         wd = work_dir or self.work_dir
-        if wd and wd != ".":
-            if agent_type in ("kimi", "claude"):
-                cmd.extend(["--work-dir", wd])
-            elif agent_type == "gemini":
-                cmd.extend(["--worktree", wd])
-        
-        # Add prompt file
-        if agent_type in ("kimi",):
-            cmd.extend(["--prompt", str(prompt_file)])
-        elif agent_type in ("claude", "gemini"):
-            cmd.extend(["-p", str(prompt_file)])
-        
+
+        # Delegate to AgentConfig for type-specific command building
+        cmd = self.agent.build_command(
+            prompt_file=prompt_file,
+            work_dir=Path(wd) if wd and wd != "." else None,
+        )
+
+        # Append PMG parameters (generic, agent-agnostic)
+        pmg_params = self.build_agent_params()
+        cmd.extend(pmg_params)
+
         return cmd
     
     def to_summary(self) -> dict:

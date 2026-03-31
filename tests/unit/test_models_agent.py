@@ -273,9 +273,9 @@ class TestAgentConfigCommandBuilding(TestIsolator):
         """Test getting Claude command template."""
         config = AgentConfig.create("test", "Test", "claude")
         template = config.get_cli_command_template()
-        
+
         assert "claude" in template
-        assert "--print" in template
+        assert "-p" in template
     
     def test_get_cli_template_gemini(self):
         """Test getting Gemini command template."""
@@ -320,14 +320,16 @@ class TestAgentConfigCommandBuilding(TestIsolator):
             "claude",
             parameters={"maxTurns": 50}
         )
-        
+
         cmd = config.build_command(
-            prompt_file="/tmp/prompt.md",
-            work_dir="/tmp/workspace"
+            prompt_file=Path("/tmp/prompt.md"),
+            work_dir=Path("/tmp/workspace")
         )
-        
+
         assert "claude" in cmd
-        assert "--prompt" in cmd
+        assert "-p" in cmd
+        # Claude receives prompt via stdin pipe, not --prompt flag
+        assert "--prompt" not in cmd
         assert "--work-dir" in cmd
         assert "--max-turns" in cmd
         assert "50" in cmd
@@ -340,14 +342,14 @@ class TestAgentConfigCommandBuilding(TestIsolator):
             "gemini",
             parameters={"model": "gemini-pro"}
         )
-        
+
         cmd = config.build_command(
-            prompt_file="/tmp/prompt.md",
-            work_dir="/tmp/workspace"
+            prompt_file=Path("/tmp/prompt.md"),
+            work_dir=Path("/tmp/workspace")
         )
-        
+
         assert "gemini" in cmd
-        assert "--prompt" in cmd
+        assert "-p" in cmd  # Gemini uses -p for prompt file
         assert "--worktree" in cmd  # Gemini uses --worktree
         assert "-m" in cmd
         assert "gemini-pro" in cmd
