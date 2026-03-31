@@ -62,6 +62,8 @@ class ExecutionResult:
     finished_at: str = ""
     execution_id: str = ""
     temp_dir: Optional[Path] = None
+    prompt_file: Optional[Path] = None  # Rendered workflow prompt file
+    prompt_content: str = ""  # Rendered workflow content (kept for dry-run)
     pid: Optional[int] = None  # 执行的进程 PID
     
     def to_dict(self) -> dict:
@@ -158,6 +160,7 @@ class PJobExecutor:
             
             # 4. Render workflow template
             prompt_file = self._render_workflow(bundle, temp_dir)
+            result.prompt_file = prompt_file
             
             # 5. Resolve environment variables
             env_vars = self._resolve_env(bundle)
@@ -167,10 +170,12 @@ class PJobExecutor:
             command = bundle.build_command(prompt_file)
             result.command = command
             
-            # 7. Dry run - just return
+            # 7. Dry run - capture prompt content and return
             if dry_run:
                 result.status = ExecutionStatus.SUCCESS
                 result.stdout = f"DRY RUN: Would execute:\n{' '.join(command)}"
+                if prompt_file and prompt_file.exists():
+                    result.prompt_content = prompt_file.read_text(encoding="utf-8")
                 result.finished_at = generate_timestamp()
                 return result
             
@@ -231,6 +236,7 @@ class PJobExecutor:
             if temp_dir and not (keep_temp or pjob.spec.execution.keep_temp):
                 shutil.rmtree(temp_dir, ignore_errors=True)
                 result.temp_dir = None
+                result.prompt_file = None
             
             self._current_process = None
         

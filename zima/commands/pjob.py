@@ -624,7 +624,16 @@ def run(
         # Output result
         if dry_run:
             console.print(Panel("[bold yellow]DRY RUN[/bold yellow]"))
-            console.print("Command that would be executed:")
+
+            # Show rendered workflow prompt
+            if result.prompt_content:
+                console.print(Panel(
+                    result.prompt_content,
+                    title="[bold]Rendered Workflow[/bold]",
+                    border_style="blue",
+                ))
+
+            console.print("\nCommand that would be executed:")
             console.print(Syntax(" ".join(result.command), "bash"))
             console.print("\nEnvironment variables:")
             # Sensitive key patterns to mask in dry-run output
