@@ -517,7 +517,11 @@ def run(
     
     # Execute
     executor = PJobExecutor()
-    
+
+    # Respect async config from PJob if background not explicitly set
+    if not background and config.spec.execution.async_ and not dry_run:
+        background = True
+
     # Background execution: spawn a detached subprocess
     if background and not dry_run:
         import json
@@ -623,8 +627,20 @@ def run(
             console.print("Command that would be executed:")
             console.print(Syntax(" ".join(result.command), "bash"))
             console.print("\nEnvironment variables:")
+            # Sensitive key patterns to mask in dry-run output
+            import re
+            _SENSITIVE_RE = re.compile(
+                r'(TOKEN|SECRET|PASSWORD|CREDENTIAL|PRIVATE_KEY|API_KEY|_PAT\b)',
+                re.IGNORECASE,
+            )
+            # Exclude path-like variables that happen to contain sensitive keywords
+            _PATH_RE = re.compile(r'(^PATH$|_PATH$|C_INCLUDE|EXEPATH|POSH_THEMES)', re.IGNORECASE)
             for key, value in result.env.items():
-                if not key.lower().endswith("key"):
+                is_sensitive = bool(_SENSITIVE_RE.search(key)) and not _PATH_RE.search(key)
+                if is_sensitive:
+                    masked = value[:8] + "***" if len(value) > 8 else "***"
+                    console.print(f"  {key}={masked}")
+                else:
                     console.print(f"  {key}={value}")
         else:
             if result.status.value == "success":

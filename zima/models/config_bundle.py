@@ -157,13 +157,17 @@ class ConfigBundle:
     def get_variable_values(self) -> dict:
         """
         Get merged variable values for template rendering.
-        
+
         Returns:
             Dictionary of variable values
         """
+        values = {}
         if self.variable:
-            return self.variable.values.copy()
-        return {}
+            values = self.variable.values.copy()
+        # Merge runtime overrides (from --set-var) even without a Variable config
+        if self.overrides and self.overrides.variable_values:
+            self._deep_update(values, self.overrides.variable_values)
+        return values
     
     def get_env_variables(self) -> dict[str, str]:
         """
@@ -263,10 +267,16 @@ class ConfigBundle:
         # Resolve work_dir: explicit param > bundle's resolved dir
         wd = work_dir or self.work_dir
 
+        # Resolve "." to absolute path so agents (e.g. kimi) don't fall back
+        # to their own defaults like "workspace"
+        resolved_wd = None
+        if wd:
+            resolved_wd = Path(wd).resolve() if wd == "." else Path(wd)
+
         # Delegate to AgentConfig for type-specific command building
         cmd = self.agent.build_command(
             prompt_file=prompt_file,
-            work_dir=Path(wd) if wd and wd != "." else None,
+            work_dir=resolved_wd,
         )
 
         # Append PMG parameters (generic, agent-agnostic)
