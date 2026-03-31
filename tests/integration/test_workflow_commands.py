@@ -4,6 +4,7 @@ import pytest
 from typer.testing import CliRunner
 from zima.cli import app
 from tests.base import TestIsolator
+from tests.conftest import strip_ansi
 
 
 runner = CliRunner()
@@ -341,8 +342,8 @@ class TestWorkflowRender(TestIsolator):
         ])
         
         assert result.exit_code == 0
-        assert "Hello World!" in result.output
-    
+        assert "Hello World!" in strip_ansi(result.output)
+
     def test_render_with_variable_config(self):
         """Test rendering with variable config."""
         # Create workflow
@@ -372,8 +373,8 @@ class TestWorkflowRender(TestIsolator):
         ])
         
         assert result.exit_code == 0
-        assert "Task: Test Task" in result.output
-    
+        assert "Task: Test Task" in strip_ansi(result.output)
+
     def test_render_validation_failure(self):
         """Test render with validation failure."""
         runner.invoke(app, [
@@ -417,7 +418,7 @@ class TestWorkflowAddVar(TestIsolator):
         ])
         
         assert result.exit_code == 0
-        assert "Variable 'new_var' added" in result.output
+        assert "Variable 'new_var' added" in strip_ansi(result.output)
 
 
 class TestWorkflowLifecycle(TestIsolator):
@@ -455,8 +456,8 @@ class TestWorkflowLifecycle(TestIsolator):
             "--var", "name=World"
         ])
         assert result.exit_code == 0
-        assert "Hello World!" in result.output
-        
+        assert "Hello World!" in strip_ansi(result.output)
+
         # Update
         result = runner.invoke(app, [
             "workflow", "update", "lifecycle-wf",

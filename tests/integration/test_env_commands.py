@@ -4,6 +4,7 @@ import pytest
 from typer.testing import CliRunner
 from zima.cli import app
 from tests.base import TestIsolator
+from tests.conftest import strip_ansi
 
 
 runner = CliRunner()
@@ -340,8 +341,9 @@ class TestEnvSet(TestIsolator):
         ])
         
         assert result.exit_code == 0
-        assert "Variable 'MY_VAR' set" in result.output
-        assert "my_value" in result.output
+        clean = strip_ansi(result.output)
+        assert "Variable 'MY_VAR' set" in clean
+        assert "my_value" in clean
     
     def test_set_secret_env_source(self, monkeypatch):
         """Test setting secret with env source."""
@@ -363,8 +365,9 @@ class TestEnvSet(TestIsolator):
         ])
         
         assert result.exit_code == 0
-        assert "Secret 'API_KEY' set" in result.output
-    
+        clean = strip_ansi(result.output)
+        assert "Secret 'API_KEY' set" in clean
+
     def test_set_secret_file_source(self, tmp_path):
         """Test setting secret with file source."""
         key_file = tmp_path / "key.txt"
@@ -386,8 +389,9 @@ class TestEnvSet(TestIsolator):
         ])
         
         assert result.exit_code == 0
-        assert "Secret 'API_KEY' set" in result.output
-    
+        clean = strip_ansi(result.output)
+        assert "Secret 'API_KEY' set" in clean
+
     def test_set_secret_missing_source_field(self):
         """Test setting secret without required source field."""
         runner.invoke(app, [
@@ -500,7 +504,8 @@ class TestEnvGet(TestIsolator):
         ])
         
         assert result.exit_code == 0
-        assert "<secret:env>" in result.output
+        clean = strip_ansi(result.output)
+        assert "<secret:env>" in clean
     
     def test_get_secret_resolved(self, monkeypatch):
         """Test getting secret with --resolve."""
@@ -553,8 +558,9 @@ class TestEnvExport(TestIsolator):
         ])
         
         assert result.exit_code == 0
-        assert "KEY1=value1" in result.output
-    
+        clean = strip_ansi(result.output)
+        assert "KEY1=value1" in clean
+
     def test_export_shell(self):
         """Test exporting as shell script."""
         runner.invoke(app, [
@@ -575,8 +581,9 @@ class TestEnvExport(TestIsolator):
         ])
         
         assert result.exit_code == 0
-        assert "#!/bin/bash" in result.output
-        assert "export KEY1=" in result.output
+        clean = strip_ansi(result.output)
+        assert "#!/bin/bash" in clean
+        assert "export KEY1=" in clean
     
     def test_export_json(self):
         """Test exporting as JSON."""
@@ -598,7 +605,8 @@ class TestEnvExport(TestIsolator):
         ])
         
         assert result.exit_code == 0
-        assert '"KEY1": "value1"' in result.output
+        clean = strip_ansi(result.output)
+        assert '"KEY1": "value1"' in clean
     
     def test_export_to_file(self, tmp_path):
         """Test exporting to file."""
@@ -710,7 +718,8 @@ class TestEnvLifecycle(TestIsolator):
             "--key", "API_KEY"
         ])
         assert result.exit_code == 0
-        assert "<secret:" in result.output
+        clean = strip_ansi(result.output)
+        assert "<secret:" in clean
         
         # Get (resolved)
         result = runner.invoke(app, [
@@ -719,15 +728,17 @@ class TestEnvLifecycle(TestIsolator):
             "--resolve"
         ])
         assert result.exit_code == 0
-        assert "sk-test-key" in result.output
-        
+        clean = strip_ansi(result.output)
+        assert "sk-test-key" in clean
+
         # Export
         result = runner.invoke(app, [
             "env", "export", "lifecycle-env",
             "--format", "dotenv"
         ])
         assert result.exit_code == 0
-        assert "TIMEOUT=30" in result.output
+        clean = strip_ansi(result.output)
+        assert "TIMEOUT=30" in clean
         
         # Update
         result = runner.invoke(app, [

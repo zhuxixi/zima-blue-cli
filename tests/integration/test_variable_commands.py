@@ -4,6 +4,7 @@ import pytest
 from typer.testing import CliRunner
 from zima.cli import app
 from tests.base import TestIsolator
+from tests.conftest import strip_ansi
 
 
 runner = CliRunner()
@@ -486,5 +487,6 @@ class TestVariableWorkflowLifecycle(TestIsolator):
         ])
         
         assert result.exit_code == 0
-        assert "Task: Integration Test" in result.output
-        assert "step1, step2, step3" in result.output
+        clean = strip_ansi(result.output)
+        assert "Task: Integration Test" in clean
+        assert "step1, step2, step3" in clean
