@@ -13,7 +13,7 @@ def safe_print(text: str) -> None:
         print(text)
     except UnicodeEncodeError:
         # Fall back to ASCII-only on encoding errors
-        ascii_text = text.encode('ascii', 'ignore').decode('ascii')
+        ascii_text = text.encode("ascii", "ignore").decode("ascii")
         print(ascii_text)
 
 
@@ -21,7 +21,7 @@ def icon(name: str) -> str:
     """Get an icon (or empty string on Windows to avoid encoding issues)"""
     if sys.platform == "win32":
         return ""
-    
+
     icons = {
         "rocket": "🚀",
         "stop": "⏹️",
@@ -45,11 +45,11 @@ def icon(name: str) -> str:
 def get_zima_home() -> Path:
     """
     Get Zima home directory.
-    
+
     Priority:
     1. ZIMA_HOME environment variable
     2. ~/.zima (default)
-    
+
     Returns:
         Path to Zima home directory
     """
@@ -62,7 +62,7 @@ def get_zima_home() -> Path:
 def get_config_dir() -> Path:
     """
     Get configuration directory.
-    
+
     Returns:
         Path to configs directory (e.g., ~/.zima/configs)
     """
@@ -72,7 +72,7 @@ def get_config_dir() -> Path:
 def get_agents_config_dir() -> Path:
     """
     Get agents configuration directory.
-    
+
     Returns:
         Path to agents configs directory
     """
@@ -105,27 +105,27 @@ def get_pmgs_config_dir() -> Path:
 
 
 # Code format: lowercase letters, numbers, hyphens; must start with letter, cannot end with hyphen
-CODE_PATTERN = re.compile(r'^[a-z][a-z0-9-]*$')
+CODE_PATTERN = re.compile(r"^[a-z][a-z0-9-]*$")
 CODE_MAX_LENGTH = 64
 
 
 def validate_code(code: str) -> bool:
     """
     Validate configuration code format.
-    
+
     Rules:
     - Must start with lowercase letter
     - Can contain lowercase letters, numbers, and hyphens
     - Cannot end with hyphen
     - Maximum 64 characters
     - No underscores, uppercase letters, or special chars
-    
+
     Args:
         code: The code string to validate
-        
+
     Returns:
         True if valid, False otherwise
-        
+
     Examples:
         >>> validate_code("test-agent")  # True
         >>> validate_code("Test-Agent")  # False (uppercase)
@@ -137,7 +137,7 @@ def validate_code(code: str) -> bool:
         return False
     if len(code) > CODE_MAX_LENGTH:
         return False
-    if code.endswith('-'):
+    if code.endswith("-"):
         return False
     return bool(CODE_PATTERN.match(code))
 
@@ -145,7 +145,7 @@ def validate_code(code: str) -> bool:
 def validate_code_with_error(code: str) -> tuple[bool, str]:
     """
     Validate code and return error message if invalid.
-    
+
     Returns:
         Tuple of (is_valid, error_message)
     """
@@ -153,7 +153,7 @@ def validate_code_with_error(code: str) -> tuple[bool, str]:
         return False, "Code cannot be empty"
     if len(code) > CODE_MAX_LENGTH:
         return False, f"Code too long (max {CODE_MAX_LENGTH} characters)"
-    if code.endswith('-'):
+    if code.endswith("-"):
         return False, "Code cannot end with hyphen"
     if not CODE_PATTERN.match(code):
         return False, (
@@ -172,7 +172,7 @@ def validate_code_with_error(code: str) -> tuple[bool, str]:
 def generate_timestamp() -> str:
     """
     Generate ISO 8601 timestamp.
-    
+
     Returns:
         ISO 8601 formatted string (e.g., "2026-03-26T14:30:00Z")
     """
@@ -182,15 +182,15 @@ def generate_timestamp() -> str:
 def format_timestamp(timestamp: str) -> str:
     """
     Format ISO timestamp for display.
-    
+
     Args:
         timestamp: ISO 8601 timestamp string
-        
+
     Returns:
         Human readable format (e.g., "2026-03-26 14:30")
     """
     try:
-        dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+        dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
         return dt.strftime("%Y-%m-%d %H:%M")
     except (ValueError, AttributeError):
         return timestamp
@@ -204,10 +204,10 @@ def format_timestamp(timestamp: str) -> str:
 def ensure_dir(path: Path) -> Path:
     """
     Ensure directory exists, create if not.
-    
+
     Args:
         path: Directory path
-        
+
     Returns:
         The directory path
     """
@@ -218,10 +218,10 @@ def ensure_dir(path: Path) -> Path:
 def safe_delete(path: Path) -> bool:
     """
     Safely delete a file or directory.
-    
+
     Args:
         path: Path to delete
-        
+
     Returns:
         True if deleted or didn't exist, False on error
     """
@@ -230,6 +230,7 @@ def safe_delete(path: Path) -> bool:
             path.unlink()
         elif path.is_dir():
             import shutil
+
             shutil.rmtree(path)
         return True
     except Exception:
@@ -247,10 +248,10 @@ VALID_AGENT_TYPES = {"kimi", "claude", "gemini"}
 def validate_agent_type(agent_type: str) -> bool:
     """
     Validate agent type.
-    
+
     Args:
         agent_type: Type string to validate
-        
+
     Returns:
         True if valid agent type
     """

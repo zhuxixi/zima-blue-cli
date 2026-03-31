@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import json
-import pytest
 from pathlib import Path
 
-from zima.models.agent import AgentConfig, CycleResult
+import pytest
+
 from zima.core.claude_runner import ClaudeRunner
+from zima.models.agent import AgentConfig
 
 
 class TestClaudeAgentConfig:
@@ -184,7 +184,13 @@ class TestClaudeRunnerParsing:
             {"type": "assistant", "message": {"content": [{"type": "text", "text": "Working..."}]}},
             {"type": "tool_use", "name": "Bash", "input": {"command": "ls"}},
             {"type": "tool_result", "content": "file1.txt\nfile2.txt"},
-            {"type": "result", "subtype": "success", "cost_usd": 0.05, "duration_ms": 5000, "session_id": "abc123"},
+            {
+                "type": "result",
+                "subtype": "success",
+                "cost_usd": 0.05,
+                "duration_ms": 5000,
+                "session_id": "abc123",
+            },
         ]
 
         result = runner._extract_result(events, returncode=0)
@@ -231,9 +237,15 @@ class TestClaudeRunnerParsing:
     def test_extract_summary_from_assistant(self, runner):
         """Test extracting summary from last assistant message."""
         events = [
-            {"type": "assistant", "message": {"content": [{"type": "text", "text": "First message"}]}},
+            {
+                "type": "assistant",
+                "message": {"content": [{"type": "text", "text": "First message"}]},
+            },
             {"type": "tool_use", "name": "Bash", "input": {"command": "ls"}},
-            {"type": "assistant", "message": {"content": [{"type": "text", "text": "Task completed successfully"}]}},
+            {
+                "type": "assistant",
+                "message": {"content": [{"type": "text", "text": "Task completed successfully"}]},
+            },
             {"type": "result", "subtype": "success", "cost_usd": 0.05, "duration_ms": 5000},
         ]
 

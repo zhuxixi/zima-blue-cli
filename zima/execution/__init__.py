@@ -1,11 +1,11 @@
 """Execution engine for PJob."""
 
-from .executor import PJobExecutor, ExecutionResult, ExecutionStatus
+from .executor import ExecutionResult, ExecutionStatus, PJobExecutor
 from .history import ExecutionHistory, ExecutionRecord
 
 __all__ = [
     "PJobExecutor",
-    "ExecutionResult", 
+    "ExecutionResult",
     "ExecutionStatus",
     "ExecutionHistory",
     "ExecutionRecord",

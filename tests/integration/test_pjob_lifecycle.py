@@ -1,34 +1,33 @@
 """Integration tests for PJob lifecycle."""
 
 import pytest
-from pathlib import Path
 from typer.testing import CliRunner
 
 from zima.cli import app
 from zima.config.manager import ConfigManager
 from zima.models.agent import AgentConfig
-from zima.models.workflow import WorkflowConfig
-from zima.models.variable import VariableConfig
 from zima.models.env import EnvConfig
 from zima.models.pmg import PMGConfig
+from zima.models.variable import VariableConfig
+from zima.models.workflow import WorkflowConfig
 
 runner = CliRunner()
 
 
 class TestPJobLifecycle:
     """Test PJob complete lifecycle."""
-    
+
     @pytest.fixture(autouse=True)
     def setup_isolation(self, monkeypatch, tmp_path):
         """Set up isolated test environment."""
         monkeypatch.setenv("ZIMA_HOME", str(tmp_path))
         self.temp_dir = tmp_path
         self.manager = ConfigManager()
-        
+
         # Create required directories
         for kind in ["agents", "workflows", "variables", "envs", "pmgs", "pjobs"]:
             (tmp_path / "configs" / kind).mkdir(parents=True, exist_ok=True)
-    
+
     def create_test_agent(self, code="test-agent"):
         """Helper to create test agent."""
         config = AgentConfig.create(
@@ -39,7 +38,7 @@ class TestPJobLifecycle:
         )
         self.manager.save_config("agent", code, config.to_dict())
         return config
-    
+
     def create_test_workflow(self, code="test-workflow"):
         """Helper to create test workflow."""
         config = WorkflowConfig.create(
@@ -49,7 +48,7 @@ class TestPJobLifecycle:
         )
         self.manager.save_config("workflow", code, config.to_dict())
         return config
-    
+
     def create_test_variable(self, code="test-var"):
         """Helper to create test variable."""
         config = VariableConfig.create(
@@ -59,7 +58,7 @@ class TestPJobLifecycle:
         )
         self.manager.save_config("variable", code, config.to_dict())
         return config
-    
+
     def create_test_env(self, code="test-env"):
         """Helper to create test env."""
         config = EnvConfig.create(
@@ -70,7 +69,7 @@ class TestPJobLifecycle:
         )
         self.manager.save_config("env", code, config.to_dict())
         return config
-    
+
     def create_test_pmg(self, code="test-pmg"):
         """Helper to create test pmg."""
         config = PMGConfig.create(
@@ -80,361 +79,523 @@ class TestPJobLifecycle:
         )
         self.manager.save_config("pmg", code, config.to_dict())
         return config
-    
+
     def test_create_pjob(self):
         """Test creating PJob."""
         # Create dependencies
         self.create_test_agent()
         self.create_test_workflow()
-        
-        result = runner.invoke(app, [
-            "pjob", "create",
-            "--name", "Test PJob",
-            "--code", "test-pjob",
-            "--agent", "test-agent",
-            "--workflow", "test-workflow",
-        ])
-        
+
+        result = runner.invoke(
+            app,
+            [
+                "pjob",
+                "create",
+                "--name",
+                "Test PJob",
+                "--code",
+                "test-pjob",
+                "--agent",
+                "test-agent",
+                "--workflow",
+                "test-workflow",
+            ],
+        )
+
         assert result.exit_code == 0
         assert "created successfully" in result.output
         assert "test-pjob" in result.output
-    
+
     def test_create_pjob_missing_agent_fails(self):
         """Test creating PJob with missing agent fails."""
         self.create_test_workflow()
-        
-        result = runner.invoke(app, [
-            "pjob", "create",
-            "--name", "Test PJob",
-            "--code", "test-pjob",
-            "--agent", "missing-agent",
-            "--workflow", "test-workflow",
-        ])
-        
+
+        result = runner.invoke(
+            app,
+            [
+                "pjob",
+                "create",
+                "--name",
+                "Test PJob",
+                "--code",
+                "test-pjob",
+                "--agent",
+                "missing-agent",
+                "--workflow",
+                "test-workflow",
+            ],
+        )
+
         assert result.exit_code != 0
         assert "not found" in result.output
-    
+
     def test_list_pjobs(self):
         """Test listing PJobs."""
         # Create dependencies
         self.create_test_agent()
         self.create_test_workflow()
-        
+
         # Create a PJob
-        runner.invoke(app, [
-            "pjob", "create",
-            "--name", "Test PJob",
-            "--code", "test-pjob",
-            "--agent", "test-agent",
-            "--workflow", "test-workflow",
-            "--label", "test",
-            "--label", "auto",
-        ])
-        
+        runner.invoke(
+            app,
+            [
+                "pjob",
+                "create",
+                "--name",
+                "Test PJob",
+                "--code",
+                "test-pjob",
+                "--agent",
+                "test-agent",
+                "--workflow",
+                "test-workflow",
+                "--label",
+                "test",
+                "--label",
+                "auto",
+            ],
+        )
+
         result = runner.invoke(app, ["pjob", "list"])
-        
+
         assert result.exit_code == 0
         assert "test-pjob" in result.output
         assert "Test PJob" in result.output
-    
+
     def test_list_pjobs_with_label_filter(self):
         """Test listing PJobs with label filter."""
         # Create dependencies
         self.create_test_agent()
         self.create_test_workflow()
-        
+
         # Create PJobs with different labels
-        runner.invoke(app, [
-            "pjob", "create",
-            "--name", "PJob A",
-            "--code", "pjob-a",
-            "--agent", "test-agent",
-            "--workflow", "test-workflow",
-            "--label", "group-a",
-        ])
-        runner.invoke(app, [
-            "pjob", "create",
-            "--name", "PJob B",
-            "--code", "pjob-b",
-            "--agent", "test-agent",
-            "--workflow", "test-workflow",
-            "--label", "group-b",
-        ])
-        
+        runner.invoke(
+            app,
+            [
+                "pjob",
+                "create",
+                "--name",
+                "PJob A",
+                "--code",
+                "pjob-a",
+                "--agent",
+                "test-agent",
+                "--workflow",
+                "test-workflow",
+                "--label",
+                "group-a",
+            ],
+        )
+        runner.invoke(
+            app,
+            [
+                "pjob",
+                "create",
+                "--name",
+                "PJob B",
+                "--code",
+                "pjob-b",
+                "--agent",
+                "test-agent",
+                "--workflow",
+                "test-workflow",
+                "--label",
+                "group-b",
+            ],
+        )
+
         result = runner.invoke(app, ["pjob", "list", "--label", "group-a"])
-        
+
         assert result.exit_code == 0
         assert "pjob-a" in result.output
         assert "pjob-b" not in result.output
-    
+
     def test_show_pjob(self):
         """Test showing PJob details."""
         # Create dependencies
         self.create_test_agent()
         self.create_test_workflow()
-        
-        runner.invoke(app, [
-            "pjob", "create",
-            "--name", "Test PJob",
-            "--code", "test-pjob",
-            "--agent", "test-agent",
-            "--workflow", "test-workflow",
-        ])
-        
+
+        runner.invoke(
+            app,
+            [
+                "pjob",
+                "create",
+                "--name",
+                "Test PJob",
+                "--code",
+                "test-pjob",
+                "--agent",
+                "test-agent",
+                "--workflow",
+                "test-workflow",
+            ],
+        )
+
         result = runner.invoke(app, ["pjob", "show", "test-pjob"])
-        
+
         assert result.exit_code == 0
         assert "Test PJob" in result.output
         assert "test-agent" in result.output
         assert "test-workflow" in result.output
-    
+
     def test_update_pjob(self):
         """Test updating PJob."""
         # Create dependencies
         self.create_test_agent()
         self.create_test_workflow()
         self.create_test_env()
-        
-        runner.invoke(app, [
-            "pjob", "create",
-            "--name", "Test PJob",
-            "--code", "test-pjob",
-            "--agent", "test-agent",
-            "--workflow", "test-workflow",
-        ])
-        
-        result = runner.invoke(app, [
-            "pjob", "update", "test-pjob",
-            "--env", "test-env",
-            "--timeout", "1200",
-        ])
-        
+
+        runner.invoke(
+            app,
+            [
+                "pjob",
+                "create",
+                "--name",
+                "Test PJob",
+                "--code",
+                "test-pjob",
+                "--agent",
+                "test-agent",
+                "--workflow",
+                "test-workflow",
+            ],
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "pjob",
+                "update",
+                "test-pjob",
+                "--env",
+                "test-env",
+                "--timeout",
+                "1200",
+            ],
+        )
+
         assert result.exit_code == 0
         assert "updated successfully" in result.output
-        
+
         # Verify update
         show_result = runner.invoke(app, ["pjob", "show", "test-pjob"])
         assert "test-env" in show_result.output
-    
+
     def test_delete_pjob(self):
         """Test deleting PJob."""
         # Create dependencies
         self.create_test_agent()
         self.create_test_workflow()
-        
-        runner.invoke(app, [
-            "pjob", "create",
-            "--name", "Test PJob",
-            "--code", "test-pjob",
-            "--agent", "test-agent",
-            "--workflow", "test-workflow",
-        ])
-        
-        result = runner.invoke(app, [
-            "pjob", "delete", "test-pjob", "--force"
-        ])
-        
+
+        runner.invoke(
+            app,
+            [
+                "pjob",
+                "create",
+                "--name",
+                "Test PJob",
+                "--code",
+                "test-pjob",
+                "--agent",
+                "test-agent",
+                "--workflow",
+                "test-workflow",
+            ],
+        )
+
+        result = runner.invoke(app, ["pjob", "delete", "test-pjob", "--force"])
+
         assert result.exit_code == 0
         assert "deleted" in result.output
-        
+
         # Verify deletion
         show_result = runner.invoke(app, ["pjob", "show", "test-pjob"])
         assert show_result.exit_code != 0
-    
+
     def test_copy_pjob(self):
         """Test copying PJob."""
         # Create dependencies
         self.create_test_agent()
         self.create_test_workflow()
-        
-        runner.invoke(app, [
-            "pjob", "create",
-            "--name", "Source PJob",
-            "--code", "source-pjob",
-            "--agent", "test-agent",
-            "--workflow", "test-workflow",
-        ])
-        
-        result = runner.invoke(app, [
-            "pjob", "copy", "source-pjob", "target-pjob",
-            "--name", "Target PJob",
-        ])
-        
+
+        runner.invoke(
+            app,
+            [
+                "pjob",
+                "create",
+                "--name",
+                "Source PJob",
+                "--code",
+                "source-pjob",
+                "--agent",
+                "test-agent",
+                "--workflow",
+                "test-workflow",
+            ],
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "pjob",
+                "copy",
+                "source-pjob",
+                "target-pjob",
+                "--name",
+                "Target PJob",
+            ],
+        )
+
         assert result.exit_code == 0
         assert "copied" in result.output
-        
+
         # Verify copy exists
         show_result = runner.invoke(app, ["pjob", "show", "target-pjob"])
         assert show_result.exit_code == 0
         assert "Target PJob" in show_result.output
-    
+
     def test_validate_pjob(self):
         """Test validating PJob."""
         # Create dependencies
         self.create_test_agent()
         self.create_test_workflow()
-        
-        runner.invoke(app, [
-            "pjob", "create",
-            "--name", "Test PJob",
-            "--code", "test-pjob",
-            "--agent", "test-agent",
-            "--workflow", "test-workflow",
-        ])
-        
+
+        runner.invoke(
+            app,
+            [
+                "pjob",
+                "create",
+                "--name",
+                "Test PJob",
+                "--code",
+                "test-pjob",
+                "--agent",
+                "test-agent",
+                "--workflow",
+                "test-workflow",
+            ],
+        )
+
         result = runner.invoke(app, ["pjob", "validate", "test-pjob"])
-        
+
         assert result.exit_code == 0
         assert "is valid" in result.output
-    
+
     def test_validate_pjob_strict(self):
         """Test strict validation of PJob."""
         # Create dependencies
         self.create_test_agent()
         self.create_test_workflow()
-        
-        runner.invoke(app, [
-            "pjob", "create",
-            "--name", "Test PJob",
-            "--code", "test-pjob",
-            "--agent", "test-agent",
-            "--workflow", "test-workflow",
-        ])
-        
-        result = runner.invoke(app, [
-            "pjob", "validate", "test-pjob", "--strict"
-        ])
-        
+
+        runner.invoke(
+            app,
+            [
+                "pjob",
+                "create",
+                "--name",
+                "Test PJob",
+                "--code",
+                "test-pjob",
+                "--agent",
+                "test-agent",
+                "--workflow",
+                "test-workflow",
+            ],
+        )
+
+        result = runner.invoke(app, ["pjob", "validate", "test-pjob", "--strict"])
+
         assert result.exit_code == 0
         assert "is valid" in result.output
         assert "All referenced configs exist" in result.output
-    
+
     def test_render_pjob(self):
         """Test rendering PJob template."""
         # Create dependencies
         self.create_test_agent()
         self.create_test_workflow()
         self.create_test_variable()
-        
-        runner.invoke(app, [
-            "pjob", "create",
-            "--name", "Test PJob",
-            "--code", "test-pjob",
-            "--agent", "test-agent",
-            "--workflow", "test-workflow",
-            "--variable", "test-var",
-        ])
-        
+
+        runner.invoke(
+            app,
+            [
+                "pjob",
+                "create",
+                "--name",
+                "Test PJob",
+                "--code",
+                "test-pjob",
+                "--agent",
+                "test-agent",
+                "--workflow",
+                "test-workflow",
+                "--variable",
+                "test-var",
+            ],
+        )
+
         result = runner.invoke(app, ["pjob", "render", "test-pjob"])
-        
+
         assert result.exit_code == 0
         assert "Hello World" in result.output  # Template rendered with variable
-    
+
     def test_render_pjob_show_command(self):
         """Test rendering PJob with command display."""
         # Create dependencies
         self.create_test_agent()
         self.create_test_workflow()
-        
-        runner.invoke(app, [
-            "pjob", "create",
-            "--name", "Test PJob",
-            "--code", "test-pjob",
-            "--agent", "test-agent",
-            "--workflow", "test-workflow",
-        ])
-        
-        result = runner.invoke(app, [
-            "pjob", "render", "test-pjob", "--show-command"
-        ])
-        
+
+        runner.invoke(
+            app,
+            [
+                "pjob",
+                "create",
+                "--name",
+                "Test PJob",
+                "--code",
+                "test-pjob",
+                "--agent",
+                "test-agent",
+                "--workflow",
+                "test-workflow",
+            ],
+        )
+
+        result = runner.invoke(app, ["pjob", "render", "test-pjob", "--show-command"])
+
         assert result.exit_code == 0
         assert "kimi" in result.output  # Command contains kimi
-    
+
     def test_run_pjob_dry_run(self):
         """Test dry-run of PJob."""
         # Create dependencies
         self.create_test_agent()
         self.create_test_workflow()
-        
-        runner.invoke(app, [
-            "pjob", "create",
-            "--name", "Test PJob",
-            "--code", "test-pjob",
-            "--agent", "test-agent",
-            "--workflow", "test-workflow",
-        ])
-        
-        result = runner.invoke(app, [
-            "pjob", "run", "test-pjob", "--dry-run"
-        ])
-        
+
+        runner.invoke(
+            app,
+            [
+                "pjob",
+                "create",
+                "--name",
+                "Test PJob",
+                "--code",
+                "test-pjob",
+                "--agent",
+                "test-agent",
+                "--workflow",
+                "test-workflow",
+            ],
+        )
+
+        result = runner.invoke(app, ["pjob", "run", "test-pjob", "--dry-run"])
+
         assert result.exit_code == 0
         assert "DRY RUN" in result.output
         assert "kimi" in result.output
-    
+
     def test_run_pjob_with_overrides(self):
         """Test running PJob with overrides."""
         # Create dependencies
         self.create_test_agent()
         self.create_test_workflow()
-        
-        runner.invoke(app, [
-            "pjob", "create",
-            "--name", "Test PJob",
-            "--code", "test-pjob",
-            "--agent", "test-agent",
-            "--workflow", "test-workflow",
-        ])
-        
-        result = runner.invoke(app, [
-            "pjob", "run", "test-pjob", "--dry-run",
-            "--set-param", "model=kimi-k1.5",
-            "--set-env", "DEBUG=true",
-        ])
-        
+
+        runner.invoke(
+            app,
+            [
+                "pjob",
+                "create",
+                "--name",
+                "Test PJob",
+                "--code",
+                "test-pjob",
+                "--agent",
+                "test-agent",
+                "--workflow",
+                "test-workflow",
+            ],
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "pjob",
+                "run",
+                "test-pjob",
+                "--dry-run",
+                "--set-param",
+                "model=kimi-k1.5",
+                "--set-env",
+                "DEBUG=true",
+            ],
+        )
+
         assert result.exit_code == 0
         assert "DRY RUN" in result.output
-    
+
     def test_history_empty(self):
         """Test history for PJob with no history."""
         # Create dependencies
         self.create_test_agent()
         self.create_test_workflow()
-        
-        runner.invoke(app, [
-            "pjob", "create",
-            "--name", "Test PJob",
-            "--code", "test-pjob",
-            "--agent", "test-agent",
-            "--workflow", "test-workflow",
-        ])
-        
+
+        runner.invoke(
+            app,
+            [
+                "pjob",
+                "create",
+                "--name",
+                "Test PJob",
+                "--code",
+                "test-pjob",
+                "--agent",
+                "test-agent",
+                "--workflow",
+                "test-workflow",
+            ],
+        )
+
         result = runner.invoke(app, ["pjob", "history", "test-pjob"])
-        
+
         assert result.exit_code == 0
         assert "No execution history" in result.output
-    
+
     def test_create_from_existing(self):
         """Test creating PJob from existing."""
         # Create dependencies
         self.create_test_agent()
         self.create_test_workflow()
-        
-        runner.invoke(app, [
-            "pjob", "create",
-            "--name", "Source PJob",
-            "--code", "source-pjob",
-            "--agent", "test-agent",
-            "--workflow", "test-workflow",
-        ])
-        
-        result = runner.invoke(app, [
-            "pjob", "create",
-            "--name", "Copied PJob",
-            "--code", "copied-pjob",
-            "--from-code", "source-pjob",
-        ])
-        
+
+        runner.invoke(
+            app,
+            [
+                "pjob",
+                "create",
+                "--name",
+                "Source PJob",
+                "--code",
+                "source-pjob",
+                "--agent",
+                "test-agent",
+                "--workflow",
+                "test-workflow",
+            ],
+        )
+
+        result = runner.invoke(
+            app,
+            [
+                "pjob",
+                "create",
+                "--name",
+                "Copied PJob",
+                "--code",
+                "copied-pjob",
+                "--from-code",
+                "source-pjob",
+            ],
+        )
+
         assert result.exit_code == 0
         assert "created from" in result.output
