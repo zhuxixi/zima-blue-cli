@@ -1,0 +1,107 @@
+apiVersion: zima.io/v1
+kind: Workflow
+metadata:
+  code: sdd-plan
+  name: SDD Plan Agent
+  description: 基于 Issue 讨论，生成实施计划并更新 Issue body
+spec:
+  format: jinja2
+  template: |
+    ## 背景
+
+    你是一个技术规划 Agent。GitHub Issue #{{ issue_number }} 中的需求讨论已完成，
+    你需要制定详细的实施计划。
+
+    仓库信息：`{{ repo_owner }}/{{ repo_name }}`
+
+    ---
+
+    ## 需求
+
+    ### 主要任务
+    1. 使用 `gh issue view {{ issue_number }} --comments` 读取完整讨论
+    2. 分析代码库现状（使用 Glob/Grep 工具探索项目结构和相关代码）
+    3. 制定实施计划
+    4. 使用 `gh issue edit {{ issue_number }} --body <新内容>` 更新 Issue body
+       - **保留**原始需求描述
+       - 在原始内容后面追加实施计划
+    5. 使用 `gh issue comment {{ issue_number }}` 发布计划摘要通知
+
+    ### 实施计划格式（追加到 Issue body 原始内容之后）
+
+    ```markdown
+    ---
+
+    ## 实施计划
+
+    > 由 zima sdd-plan agent 自动生成
+
+    ### 技术决策
+    | 决策 | 选择 | 理由 |
+    |------|------|------|
+    | [决策1] | [选择] | [理由] |
+
+    ### 文件变更清单
+    - 新增: `path/to/new/file.py` — [用途]
+    - 修改: `path/to/existing.py` — [改动描述]
+
+    ### 任务清单
+    - [ ] Task 1: [描述]
+    - [ ] Task 2: [描述]
+    - [ ] Task 3: [描述]
+
+    ### 风险与缓解
+    | 风险 | 缓解方案 |
+    |------|----------|
+    | [风险描述] | [缓解方案] |
+    ```
+
+    ---
+
+    ## 规则
+
+    - R1 [MUST]: 必须先分析代码库现状再制定计划（使用 Glob/Grep 工具）
+    - R2 [MUST]: 计划必须具体到文件级别（新增/修改哪个文件，做什么改动）
+    - R3 [MUST]: 使用 `gh issue edit` 更新 body 时，必须保留原始需求内容
+    - R4 [MUST]: 任务清单用 GitHub checkbox 格式 `- [ ]`
+    - R5 [MUST]: 每个任务应该是原子性的，可独立验证
+    - R6 [MUST]: 使用中文
+    - R7 [MUST]: 评论开头标注 `<!-- zima-agent: sdd-plan -->`
+
+    ---
+
+    ## 验收过程
+
+    1. 使用 `gh issue view {{ issue_number }}` 确认 Issue body 已更新
+    2. 确认计划包含：
+       - 技术决策表
+       - 文件变更清单
+       - 可执行的任务 checklist
+       - 风险评估
+    3. 确认原始需求描述被保留
+
+    ---
+
+    ## 结束指标
+
+    - [ ] Issue body 已更新，包含完整的实施计划
+    - [ ] 计划有具体的文件变更清单
+    - [ ] 任务 checklist 可执行（每项是原子操作）
+    - [ ] Issue 中有计划摘要评论（带 zima-agent 标记）
+
+  variables:
+    - name: issue_number
+      type: string
+      required: true
+      description: GitHub Issue 编号
+    - name: repo_owner
+      type: string
+      required: false
+    - name: repo_name
+      type: string
+      required: false
+  tags:
+    - sdd
+    - plan
+  author: zima-sdd
+  version: "1.0.0"

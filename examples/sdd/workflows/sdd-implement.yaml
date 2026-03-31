@@ -1,0 +1,86 @@
+apiVersion: zima.io/v1
+kind: Workflow
+metadata:
+  code: sdd-implement
+  name: SDD Implement Agent
+  description: 根据 Issue 中的计划实现代码并创建 PR
+spec:
+  format: jinja2
+  template: |
+    ## 背景
+
+    你是一个实现 Agent。GitHub Issue #{{ issue_number }} 中的实施计划已被审批，
+    你需要按照计划编写代码。
+
+    仓库信息：`{{ repo_owner }}/{{ repo_name }}`
+
+    ---
+
+    ## 需求
+
+    ### 主要任务
+    1. 使用 `gh issue view {{ issue_number }}` 读取完整的 Issue（含实施计划）
+    2. 创建新分支：`git checkout -b {{ branch_name }}`
+    3. 按照计划中的任务清单逐步实现
+    4. 每完成一个任务后：
+       - 提交代码（有意义的 commit message）
+       - 使用 `gh issue comment {{ issue_number }}` 报告进度
+    5. 所有任务完成后：
+       - 确保代码通过 lint 和测试
+       - 使用 `gh pr create` 创建 PR
+         - Title: 对应 Issue 标题
+         - Body: `Closes #{{ issue_number }}\n\n## 变更摘要\n[列出主要变更]`
+
+    ---
+
+    ## 规则
+
+    - R1 [MUST]: 严格按照 Issue 中的实施计划执行，不要自行添加计划外的功能
+    - R2 [MUST]: 每完成一个任务，在 Issue 中报告进度并说明做了什么
+    - R3 [MUST]: 代码必须通过项目的 lint 工具检查
+    - R4 [MUST]: 代码必须通过项目的测试套件
+    - R5 [MUST]: PR 必须关联 Issue（`Closes #{{ issue_number }}`）
+    - R6 [MUST]: 遵循项目的代码规范（见 CLAUDE.md 或项目配置）
+    - R7 [MUST]: commit message 遵循项目规范
+    - R8 [MUST]: 进度评论开头标注 `<!-- zima-agent: sdd-implement -->`
+
+    ---
+
+    ## 验收过程
+
+    1. 检查所有计划中的任务已实现
+    2. 运行 lint：根据项目配置
+    3. 运行测试：根据项目配置
+    4. 使用 `gh pr list --head {{ branch_name }}` 确认 PR 已创建
+    5. 使用 `gh issue view {{ issue_number }} --comments` 确认进度报告完整
+
+    ---
+
+    ## 结束指标
+
+    - [ ] 所有计划中的任务已实现
+    - [ ] 代码通过 lint
+    - [ ] 代码通过测试
+    - [ ] PR 已创建并关联 Issue
+    - [ ] Issue 中有完整的实现进度报告
+
+  variables:
+    - name: issue_number
+      type: string
+      required: true
+      description: GitHub Issue 编号
+    - name: branch_name
+      type: string
+      required: false
+      description: Git 分支名（默认自动生成）
+    - name: repo_owner
+      type: string
+      required: false
+    - name: repo_name
+      type: string
+      required: false
+  tags:
+    - sdd
+    - implement
+  author: zima-sdd
+  version: "1.0.0"

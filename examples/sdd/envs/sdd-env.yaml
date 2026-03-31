@@ -1,0 +1,16 @@
+apiVersion: zima.io/v1
+kind: Env
+metadata:
+  code: sdd-env
+  name: SDD Environment
+  description: SDD 工作流共享环境配置
+spec:
+  forType: kimi
+  variables: {}
+  secrets:
+    - name: GH_TOKEN
+      source: env
+      key: GITHUB_TOKEN
+  overrideExisting: false
+createdAt: '2026-03-31T00:00:00Z'
+updatedAt: '2026-03-31T00:00:00Z'

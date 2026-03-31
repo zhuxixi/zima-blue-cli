@@ -1,0 +1,21 @@
+apiVersion: zima.io/v1
+kind: PJob
+metadata:
+  code: sdd-review
+  name: SDD Review
+  description: 对 PR 进行 Code Review
+  labels:
+    - sdd
+    - review
+spec:
+  agent: sdd-agent
+  workflow: sdd-review
+  env: sdd-env
+  execution:
+    timeout: 1800
+    keepTemp: false
+    async: true
+  output:
+    format: raw
+createdAt: '2026-03-31T00:00:00Z'
+updatedAt: '2026-03-31T00:00:00Z'

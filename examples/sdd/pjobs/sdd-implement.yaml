@@ -1,0 +1,21 @@
+apiVersion: zima.io/v1
+kind: PJob
+metadata:
+  code: sdd-implement
+  name: SDD Implement
+  description: 根据 Issue 中的计划实现代码并创建 PR
+  labels:
+    - sdd
+    - implement
+spec:
+  agent: sdd-implement-agent
+  workflow: sdd-implement
+  env: sdd-env
+  execution:
+    timeout: 7200
+    keepTemp: false
+    async: true
+  output:
+    format: raw
+createdAt: '2026-03-31T00:00:00Z'
+updatedAt: '2026-03-31T00:00:00Z'

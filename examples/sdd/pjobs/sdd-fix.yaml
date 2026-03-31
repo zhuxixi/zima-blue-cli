@@ -1,0 +1,21 @@
+apiVersion: zima.io/v1
+kind: PJob
+metadata:
+  code: sdd-fix
+  name: SDD Fix
+  description: 根据 PR review comments 修复代码
+  labels:
+    - sdd
+    - fix
+spec:
+  agent: sdd-implement-agent
+  workflow: sdd-fix
+  env: sdd-env
+  execution:
+    timeout: 3600
+    keepTemp: false
+    async: true
+  output:
+    format: raw
+createdAt: '2026-03-31T00:00:00Z'
+updatedAt: '2026-03-31T00:00:00Z'

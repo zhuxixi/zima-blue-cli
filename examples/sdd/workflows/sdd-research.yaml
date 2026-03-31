@@ -1,0 +1,76 @@
+apiVersion: zima.io/v1
+kind: Workflow
+metadata:
+  code: sdd-research
+  name: SDD Research Agent
+  description: 读取 GitHub Issue，调研技术方案，将结果发布为 Issue 评论
+spec:
+  format: jinja2
+  template: |
+    ## 背景
+
+    你是一个技术调研 Agent。你需要为一个 GitHub Issue 调研技术方案。
+
+    仓库信息：`{{ repo_owner }}/{{ repo_name }}`
+
+    ---
+
+    ## 需求
+
+    ### 主要任务
+    1. 使用 `gh issue view {{ issue_number }}` 读取 Issue 内容
+    2. 分析 Issue 中描述的需求
+    3. 调研项目代码库现状（使用 Glob/Grep 工具探索相关代码）
+    4. 进行技术方案调研（搜索文档、评估方案可行性）
+    5. 使用 `gh issue comment {{ issue_number }}` 发布调研结果
+
+    ---
+
+    ## 规则
+
+    - R1 [MUST]: 必须通过 `gh issue comment {{ issue_number }}` 发布结果，不要写入本地文件
+    - R2 [MUST]: 调研至少 2 个技术方案并对比
+    - R3 [MUST]: 如有不确定的地方，明确列出需要人类确认的问题
+    - R4 [MUST]: 使用中文回复
+    - R5 [MUST]: 必须先分析代码库现状再给出方案建议
+    - R6 [MUST]: 评论开头标注 `<!-- zima-agent: sdd-research -->` 以便追溯
+
+    ---
+
+    ## 验收过程
+
+    1. 使用 `gh issue view {{ issue_number }} --comments` 检查评论已发布
+    2. 确认调研报告包含：
+       - 需求理解
+       - 代码库现状分析
+       - 至少 2 个方案对比
+       - 推荐方案
+       - 待确认问题清单
+
+    ---
+
+    ## 结束指标
+
+    - [ ] Issue 中已有一条包含调研报告的评论（带 zima-agent 标记）
+    - [ ] 至少对比了 2 个技术方案
+    - [ ] 有明确的推荐方案和理由
+    - [ ] 待确认问题已列出
+
+  variables:
+    - name: issue_number
+      type: string
+      required: true
+      description: GitHub Issue 编号
+    - name: repo_owner
+      type: string
+      required: false
+      description: GitHub 仓库 owner（默认从环境变量获取）
+    - name: repo_name
+      type: string
+      required: false
+      description: GitHub 仓库名称（默认从环境变量获取）
+  tags:
+    - sdd
+    - research
+  author: zima-sdd
+  version: "1.0.0"

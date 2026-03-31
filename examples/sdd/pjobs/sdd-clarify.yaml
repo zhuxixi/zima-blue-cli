@@ -1,0 +1,21 @@
+apiVersion: zima.io/v1
+kind: PJob
+metadata:
+  code: sdd-clarify
+  name: SDD Clarify
+  description: 在 Issue 评论中回答人类问题或主动追问
+  labels:
+    - sdd
+    - clarify
+spec:
+  agent: sdd-agent
+  workflow: sdd-clarify
+  env: sdd-env
+  execution:
+    timeout: 1200
+    keepTemp: false
+    async: true
+  output:
+    format: raw
+createdAt: '2026-03-31T00:00:00Z'
+updatedAt: '2026-03-31T00:00:00Z'

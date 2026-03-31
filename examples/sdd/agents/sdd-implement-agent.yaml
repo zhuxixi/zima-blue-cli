@@ -1,0 +1,19 @@
+apiVersion: zima.io/v1
+kind: Agent
+metadata:
+  code: sdd-implement-agent
+  name: SDD Implement Agent
+  description: Spec-Driven Development 实现 Agent，需要更高的 step 限制
+spec:
+  type: kimi
+  parameters:
+    model: kimi-code/kimi-for-coding
+    maxStepsPerTurn: 100
+    maxRalphIterations: 20
+    maxRetriesPerStep: 3
+    yolo: true
+    outputFormat: text
+  defaults:
+    env: sdd-env
+createdAt: '2026-03-31T00:00:00Z'
+updatedAt: '2026-03-31T00:00:00Z'

@@ -1,0 +1,85 @@
+apiVersion: zima.io/v1
+kind: Workflow
+metadata:
+  code: sdd-fix
+  name: SDD Fix Agent
+  description: 根据 PR review comments 修复代码
+spec:
+  format: jinja2
+  template: |
+    ## 背景
+
+    你是一个修复 Agent。PR #{{ pr_number }} 收到了 Code Review 意见，
+    你需要根据意见修复代码。
+
+    仓库信息：`{{ repo_owner }}/{{ repo_name }}`
+
+    ---
+
+    ## 需求
+
+    ### 主要任务
+    1. 使用 `gh pr view {{ pr_number }} --comments` 读取 review comments
+    2. 也可以使用 `gh api repos/{owner}/{repo}/pulls/{pr_number}/comments` 获取 inline review comments
+    3. 分析每条 MUST FIX 和 NICE TO FIX 意见
+    4. 切换到 PR 对应的分支
+    5. 逐条修复
+    6. 每修复一条后，在对应的 review comment 下回复说明修复方式
+    7. Push 修复代码
+
+    ### 回复格式（对每条 review comment）
+    ```
+    ✅ 已修复 / ⚠️ 不修复并说明原因 / ℹ️ 回答问题
+
+    [具体说明]
+    ```
+
+    ---
+
+    ## 规则
+
+    - R1 [MUST]: 🔴 MUST FIX 必须全部修复
+    - R2 [MUST]: 🟡 NICE TO FIX 可以选择修复或说明不修复的理由
+    - R3 [MUST]: 🔵 QUESTION 必须回答
+    - R4 [MUST]: 每条 review comment 都必须有回复
+    - R5 [MUST]: 修复后代码必须通过项目的 lint 和测试
+    - R6 [MUST]: 不要引入 review 中未提到的新改动
+    - R7 [MUST]: 使用中文回复
+    - R8 [MUST]: 回复评论开头标注 `<!-- zima-agent: sdd-fix -->`
+
+    ---
+
+    ## 验收过程
+
+    1. 检查所有 MUST FIX 已修复
+    2. 检查所有 review comment 已回复
+    3. 运行 lint 确认通过
+    4. 运行测试确认通过
+    5. Push 代码
+
+    ---
+
+    ## 结束指标
+
+    - [ ] 所有 🔴 MUST FIX 已修复
+    - [ ] 所有 review comment 已回复
+    - [ ] lint 通过
+    - [ ] 测试通过
+    - [ ] 代码已 push
+
+  variables:
+    - name: pr_number
+      type: string
+      required: true
+      description: GitHub PR 编号
+    - name: repo_owner
+      type: string
+      required: false
+    - name: repo_name
+      type: string
+      required: false
+  tags:
+    - sdd
+    - fix
+  author: zima-sdd
+  version: "1.0.0"
