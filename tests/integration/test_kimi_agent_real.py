@@ -38,6 +38,7 @@ def check_kimi_available():
             ["kimi", "--version"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=5
         )
         return result.returncode == 0
@@ -87,6 +88,7 @@ class TestKimiAgentRealCommands:
             ["kimi", "--help"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=10
         )
         
@@ -118,6 +120,7 @@ class TestKimiAgentRealCommands:
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=60  # Give it up to 60 seconds
         )
         
@@ -257,6 +260,7 @@ Then output this JSON:
             cmd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=60
         )
         
@@ -422,6 +426,7 @@ class TestKimiAgentErrorHandling:
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=30
         )
         

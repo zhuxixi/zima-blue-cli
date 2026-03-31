@@ -44,7 +44,7 @@ class TestKimiAgentConfigLayer:
         )
         
         # Verify default parameters from template are merged
-        assert agent.parameters["model"] == "kimi-k2-072515-preview"
+        assert agent.parameters["model"] == "kimi-code/kimi-for-coding"
         assert agent.parameters["maxStepsPerTurn"] == 50
         assert agent.parameters["maxRalphIterations"] == 10
         assert agent.parameters["maxRetriesPerStep"] == 3
@@ -153,7 +153,7 @@ class TestKimiAgentConfigLayer:
         
         # Verify command differences
         assert kimi_cmd == ["kimi", "--print", "--yolo"]
-        assert claude_cmd == ["claude", "--print"]
+        assert claude_cmd == ["claude", "-p"]
         assert gemini_cmd == ["gemini", "--yolo"]
         
         # Verify work-dir parameter differences

@@ -1,11 +1,17 @@
 """Pytest global fixtures and configuration."""
 
+import re
 import shutil
 import tempfile
 import uuid
 from pathlib import Path
 
 import pytest
+
+
+def strip_ansi(text: str) -> str:
+    """Remove ANSI escape sequences from text (e.g., Rich color codes)."""
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
 @pytest.fixture(scope="function")

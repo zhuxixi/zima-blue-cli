@@ -4,6 +4,7 @@ import pytest
 from typer.testing import CliRunner
 from zima.cli import app
 from tests.base import TestIsolator
+from tests.conftest import strip_ansi
 
 
 runner = CliRunner()
@@ -341,8 +342,9 @@ class TestPMGAddParam(TestIsolator):
         ])
         
         assert result.exit_code == 0
-        assert "Parameter 'model' added" in result.output
-    
+        clean = strip_ansi(result.output)
+        assert "Parameter 'model' added" in clean
+
     def test_add_flag_param(self):
         """Test adding flag parameter."""
         runner.invoke(app, [
@@ -360,8 +362,9 @@ class TestPMGAddParam(TestIsolator):
         ])
         
         assert result.exit_code == 0
-        assert "Parameter 'verbose' added" in result.output
-    
+        clean = strip_ansi(result.output)
+        assert "Parameter 'verbose' added" in clean
+
     def test_add_repeatable_param(self):
         """Test adding repeatable parameter."""
         runner.invoke(app, [
@@ -379,8 +382,9 @@ class TestPMGAddParam(TestIsolator):
         ])
         
         assert result.exit_code == 0
-        assert "Parameter 'add-dir' added" in result.output
-    
+        clean = strip_ansi(result.output)
+        assert "Parameter 'add-dir' added" in clean
+
     def test_add_invalid_type_fails(self):
         """Test adding parameter with invalid type fails."""
         runner.invoke(app, [
