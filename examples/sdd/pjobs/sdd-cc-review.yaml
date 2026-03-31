@@ -1,0 +1,23 @@
+apiVersion: zima.io/v1
+kind: PJob
+metadata:
+  code: sdd-cc-review
+  name: SDD CC Review
+  description: 对 PR 进行 Code Review (Claude Code)
+  labels:
+    - sdd
+    - review
+    - claude-code
+spec:
+  agent: sdd-cc-agent
+  workflow: sdd-review
+  env: sdd-env
+  execution:
+    workDir: .
+    timeout: 1800
+    keepTemp: false
+    async: true
+  output:
+    format: raw
+createdAt: '2026-03-31T00:00:00Z'
+updatedAt: '2026-03-31T00:00:00Z'

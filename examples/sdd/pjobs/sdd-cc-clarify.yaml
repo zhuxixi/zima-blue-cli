@@ -1,0 +1,23 @@
+apiVersion: zima.io/v1
+kind: PJob
+metadata:
+  code: sdd-cc-clarify
+  name: SDD CC Clarify
+  description: 在 Issue 评论中回答人类问题或主动追问 (Claude Code)
+  labels:
+    - sdd
+    - clarify
+    - claude-code
+spec:
+  agent: sdd-cc-agent
+  workflow: sdd-clarify
+  env: sdd-env
+  execution:
+    workDir: .
+    timeout: 1200
+    keepTemp: false
+    async: true
+  output:
+    format: raw
+createdAt: '2026-03-31T00:00:00Z'
+updatedAt: '2026-03-31T00:00:00Z'

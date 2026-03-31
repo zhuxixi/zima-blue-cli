@@ -1,0 +1,17 @@
+apiVersion: zima.io/v1
+kind: Agent
+metadata:
+  code: sdd-cc-implement-agent
+  name: SDD Claude Code Implement Agent
+  description: SDD Claude Code 实现 Agent，需要更高的 turns 限制
+spec:
+  type: claude
+  parameters:
+    model: claude-sonnet-4-6
+    maxTurns: 200
+    permissionMode: plan
+    outputFormat: stream-json
+  defaults:
+    env: sdd-env
+createdAt: '2026-03-31T00:00:00Z'
+updatedAt: '2026-03-31T00:00:00Z'

@@ -1,0 +1,23 @@
+apiVersion: zima.io/v1
+kind: PJob
+metadata:
+  code: sdd-cc-research
+  name: SDD CC Research
+  description: 读取 GitHub Issue，调研技术方案，发布调研评论 (Claude Code)
+  labels:
+    - sdd
+    - research
+    - claude-code
+spec:
+  agent: sdd-cc-agent
+  workflow: sdd-research
+  env: sdd-env
+  execution:
+    workDir: .
+    timeout: 1800
+    keepTemp: false
+    async: true
+  output:
+    format: raw
+createdAt: '2026-03-31T00:00:00Z'
+updatedAt: '2026-03-31T00:00:00Z'

@@ -1,0 +1,17 @@
+apiVersion: zima.io/v1
+kind: Agent
+metadata:
+  code: sdd-cc-agent
+  name: SDD Claude Code Agent
+  description: SDD Claude Code Agent，用于 research/clarify/plan/review
+spec:
+  type: claude
+  parameters:
+    model: claude-sonnet-4-6
+    maxTurns: 100
+    permissionMode: plan
+    outputFormat: stream-json
+  defaults:
+    env: sdd-env
+createdAt: '2026-03-31T00:00:00Z'
+updatedAt: '2026-03-31T00:00:00Z'

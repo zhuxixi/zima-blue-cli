@@ -1,0 +1,23 @@
+apiVersion: zima.io/v1
+kind: PJob
+metadata:
+  code: sdd-cc-plan
+  name: SDD CC Plan
+  description: 基于 Issue 讨论生成实施计划，更新 Issue body (Claude Code)
+  labels:
+    - sdd
+    - plan
+    - claude-code
+spec:
+  agent: sdd-cc-agent
+  workflow: sdd-plan
+  env: sdd-env
+  execution:
+    workDir: .
+    timeout: 1800
+    keepTemp: false
+    async: true
+  output:
+    format: raw
+createdAt: '2026-03-31T00:00:00Z'
+updatedAt: '2026-03-31T00:00:00Z'

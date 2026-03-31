@@ -1,0 +1,23 @@
+apiVersion: zima.io/v1
+kind: PJob
+metadata:
+  code: sdd-cc-fix
+  name: SDD CC Fix
+  description: 根据 PR review comments 修复代码 (Claude Code)
+  labels:
+    - sdd
+    - fix
+    - claude-code
+spec:
+  agent: sdd-cc-implement-agent
+  workflow: sdd-fix
+  env: sdd-env
+  execution:
+    workDir: .
+    timeout: 3600
+    keepTemp: false
+    async: true
+  output:
+    format: raw
+createdAt: '2026-03-31T00:00:00Z'
+updatedAt: '2026-03-31T00:00:00Z'
