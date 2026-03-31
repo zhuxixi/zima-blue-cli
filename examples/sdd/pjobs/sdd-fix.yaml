@@ -8,7 +8,7 @@ metadata:
     - sdd
     - fix
 spec:
-  agent: sdd-implement-agent
+  agent: sdd-kimi-implement-agent
   workflow: sdd-fix
   env: sdd-env
   execution:

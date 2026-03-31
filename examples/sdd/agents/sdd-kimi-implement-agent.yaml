@@ -1,9 +1,9 @@
 apiVersion: zima.io/v1
 kind: Agent
 metadata:
-  code: sdd-implement-agent
-  name: SDD Implement Agent
-  description: Spec-Driven Development 实现 Agent，需要更高的 step 限制
+  code: sdd-kimi-implement-agent
+  name: SDD Kimi Implement Agent
+  description: SDD Kimi 实现 Agent，需要更高的 step 限制
 spec:
   type: kimi
   parameters:

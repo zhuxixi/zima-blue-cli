@@ -8,7 +8,7 @@ metadata:
     - sdd
     - clarify
 spec:
-  agent: sdd-agent
+  agent: sdd-kimi-agent
   workflow: sdd-clarify
   env: sdd-env
   execution:

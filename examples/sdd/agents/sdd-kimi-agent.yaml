@@ -1,9 +1,9 @@
 apiVersion: zima.io/v1
 kind: Agent
 metadata:
-  code: sdd-agent
-  name: SDD Default Agent
-  description: Spec-Driven Development 默认 Agent，用于 research/clarify/plan/review/fix
+  code: sdd-kimi-agent
+  name: SDD Kimi Agent
+  description: SDD Kimi Agent，用于 research/clarify/plan/review
 spec:
   type: kimi
   parameters:

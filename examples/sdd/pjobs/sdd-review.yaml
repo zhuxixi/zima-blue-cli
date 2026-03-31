@@ -8,7 +8,7 @@ metadata:
     - sdd
     - review
 spec:
-  agent: sdd-agent
+  agent: sdd-kimi-agent
   workflow: sdd-review
   env: sdd-env
   execution:

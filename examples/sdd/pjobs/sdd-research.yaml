@@ -8,7 +8,7 @@ metadata:
     - sdd
     - research
 spec:
-  agent: sdd-agent
+  agent: sdd-kimi-agent
   workflow: sdd-research
   env: sdd-env
   execution:
