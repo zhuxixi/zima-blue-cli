@@ -17,8 +17,13 @@ class ClaudeRunner:
     """Runs Claude Code CLI via subprocess with stream-json NDJSON parsing.
 
     Unlike KimiRunner which drives external cycles, ClaudeRunner leverages
-    Claude Code's built-in agentic loop (--max-turns). A single run() call
+    Claude Code's built-in agentic loop (--max-turns). A single run_cycle() call
     executes the full agentic workflow in one subprocess invocation.
+
+    NOTE: Currently used via PJobExecutor for PJob-based execution (stdin pipe path).
+    This runner provides a KimiRunner-compatible run_cycle() interface for future
+    cycle-based execution patterns (daemon/scheduler). The NDJSON parsing and
+    CycleResult extraction logic are tested independently.
 
     Stream-JSON format (NDJSON, one JSON object per line):
       {"type": "system", ...}            - System messages

@@ -260,10 +260,13 @@ class ConfigBundle:
         Returns:
             Command as list of arguments (for subprocess)
         """
+        # Resolve work_dir: explicit param > bundle's resolved dir
+        wd = work_dir or self.work_dir
+
         # Delegate to AgentConfig for type-specific command building
         cmd = self.agent.build_command(
             prompt_file=prompt_file,
-            work_dir=Path(work_dir) if work_dir else None,
+            work_dir=Path(wd) if wd and wd != "." else None,
         )
 
         # Append PMG parameters (generic, agent-agnostic)
