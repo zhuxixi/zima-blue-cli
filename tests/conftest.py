@@ -26,7 +26,7 @@ def temp_dir():
 def isolated_zima_home(monkeypatch, temp_dir):
     """
     Set up isolated ZIMA_HOME environment.
-    
+
     This fixture:
     - Sets ZIMA_HOME to a temp directory
     - Creates necessary subdirectories
@@ -34,11 +34,11 @@ def isolated_zima_home(monkeypatch, temp_dir):
     """
     # Set environment
     monkeypatch.setenv("ZIMA_HOME", str(temp_dir))
-    
+
     # Create subdirectories
     for kind in ["agents", "workflows", "variables", "envs", "pmgs"]:
         (temp_dir / "configs" / kind).mkdir(parents=True, exist_ok=True)
-    
+
     yield temp_dir
 
 
@@ -46,6 +46,7 @@ def isolated_zima_home(monkeypatch, temp_dir):
 def config_manager(isolated_zima_home):
     """Provide ConfigManager with isolated environment."""
     from zima.config.manager import ConfigManager
+
     return ConfigManager()
 
 
@@ -55,19 +56,12 @@ def sample_agent_dict():
     return {
         "apiVersion": "zima.io/v1",
         "kind": "Agent",
-        "metadata": {
-            "code": "test-agent",
-            "name": "Test Agent",
-            "description": "For testing"
-        },
+        "metadata": {"code": "test-agent", "name": "Test Agent", "description": "For testing"},
         "spec": {
             "type": "kimi",
-            "parameters": {
-                "model": "kimi-k2-072515-preview",
-                "yolo": True
-            },
-            "defaults": {}
-        }
+            "parameters": {"model": "kimi-k2-072515-preview", "yolo": True},
+            "defaults": {},
+        },
     }
 
 
@@ -75,6 +69,7 @@ def sample_agent_dict():
 def cli_runner():
     """Provide Typer CLI test runner."""
     from typer.testing import CliRunner
+
     return CliRunner()
 
 
@@ -88,12 +83,10 @@ def unique_code():
 # Pytest Configuration
 # =============================================================================
 
+
 def pytest_configure(config):
     """Configure pytest."""
-    config.addinivalue_line(
-        "markers",
-        "integration: mark test as integration test"
-    )
+    config.addinivalue_line("markers", "integration: mark test as integration test")
 
 
 def pytest_collection_modifyitems(config, items):

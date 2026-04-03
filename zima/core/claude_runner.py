@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from zima.models import AgentConfig, CycleResult
-from zima.utils import safe_print, icon
+from zima.utils import icon, safe_print
 
 
 class ClaudeRunner:
@@ -64,7 +64,7 @@ class ClaudeRunner:
             CycleResult with execution results
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        cycle_start = datetime.now()
+        datetime.now()
 
         # Prepare files
         prompt_file = self.prompts_dir / f"cycle_{timestamp}.md"
