@@ -1,4 +1,5 @@
 # Zima CLI 接口设计文档
+> ⚠️ 本文档写于实现前，部分内容可能已与代码不一致。最新状态请参考代码和 `docs/API-INTERFACE.md`。
 
 > 本文档定义 zima CLI 的命令接口，包括五组配置的 CRUD 操作和 PJob 管理。
 

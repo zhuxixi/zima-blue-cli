@@ -1,4 +1,5 @@
 # Zima CLI 配置实体设计文档
+> ⚠️ 本文档写于实现前，部分内容可能已与代码不一致。最新状态请参考代码和 `docs/API-INTERFACE.md`。
 
 > 本文档定义 zima CLI 的五组配置实体：agent、workflow、variable、env、pmg
 

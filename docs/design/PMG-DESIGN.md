@@ -1,4 +1,5 @@
 # PMG (Parameters Group) 设计文档
+> ⚠️ 本文档写于实现前，部分内容可能已与代码不一致。最新状态请参考代码和 `docs/API-INTERFACE.md`。
 
 > PMG 定义命令行参数组，用于为 Agent 启动时拼接命令行参数。
 

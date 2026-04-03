@@ -1,5 +1,7 @@
 # Zima CLI 问题排查与修复清单
 
+> ⚠️ **已迁移至 GitHub Issues，本文件将于下版本删除。** 详见 #8。
+
 > 基于 coverage-agent 测试的完整问题记录
 
 ---

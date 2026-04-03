@@ -1,5 +1,7 @@
 # Zima CLI 问题与优化建议
 
+> ⚠️ **已迁移至 GitHub Issues，本文件将于下版本删除。** 详见 #8。
+
 > 基于创建 coverage-agent 的实际使用体验整理
 
 ---
