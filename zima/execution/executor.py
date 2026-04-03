@@ -100,6 +100,35 @@ class ExecutionResult:
             return 0.0
 
 
+def _friendly_error(exc: Exception) -> str:
+    """Convert an exception to a user-friendly error message."""
+    msg = str(exc)
+
+    # Known error patterns with friendly messages
+    if isinstance(exc, FileNotFoundError):
+        return f"File not found: {msg}"
+    if isinstance(exc, PermissionError):
+        return f"Permission denied: {msg}"
+    if isinstance(exc, ValueError):
+        # Config-related ValueErrors usually mention a specific field
+        return f"Configuration error: {msg}"
+    if isinstance(exc, KeyError):
+        return f"Missing required field: {msg}"
+    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return f"Connection error: {msg}"
+
+    # Template/render errors
+    if "template" in msg.lower() or "jinja" in msg.lower():
+        return f"Template error: {msg}"
+
+    # Attribute errors usually mean a config field mismatch
+    if isinstance(exc, AttributeError):
+        return f"Invalid configuration: {msg}"
+
+    # Default: error type + message
+    return f"{type(exc).__name__}: {msg}"
+
+
 class PJobExecutor:
     """
     Executor for PJob.
@@ -227,11 +256,9 @@ class PJobExecutor:
                 except subprocess.TimeoutExpired:
                     self._current_process.kill()
         except Exception as e:
-            import traceback
-
             result.status = ExecutionStatus.FAILED
-            result.stderr = str(e)
-            result.error_detail = traceback.format_exc()
+            result.stderr = _friendly_error(e)
+            result.error_detail = f"{type(e).__name__}: {e}"
         finally:
             result.finished_at = generate_timestamp()
 
@@ -349,7 +376,7 @@ class PJobExecutor:
                 import subprocess
 
                 result = subprocess.run(
-                    secret.command,
+                    self._fix_shell_command(secret.command),
                     shell=True,
                     capture_output=True,
                     text=True,
@@ -369,6 +396,17 @@ class PJobExecutor:
 
         return None
 
+    @staticmethod
+    def _fix_shell_command(cmd: str) -> str:
+        """Convert && to ; on Windows for PowerShell compatibility.
+
+        Note: This changes semantics — && is short-circuit (next only on success),
+        ; always runs next. Needed because PowerShell 5.x does not support &&.
+        """
+        if os.name == "nt":
+            cmd = cmd.replace("&&", ";")
+        return cmd
+
     def _run_hooks(
         self,
         hooks: list[str],
@@ -381,10 +419,10 @@ class PJobExecutor:
                 continue
             try:
                 subprocess.run(
-                    hook,
+                    self._fix_shell_command(hook),
                     shell=True,
                     env=env,
-                    cwd=work_dir if work_dir and Path(work_dir).exists() else None,
+                    cwd=work_dir if work_dir else None,
                     check=True,
                     capture_output=True,
                 )
@@ -416,7 +454,9 @@ class PJobExecutor:
         """
         import sys
 
-        cwd = work_dir if work_dir and Path(work_dir).exists() else None
+        cwd = work_dir if work_dir else None
+        if cwd:
+            Path(cwd).mkdir(parents=True, exist_ok=True)
 
         # Open stdin file if provided (e.g., for Claude Code prompt piping)
         stdin_handle = None

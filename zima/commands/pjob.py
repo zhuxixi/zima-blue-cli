@@ -720,8 +720,8 @@ def run(
                 if result.error_detail:
                     console.print(
                         Panel(
-                            Syntax(result.error_detail, "python"),
-                            title="[red]Detailed Error (Stack Trace)[/red]",
+                            result.error_detail,
+                            title="[red]Error Detail[/red]",
                             border_style="red",
                         )
                     )
@@ -854,7 +854,12 @@ def validate(
         if check_workdir and config.spec.execution.work_dir:
             work_dir = Path(config.spec.execution.work_dir)
             if not work_dir.exists():
-                warnings.append(f"Work directory '{work_dir}' does not exist (will be created)")
+                if strict:
+                    all_errors.append(f"Work directory '{work_dir}' does not exist")
+                else:
+                    warnings.append(
+                        f"Work directory '{work_dir}' does not exist (will be created on run)"
+                    )
 
         # Check template render
         if check_render:
@@ -979,8 +984,8 @@ def show_history(
         if record.error_detail:
             console.print(
                 Panel(
-                    Syntax(record.error_detail, "python"),
-                    title="[red]Error Detail (Stack Trace)[/red]",
+                    record.error_detail,
+                    title="[red]Error Detail[/red]",
                     border_style="red",
                 )
             )

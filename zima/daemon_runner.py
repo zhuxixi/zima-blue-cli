@@ -8,6 +8,10 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from zima.utils import setup_windows_utf8
+
+setup_windows_utf8()
+
 
 def main():
     if len(sys.argv) < 2:

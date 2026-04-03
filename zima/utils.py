@@ -7,6 +7,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+def setup_windows_utf8() -> None:
+    """Configure UTF-8 encoding on Windows for stdout/stderr.
+
+    Call this at the entry point of any script that may produce Unicode output.
+    Safe to call multiple times.
+    """
+    if sys.platform == "win32":
+        os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+
 def safe_print(text: str) -> None:
     """Print text safely handling encoding issues on Windows"""
     try:
