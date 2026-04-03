@@ -149,7 +149,8 @@ zima-blue-cli/
 ├── README.md                   # 项目介绍(面向人类)
 ├── docs/                       # 项目文档
 │   ├── API-INTERFACE.md        # CLI 接口文档
-│   ├── test-report-kimi-real.md # 测试报告
+│   ├── guides/                 # 指南与模板
+│   ├── reports/                # 测试报告
 │   └── ...
 │
 ├── zima/                       # CLI 源码 (包名)

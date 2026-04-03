@@ -1,4 +1,5 @@
 # Workflow 配置设计文档
+> ⚠️ 本文档写于实现前，部分内容可能已与代码不一致。最新状态请参考代码和 `docs/API-INTERFACE.md`。
 
 > Workflow 是 Zima Blue 的核心组件，定义 Agent 执行的任务流程（Prompt 模板）。
 

@@ -52,8 +52,8 @@
 **代码实现**:
 1. `zima/models/workflow.py` - 添加 `STANDARD_AGENT_SECTIONS` 和模板结构验证方法
 2. `zima/commands/workflow.py` - 添加 `check-structure` 命令，增强 `validate` 和 `show` 命令
-3. `docs/AGENT-PROMPT-TEMPLATE.md` - 模板框架设计文档
-4. `docs/AGENT-PROMPT-TEMPLATE-DETAIL.md` - 详细设计文档
+3. `docs/guides/AGENT-PROMPT-TEMPLATE.md` - 模板框架设计文档
+4. `docs/guides/AGENT-PROMPT-TEMPLATE-DETAIL.md` - 详细设计文档
 
 **新增功能**:
 ```bash
@@ -92,8 +92,8 @@ Optional: 注意事项、时间管理建议
 涉及文件：
 - zima/models/workflow.py - 模板结构验证
 - zima/commands/workflow.py - CLI 命令增强
-- docs/AGENT-PROMPT-TEMPLATE.md - 设计文档
-- docs/AGENT-PROMPT-TEMPLATE-DETAIL.md - 详细设计
+- docs/guides/AGENT-PROMPT-TEMPLATE.md - 设计文档
+- docs/guides/AGENT-PROMPT-TEMPLATE-DETAIL.md - 详细设计
 - ~/.zima/configs/workflows/coverage-workflow.yaml - 重构后的工作流
 - ~/.zima/configs/variables/coverage-vars.yaml - 更新后的变量配置
 
