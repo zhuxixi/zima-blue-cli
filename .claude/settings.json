@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=\"$CLAUDE_FILE_PATH\"; if [[ \"$FILE\" == *.py ]]; then black \"$FILE\" --line-length 100 --quiet 2>/dev/null; ruff check \"$FILE\" --fix --quiet 2>/dev/null; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
