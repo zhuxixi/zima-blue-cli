@@ -68,6 +68,11 @@ The core design is composability through six YAML-based configuration types:
 - **`zima/core/runner.py`** — `AgentRunner`: simple single-execution via subprocess. Builds kimi command, captures output, parses JSON result.
 - **`zima/execution/executor.py`** — `PJobExecutor`: resolves ConfigBundle (agent+workflow+variable+env+pmg), renders template, builds command, executes subprocess.
 - **`zima/models/config_bundle.py`** — `ConfigBundle`: assembled config set ready for execution.
+- **`zima/core/kimi_runner.py`** / **`zima/core/claude_runner.py`** — Agent-specific subprocess runners for Kimi and Claude.
+- **`zima/execution/background_runner.py`** — Background PJob execution in detached process.
+- **`zima/execution/history.py`** — Execution history tracking with PID recording.
+- **`zima/daemon_runner.py`** — Entry point for detached daemon process (`python -m zima.daemon_runner`).
+- **`zima/utils.py`** — Shared utilities (`ensure_dir`, etc.).
 
 ### Execution Flow
 
@@ -102,6 +107,7 @@ Customizable via `ZIMA_HOME` env var.
 ## Code Conventions
 
 - **Python 3.10+**, dataclasses (not pydantic models despite pydantic being a dependency)
+- **Build system**: hatchling (configured in `pyproject.toml`)
 - **Black** formatting at 100 chars, **ruff** for linting
 - **Google-style docstrings**
 - **YAML configs** follow Kubernetes-style `apiVersion: zima.io/v1` / `kind: X` / `metadata` / `spec` structure
@@ -116,6 +122,14 @@ Customizable via `ZIMA_HOME` env var.
 - **`tests/base.py`** — `TestIsolator` base class with `setup_isolation` autouse fixture
 - Integration tests are auto-marked with `@pytest.mark.integration` via `pytest_collection_modifyitems`
 - Tests use `monkeypatch` to set `ZIMA_HOME` to temp directories for isolation
+- **Coverage threshold**: 60% (`fail_under = 60` in `pyproject.toml`)
+- **Test fixtures**: `tests/fixtures/configs/` — sample YAML configs for integration tests
+
+## CI Pipeline
+
+- **GitHub Actions** on push/PR to `master`
+- **Lint job**: `ruff check` + `black --check`
+- **Test job**: `pytest --cov=zima --cov-fail-under=60` (Python 3.13)
 
 ## Extension Points
 
@@ -135,4 +149,5 @@ To add a new **Configuration Entity**:
 - `docs/architecture/` — **Current architecture** (authoritative)
 - `docs/history/` — Deprecated designs (reference only)
 - `docs/decisions/` — ADRs; ADR-004 (single execution) is the current model
+- `docs/design/` — Feature design documents (PJob design, API interface, etc.)
 - `SESSION.md` — Development session history
