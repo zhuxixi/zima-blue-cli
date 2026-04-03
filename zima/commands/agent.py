@@ -21,9 +21,10 @@ console = Console(legacy_windows=False, force_terminal=True)
 
 @app.command()
 def create(
-    name: str = typer.Option(..., "--name", "-n", help="Display name"),
-    code: str = typer.Option(
-        ..., "--code", "-c", help="Unique code (lowercase letters, numbers, hyphens)"
+    example: bool = typer.Option(False, "--example", help="Print example YAML and exit"),
+    name: Optional[str] = typer.Option(None, "--name", "-n", help="Display name"),
+    code: Optional[str] = typer.Option(
+        None, "--code", "-c", help="Unique code (lowercase letters, numbers, hyphens)"
     ),
     agent_type: str = typer.Option("kimi", "--type", "-t", help="Agent type: kimi/claude/gemini"),
     description: str = typer.Option("", "--description", "-d", help="Description"),
@@ -35,6 +36,19 @@ def create(
     ),
 ):
     """Create a new agent"""
+    if example:
+        from zima.templates.examples import EXAMPLES
+
+        print(EXAMPLES["agent"])
+        raise typer.Exit(0)
+
+    if not name:
+        console.print("[red]✗[/red] --name is required")
+        raise typer.Exit(1)
+    if not code:
+        console.print("[red]✗[/red] --code is required")
+        raise typer.Exit(1)
+
     manager = ConfigManager()
 
     # 1. Validate code format
