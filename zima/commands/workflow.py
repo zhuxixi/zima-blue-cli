@@ -126,7 +126,7 @@ def create(
             console.print(
                 "   [dim]Tip: Use standard 5-module structure: 背景/需求/规则/验收过程/结束指标"
             )
-            console.print("   [dim]See: docs/AGENT-PROMPT-TEMPLATE.md for best practices")
+            console.print("   [dim]See: docs/guides/AGENT-PROMPT-TEMPLATE.md for best practices")
 
     # 9. Save
     try:
@@ -269,7 +269,7 @@ def check_structure(
         console.print("   [yellow]→[/yellow] Consider adding missing sections:")
         for section in completeness["missing_sections"]:
             console.print(f"      • {section}")
-        console.print("\n   [dim]See: docs/AGENT-PROMPT-TEMPLATE.md for guidance[/dim]")
+        console.print("\n   [dim]See: docs/guides/AGENT-PROMPT-TEMPLATE.md for guidance[/dim]")
 
     # Fix mode (future enhancement)
     if fix and not completeness["has_all_required_sections"]:
