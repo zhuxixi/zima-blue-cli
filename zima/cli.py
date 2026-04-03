@@ -3,15 +3,13 @@
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 from typing import Optional
 
 # Fix Windows UTF-8 encoding issue
-if sys.platform == "win32":
-    os.environ["PYTHONIOENCODING"] = "utf-8"
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+from zima.utils import setup_windows_utf8
+
+setup_windows_utf8()
 
 import typer
 from rich.console import Console

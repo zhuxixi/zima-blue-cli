@@ -41,7 +41,7 @@ class ExecutionResult:
         returncode: Process return code
         stdout: Standard output
         stderr: Standard error
-        error_detail: Detailed error information (stack trace for failures)
+        error_detail: Detailed error information (full Python traceback for failures)
         command: Executed command
         env: Environment variables used
         work_dir: Working directory
@@ -56,7 +56,7 @@ class ExecutionResult:
     returncode: int = 0
     stdout: str = ""
     stderr: str = ""
-    error_detail: str = ""  # Detailed error info including stack trace
+    error_detail: str = ""  # Full Python traceback for failures
     command: list[str] = field(default_factory=list)
     env: dict = field(default_factory=dict)
     work_dir: str = ""
@@ -98,6 +98,28 @@ class ExecutionResult:
             return (end - start).total_seconds()
         except Exception:
             return 0.0
+
+
+def _friendly_error(exc: Exception) -> str:
+    """Convert an exception to a user-friendly error message."""
+    msg = str(exc)
+
+    # Known error patterns with friendly messages
+    if isinstance(exc, FileNotFoundError):
+        return f"File not found: {msg}"
+    if isinstance(exc, PermissionError):
+        return f"Permission denied: {msg}"
+    if isinstance(exc, ValueError):
+        return f"Configuration error: {msg}"
+    if isinstance(exc, KeyError):
+        return f"Missing required field: {msg}"
+    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return f"Connection error: {msg}"
+    if isinstance(exc, AttributeError):
+        return f"Invalid configuration: {msg}"
+
+    # Default: error type + message
+    return f"{type(exc).__name__}: {msg}"
 
 
 class PJobExecutor:
@@ -230,7 +252,7 @@ class PJobExecutor:
             import traceback
 
             result.status = ExecutionStatus.FAILED
-            result.stderr = str(e)
+            result.stderr = _friendly_error(e)
             result.error_detail = traceback.format_exc()
         finally:
             result.finished_at = generate_timestamp()
@@ -349,7 +371,7 @@ class PJobExecutor:
                 import subprocess
 
                 result = subprocess.run(
-                    secret.command,
+                    self._fix_shell_command(secret.command),
                     shell=True,
                     capture_output=True,
                     text=True,
@@ -369,6 +391,26 @@ class PJobExecutor:
 
         return None
 
+    @staticmethod
+    def _fix_shell_command(cmd: str) -> str:
+        """Convert && to ; on Windows for PowerShell 5.x compatibility.
+
+        Skips && inside quoted strings. Note: this changes semantics from
+        short-circuit (run next only on success) to always-run.
+        """
+        if os.name != "nt":
+            return cmd
+
+        import re
+
+        sq = "'"
+        # Replace && only when NOT inside single or double quotes
+        pattern = (
+            r'&&(?=(?:[^"]*"[^"]*")*[^"]*$)'
+            r"(?=(?:[^" + sq + r"]*" + sq + r"[^" + sq + r"]*" + sq + r")*[^" + sq + r"]*$)"
+        )
+        return re.sub(pattern, ";", cmd)
+
     def _run_hooks(
         self,
         hooks: list[str],
@@ -381,10 +423,10 @@ class PJobExecutor:
                 continue
             try:
                 subprocess.run(
-                    hook,
+                    self._fix_shell_command(hook),
                     shell=True,
                     env=env,
-                    cwd=work_dir if work_dir and Path(work_dir).exists() else None,
+                    cwd=work_dir if work_dir else None,
                     check=True,
                     capture_output=True,
                 )
@@ -416,7 +458,9 @@ class PJobExecutor:
         """
         import sys
 
-        cwd = work_dir if work_dir and Path(work_dir).exists() else None
+        cwd = work_dir if work_dir else None
+        if cwd:
+            Path(cwd).mkdir(parents=True, exist_ok=True)
 
         # Open stdin file if provided (e.g., for Claude Code prompt piping)
         stdin_handle = None
