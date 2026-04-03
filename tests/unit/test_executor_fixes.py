@@ -1,5 +1,7 @@
 """Unit tests for executor bug fixes (#11, #13, #15, #16)."""
 
+import os
+
 from zima.execution.executor import PJobExecutor, _friendly_error
 
 
@@ -47,7 +49,6 @@ class TestFriendlyError:
         assert result == "RuntimeError: something broke"
 
     def test_os_error_not_caught_by_specific_branches(self):
-        """OSError should fall through to default branch."""
         exc = OSError("disk full")
         result = _friendly_error(exc)
         assert result == "OSError: disk full"
@@ -56,38 +57,42 @@ class TestFriendlyError:
 class TestFixShellCommand:
     """Test PJobExecutor._fix_shell_command() for issue #13."""
 
-    def test_simple_and_and(self):
+    def test_simple_and_and(self, monkeypatch):
+        monkeypatch.setattr(os, "name", "nt")
         result = PJobExecutor._fix_shell_command("cd /tmp && ls")
         assert result == "cd /tmp ; ls"
 
-    def test_multiple_and_and(self):
+    def test_multiple_and_and(self, monkeypatch):
+        monkeypatch.setattr(os, "name", "nt")
         result = PJobExecutor._fix_shell_command("a && b && c")
         assert result == "a ; b ; c"
 
-    def test_and_and_inside_double_quotes_preserved(self):
+    def test_and_and_inside_double_quotes_preserved(self, monkeypatch):
+        monkeypatch.setattr(os, "name", "nt")
         result = PJobExecutor._fix_shell_command('echo "a && b"')
         assert result == 'echo "a && b"'
 
-    def test_and_and_inside_single_quotes_preserved(self):
+    def test_and_and_inside_single_quotes_preserved(self, monkeypatch):
+        monkeypatch.setattr(os, "name", "nt")
         result = PJobExecutor._fix_shell_command("echo 'a && b'")
         assert result == "echo 'a && b'"
 
-    def test_mixed_quoted_and_unquoted(self):
+    def test_mixed_quoted_and_unquoted(self, monkeypatch):
+        monkeypatch.setattr(os, "name", "nt")
         result = PJobExecutor._fix_shell_command('echo "a && b" && echo c')
         assert result == 'echo "a && b" ; echo c'
 
-    def test_no_and_and(self):
+    def test_no_and_and(self, monkeypatch):
+        monkeypatch.setattr(os, "name", "nt")
         result = PJobExecutor._fix_shell_command("echo hello")
         assert result == "echo hello"
 
-    def test_empty_string(self):
+    def test_empty_string(self, monkeypatch):
+        monkeypatch.setattr(os, "name", "nt")
         result = PJobExecutor._fix_shell_command("")
         assert result == ""
 
     def test_non_windows_passthrough(self, monkeypatch):
-        """On non-Windows, command should pass through unchanged."""
-        import os
-
         monkeypatch.setattr(os, "name", "posix")
         result = PJobExecutor._fix_shell_command("cd /tmp && ls")
         assert result == "cd /tmp && ls"
