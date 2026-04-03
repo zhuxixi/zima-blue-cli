@@ -1,6 +1,7 @@
 """Unit tests for utility functions."""
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -218,7 +219,7 @@ class TestIcon:
 
     def test_icon_windows(self, monkeypatch):
         """Test icon returns empty on Windows."""
-        monkeypatch.setattr(os, "name", "nt")
+        monkeypatch.setattr(sys, "platform", "win32")
         result = utils.icon("rocket")
         assert result == ""
 
