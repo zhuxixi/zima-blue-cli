@@ -41,7 +41,7 @@ class ExecutionResult:
         returncode: Process return code
         stdout: Standard output
         stderr: Standard error
-        error_detail: Detailed error information (stack trace for failures)
+        error_detail: Detailed error information (full Python traceback for failures)
         command: Executed command
         env: Environment variables used
         work_dir: Working directory
@@ -56,7 +56,7 @@ class ExecutionResult:
     returncode: int = 0
     stdout: str = ""
     stderr: str = ""
-    error_detail: str = ""  # Detailed error info including stack trace
+    error_detail: str = ""  # Full Python traceback for failures
     command: list[str] = field(default_factory=list)
     env: dict = field(default_factory=dict)
     work_dir: str = ""
@@ -110,18 +110,11 @@ def _friendly_error(exc: Exception) -> str:
     if isinstance(exc, PermissionError):
         return f"Permission denied: {msg}"
     if isinstance(exc, ValueError):
-        # Config-related ValueErrors usually mention a specific field
         return f"Configuration error: {msg}"
     if isinstance(exc, KeyError):
         return f"Missing required field: {msg}"
     if isinstance(exc, (ConnectionError, TimeoutError)):
         return f"Connection error: {msg}"
-
-    # Template/render errors
-    if "template" in msg.lower() or "jinja" in msg.lower():
-        return f"Template error: {msg}"
-
-    # Attribute errors usually mean a config field mismatch
     if isinstance(exc, AttributeError):
         return f"Invalid configuration: {msg}"
 
@@ -256,9 +249,11 @@ class PJobExecutor:
                 except subprocess.TimeoutExpired:
                     self._current_process.kill()
         except Exception as e:
+            import traceback
+
             result.status = ExecutionStatus.FAILED
             result.stderr = _friendly_error(e)
-            result.error_detail = f"{type(e).__name__}: {e}"
+            result.error_detail = traceback.format_exc()
         finally:
             result.finished_at = generate_timestamp()
 
@@ -398,14 +393,23 @@ class PJobExecutor:
 
     @staticmethod
     def _fix_shell_command(cmd: str) -> str:
-        """Convert && to ; on Windows for PowerShell compatibility.
+        """Convert && to ; on Windows for PowerShell 5.x compatibility.
 
-        Note: This changes semantics — && is short-circuit (next only on success),
-        ; always runs next. Needed because PowerShell 5.x does not support &&.
+        Skips && inside quoted strings. Note: this changes semantics from
+        short-circuit (run next only on success) to always-run.
         """
-        if os.name == "nt":
-            cmd = cmd.replace("&&", ";")
-        return cmd
+        if os.name != "nt":
+            return cmd
+
+        import re
+
+        sq = "'"
+        # Replace && only when NOT inside single or double quotes
+        pattern = (
+            r'&&(?=(?:[^"]*"[^"]*")*[^"]*$)'
+            r"(?=(?:[^" + sq + r"]*" + sq + r"[^" + sq + r"]*" + sq + r")*[^" + sq + r"]*$)"
+        )
+        return re.sub(pattern, ";", cmd)
 
     def _run_hooks(
         self,

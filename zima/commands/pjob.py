@@ -854,12 +854,9 @@ def validate(
         if check_workdir and config.spec.execution.work_dir:
             work_dir = Path(config.spec.execution.work_dir)
             if not work_dir.exists():
-                if strict:
-                    all_errors.append(f"Work directory '{work_dir}' does not exist")
-                else:
-                    warnings.append(
-                        f"Work directory '{work_dir}' does not exist (will be created on run)"
-                    )
+                warnings.append(
+                    f"Work directory '{work_dir}' does not exist (will be created on run)"
+                )
 
         # Check template render
         if check_render:
