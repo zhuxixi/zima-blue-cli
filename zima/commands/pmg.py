@@ -19,12 +19,13 @@ console = Console(legacy_windows=False, force_terminal=True)
 
 @app.command()
 def create(
-    code: str = typer.Option(
-        ..., "--code", "-c", help="Unique code (lowercase letters, numbers, hyphens)"
+    example: bool = typer.Option(False, "--example", help="Print example YAML and exit"),
+    code: Optional[str] = typer.Option(
+        None, "--code", "-c", help="Unique code (lowercase letters, numbers, hyphens)"
     ),
-    name: str = typer.Option(..., "--name", "-n", help="Display name"),
-    for_types: List[str] = typer.Option(
-        ..., "--for-type", "-t", help="Target agent types (can specify multiple)"
+    name: Optional[str] = typer.Option(None, "--name", "-n", help="Display name"),
+    for_types: Optional[List[str]] = typer.Option(
+        None, "--for-type", "-t", help="Target agent types (can specify multiple)"
     ),
     description: str = typer.Option("", "--description", "-d", help="Description"),
     from_code: Optional[str] = typer.Option(None, "--from", help="Copy from existing PMG"),
@@ -33,6 +34,22 @@ def create(
     ),
 ):
     """Create a new parameters group"""
+    if example:
+        from zima.templates.examples import EXAMPLES
+
+        print(EXAMPLES["pmg"])
+        raise typer.Exit(0)
+
+    if not code:
+        console.print("[red]✗[/red] --code is required")
+        raise typer.Exit(1)
+    if not name:
+        console.print("[red]✗[/red] --name is required")
+        raise typer.Exit(1)
+    if not for_types:
+        console.print("[red]✗[/red] --for-type is required")
+        raise typer.Exit(1)
+
     manager = ConfigManager()
 
     # 1. Validate code format

@@ -24,9 +24,10 @@ console = Console(legacy_windows=False, force_terminal=True)
 
 @app.command()
 def create(
-    name: str = typer.Option(..., "--name", "-n", help="Display name"),
-    code: str = typer.Option(
-        ..., "--code", "-c", help="Unique code (lowercase letters, numbers, hyphens)"
+    example: bool = typer.Option(False, "--example", help="Print example YAML and exit"),
+    name: Optional[str] = typer.Option(None, "--name", "-n", help="Display name"),
+    code: Optional[str] = typer.Option(
+        None, "--code", "-c", help="Unique code (lowercase letters, numbers, hyphens)"
     ),
     agent: Optional[str] = typer.Option(None, "--agent", "-a", help="Agent code"),
     workflow: Optional[str] = typer.Option(None, "--workflow", "-w", help="Workflow code"),
@@ -46,6 +47,19 @@ def create(
     ),
 ):
     """Create a new PJob"""
+    if example:
+        from zima.templates.examples import EXAMPLES
+
+        print(EXAMPLES["pjob"])
+        raise typer.Exit(0)
+
+    if not name:
+        console.print("[red]✗[/red] --name is required")
+        raise typer.Exit(1)
+    if not code:
+        console.print("[red]✗[/red] --code is required")
+        raise typer.Exit(1)
+
     manager = ConfigManager()
 
     # 1. Validate code format
