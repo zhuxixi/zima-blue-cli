@@ -20,12 +20,13 @@ console = Console(legacy_windows=False, force_terminal=True)
 
 @app.command()
 def create(
-    code: str = typer.Option(
-        ..., "--code", "-c", help="Unique code (lowercase letters, numbers, hyphens)"
+    example: bool = typer.Option(False, "--example", help="Print example YAML and exit"),
+    code: Optional[str] = typer.Option(
+        None, "--code", "-c", help="Unique code (lowercase letters, numbers, hyphens)"
     ),
-    name: str = typer.Option(..., "--name", "-n", help="Display name"),
-    for_type: str = typer.Option(
-        ..., "--for-type", "-t", help="Target agent type: kimi/claude/gemini"
+    name: Optional[str] = typer.Option(None, "--name", "-n", help="Display name"),
+    for_type: Optional[str] = typer.Option(
+        None, "--for-type", "-t", help="Target agent type: kimi/claude/gemini"
     ),
     description: str = typer.Option("", "--description", "-d", help="Description"),
     from_code: Optional[str] = typer.Option(None, "--from", help="Copy from existing env config"),
@@ -34,6 +35,22 @@ def create(
     ),
 ):
     """Create a new environment configuration"""
+    if example:
+        from zima.templates.examples import EXAMPLES
+
+        print(EXAMPLES["env"])
+        raise typer.Exit(0)
+
+    if not code:
+        console.print("[red]✗[/red] --code is required")
+        raise typer.Exit(1)
+    if not name:
+        console.print("[red]✗[/red] --name is required")
+        raise typer.Exit(1)
+    if not for_type:
+        console.print("[red]✗[/red] --for-type is required")
+        raise typer.Exit(1)
+
     manager = ConfigManager()
 
     # 1. Validate code format

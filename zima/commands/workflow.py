@@ -23,10 +23,11 @@ console = Console(legacy_windows=False, force_terminal=True)
 
 @app.command()
 def create(
-    code: str = typer.Option(
-        ..., "--code", "-c", help="Unique code (lowercase letters, numbers, hyphens)"
+    example: bool = typer.Option(False, "--example", help="Print example YAML and exit"),
+    name: Optional[str] = typer.Option(None, "--name", "-n", help="Display name"),
+    code: Optional[str] = typer.Option(
+        None, "--code", "-c", help="Unique code (lowercase letters, numbers, hyphens)"
     ),
-    name: str = typer.Option(..., "--name", "-n", help="Display name"),
     description: str = typer.Option("", "--description", "-d", help="Description"),
     template: Optional[str] = typer.Option(
         None, "--template", "-t", help="Template content (or @file to load from file)"
@@ -38,6 +39,19 @@ def create(
     force: bool = typer.Option(False, "--force", help="Force overwrite if workflow already exists"),
 ):
     """Create a new workflow"""
+    if example:
+        from zima.templates.examples import EXAMPLES
+
+        print(EXAMPLES["workflow"])
+        raise typer.Exit(0)
+
+    if not name:
+        console.print("[red]✗[/red] --name is required")
+        raise typer.Exit(1)
+    if not code:
+        console.print("[red]✗[/red] --code is required")
+        raise typer.Exit(1)
+
     manager = ConfigManager()
 
     # 1. Validate code format
