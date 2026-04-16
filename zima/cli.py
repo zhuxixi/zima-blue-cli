@@ -357,7 +357,22 @@ def daemon_stop():
     try:
         pid = int(pid_file.read_text(encoding="utf-8").strip())
         if sys.platform == "win32":
-            subprocess.run(["taskkill", "/PID", str(pid), "/F"], check=False)
+            # Try graceful shutdown first, then force after 5s
+            subprocess.run(["taskkill", "/PID", str(pid)], check=False)
+            import time
+
+            time.sleep(5)
+            # Force kill if still alive
+            try:
+                import ctypes
+
+                kernel32 = ctypes.windll.kernel32
+                handle = kernel32.OpenProcess(1, False, pid)
+                if handle:
+                    kernel32.CloseHandle(handle)
+                    subprocess.run(["taskkill", "/PID", str(pid), "/F"], check=False)
+            except Exception:
+                pass
         else:
             import os
             import signal

@@ -154,7 +154,11 @@ class DaemonScheduler:
     def _kill_pjob(self, code: str, proc: subprocess.Popen, stage_name: str) -> None:
         """Kill a single PJob process."""
         if proc.poll() is not None:
-            return  # Already finished
+            # Already finished — close log handle
+            log_fh = self._pjob_log_handles.pop(code, None)
+            if log_fh:
+                log_fh.close()
+            return
 
         self._log(f"Killing PJob {code} (PID {proc.pid}) at stage transition '{stage_name}'")
         status = "killed_timeout"
@@ -184,8 +188,9 @@ class DaemonScheduler:
             "detail": detail,
             "timestamp": datetime.now().isoformat(),
         }
-        with open(history_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        with self._lock:
+            with open(history_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     def _save_state(self) -> None:
         """Persist lightweight runtime state."""
