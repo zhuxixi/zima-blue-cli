@@ -12,7 +12,7 @@ from pathlib import Path
 from zima.config.manager import ConfigManager
 from zima.core.daemon_scheduler import DaemonScheduler
 from zima.models.schedule import ScheduleConfig
-from zima.utils import setup_windows_utf8
+from zima.utils import get_zima_home, setup_windows_utf8
 
 setup_windows_utf8()
 
@@ -42,7 +42,7 @@ def main():
             print(f"  - {e}")
         sys.exit(1)
 
-    daemon_dir = Path.home() / ".zima" / "daemon"
+    daemon_dir = get_zima_home() / "daemon"
     scheduler = DaemonScheduler(schedule, daemon_dir)
 
     # Write PID file

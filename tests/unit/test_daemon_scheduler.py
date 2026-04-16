@@ -59,7 +59,7 @@ class TestStageTransitions:
         assert len(lines) == 1
         record = json.loads(lines[0])
         assert record["pjobCode"] == "p1"
-        assert record["status"] == "killed_timeout"
+        assert record["status"] == "terminated"
 
     def test_start_pjob_launch_failed(self, tmp_path):
         cfg = ScheduleConfig.create(code="daily", name="Daily")

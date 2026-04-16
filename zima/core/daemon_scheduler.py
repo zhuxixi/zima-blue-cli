@@ -9,6 +9,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
+from pathlib import Path
 
 from zima.models.schedule import ScheduleConfig
 
@@ -23,6 +24,7 @@ class DaemonScheduler:
         self.current_cycle = -1
         self.current_stage: str | None = None
         self.active_pjobs: dict[str, subprocess.Popen] = {}
+        self._pjob_log_handles: dict[str, object] = {}
         self._timers: list[threading.Timer] = []
         self._lock = threading.Lock()
 
@@ -117,8 +119,9 @@ class DaemonScheduler:
         cmd = [sys.executable, "-m", "zima.cli", "pjob", "run", code]
 
         # Build platform-specific subprocess kwargs
+        log_fh = open(log_file, "w", encoding="utf-8")
         kwargs: dict = {
-            "stdout": open(log_file, "w", encoding="utf-8"),  # noqa: SIM115
+            "stdout": log_fh,
             "stderr": subprocess.STDOUT,
         }
         if sys.platform == "win32":
@@ -132,8 +135,10 @@ class DaemonScheduler:
             proc = subprocess.Popen(cmd, **kwargs)
             with self._lock:
                 self.active_pjobs[code] = proc
+                self._pjob_log_handles[code] = log_fh
             self._log(f"Started PJob {code} (PID {proc.pid}), log: {log_file}")
         except Exception as e:
+            log_fh.close()
             self._log(f"Failed to start PJob {code}: {e}")
             self._record_history(code, "launch_failed", str(e))
 
@@ -141,6 +146,9 @@ class DaemonScheduler:
         """Kill all active PJobs and record timeouts."""
         for code, proc in list(self.active_pjobs.items()):
             self._kill_pjob(code, proc, stage_name)
+            log_fh = self._pjob_log_handles.pop(code, None)
+            if log_fh:
+                log_fh.close()
         self.active_pjobs.clear()
 
     def _kill_pjob(self, code: str, proc: subprocess.Popen, stage_name: str) -> None:
@@ -149,17 +157,19 @@ class DaemonScheduler:
             return  # Already finished
 
         self._log(f"Killing PJob {code} (PID {proc.pid}) at stage transition '{stage_name}'")
+        status = "killed_timeout"
         try:
             proc.terminate()
             try:
                 proc.wait(timeout=5)
+                status = "terminated"
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait(timeout=5)
         except Exception as e:
             self._log(f"Error killing PJob {code}: {e}")
 
-        self._record_history(code, "killed_timeout", stage_name)
+        self._record_history(code, status, stage_name)
 
     def _record_history(self, code: str, status: str, detail: str) -> None:
         """Append a history record."""

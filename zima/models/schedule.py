@@ -156,8 +156,8 @@ class ScheduleConfig(BaseConfig):
                 errors.append(
                     f"stage '{stage.name}' ends at {end}m, exceeding cycle {self.cycle_minutes}m"
                 )
-            if stage.offset_minutes < prev_offset:
-                errors.append("stages must be sorted by offsetMinutes")
+            if stage.offset_minutes <= prev_offset:
+                errors.append("stages must be sorted by offsetMinutes with no duplicates")
             prev_offset = stage.offset_minutes
 
         # Validate cycleMapping length

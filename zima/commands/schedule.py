@@ -231,6 +231,14 @@ def set_mapping(
 
     data = manager.load_config("schedule", code)
     cfg = ScheduleConfig.from_dict(data)
+
+    # Validate type_id against defined cycle types
+    if type_id != "idle":
+        valid_type_ids = {ct.type_id for ct in cfg.cycle_types}
+        if type_id not in valid_type_ids:
+            console.print(f"[red]✗[/red] Unknown typeId '{type_id}'. Valid: {sorted(valid_type_ids) or '(none defined)'}")
+            raise typer.Exit(1)
+
     cfg.cycle_mapping[index] = type_id
     manager.save_config("schedule", code, cfg.to_dict())
     console.print(f"[green]✓[/green] Set cycleMapping[{index}] = '{type_id}'")

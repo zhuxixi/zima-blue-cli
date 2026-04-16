@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 # Fix Windows UTF-8 encoding issue
-from zima.utils import setup_windows_utf8
+from zima.utils import get_zima_home, setup_windows_utf8
 
 setup_windows_utf8()
 
@@ -274,7 +274,7 @@ def daemon_start(
     schedule: str = typer.Option(..., "--schedule", "-s", help="Schedule code"),
 ):
     """Start the global daemon"""
-    daemon_dir = Path.home() / ".zima" / "daemon"
+    daemon_dir = get_zima_home() / "daemon"
     pid_file = daemon_dir / "daemon.pid"
 
     if pid_file.exists():
@@ -318,10 +318,11 @@ def daemon_start(
         schedule,
     ]
 
+    log_fh = open(log_file, "w", encoding="utf-8")
     if sys.platform == "win32":
         proc = subprocess.Popen(
             cmd,
-            stdout=open(log_file, "w", encoding="utf-8"),
+            stdout=log_fh,
             stderr=subprocess.STDOUT,
             creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
             close_fds=True,
@@ -329,11 +330,13 @@ def daemon_start(
     else:
         proc = subprocess.Popen(
             cmd,
-            stdout=open(log_file, "w", encoding="utf-8"),
+            stdout=log_fh,
             stderr=subprocess.STDOUT,
             start_new_session=True,
             close_fds=True,
         )
+    # Detach file handle — daemon process owns it now
+    log_fh.close()
 
     pid_file.write_text(str(proc.pid), encoding="utf-8")
     console.print(f"[green]✓[/green] Daemon started (PID {proc.pid})")
@@ -344,7 +347,7 @@ def daemon_start(
 @app.command()
 def daemon_stop():
     """Stop the global daemon"""
-    daemon_dir = Path.home() / ".zima" / "daemon"
+    daemon_dir = get_zima_home() / "daemon"
     pid_file = daemon_dir / "daemon.pid"
 
     if not pid_file.exists():
@@ -370,7 +373,7 @@ def daemon_stop():
 @app.command()
 def daemon_status():
     """Show daemon status"""
-    daemon_dir = Path.home() / ".zima" / "daemon"
+    daemon_dir = get_zima_home() / "daemon"
     pid_file = daemon_dir / "daemon.pid"
     state_file = daemon_dir / "state.json"
 
@@ -423,7 +426,7 @@ def daemon_logs(
     tail: int = typer.Option(20, "--tail", "-n", help="Number of lines"),
 ):
     """Show daemon logs"""
-    log_file = Path.home() / ".zima" / "daemon" / "daemon.log"
+    log_file = get_zima_home() / "daemon" / "daemon.log"
     if not log_file.exists():
         console.print("[yellow]No daemon logs found[/yellow]")
         raise typer.Exit(0)

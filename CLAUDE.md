@@ -44,9 +44,9 @@ python scripts/cleanup.py --auto
 
 ## Architecture
 
-### Configuration Entity System (5 + 1 types)
+### Configuration Entity System (6 + 1 types)
 
-The core design is composability through six YAML-based configuration types:
+The core design is composability through seven YAML-based configuration types:
 
 | Entity | Model | Purpose |
 |--------|-------|---------|
@@ -56,13 +56,14 @@ The core design is composability through six YAML-based configuration types:
 | Env | `EnvConfig` | Secrets and env vars (env/file/cmd/vault sources) |
 | PMG | `PMGConfig` | Dynamic CLI parameter groups with conditions |
 | **PJob** | `PJobConfig` | **Execution layer** — composes all above into a runnable job |
+| **Schedule** | `ScheduleConfig` | **Daemon scheduling** — 32-cycle PJob scheduling with stages |
 
 **Resolution precedence** (highest to lowest): PJob runtime overrides → PJob explicit refs → Agent defaults → System defaults.
 
 ### Key Layers
 
 - **`zima/cli.py`** — Typer CLI entry point. Registers subcommand groups. Has Windows UTF-8 fix.
-- **`zima/commands/`** — CLI subcommand implementations (agent, workflow, variable, env, pmg, pjob).
+- **`zima/commands/`** — CLI subcommand implementations (agent, workflow, variable, env, pmg, pjob, schedule).
 - **`zima/config/manager.py`** — `ConfigManager`: unified CRUD for all config types. Single class handles create/read/update/delete/list for every entity kind via `KINDS` set.
 - **`zima/models/`** — Dataclasses for each entity. `BaseConfig` provides common YAML load/save. `Metadata` has code/name/description.
 - **`zima/core/runner.py`** — `AgentRunner`: simple single-execution via subprocess. Builds kimi command, captures output, parses JSON result.
@@ -72,6 +73,7 @@ The core design is composability through six YAML-based configuration types:
 - **`zima/execution/background_runner.py`** — Background PJob execution in detached process.
 - **`zima/execution/history.py`** — Execution history tracking with PID recording.
 - **`zima/daemon_runner.py`** — Entry point for detached daemon process (`python -m zima.daemon_runner`).
+- **`zima/core/daemon_scheduler.py`** — `DaemonScheduler`: 32-cycle PJob scheduling with stage timers, PJob spawn/kill, JSONL history.
 - **`zima/utils.py`** — Shared utilities (`ensure_dir`, etc.).
 
 ### Execution Flow
@@ -91,7 +93,12 @@ zima pjob run <code>
 
 ```
 ~/.zima/
-├── configs/{agents,workflows,variables,envs,pmgs,pjobs}/   # YAML configs
+├── configs/{agents,workflows,variables,envs,pmgs,pjobs,schedules}/   # YAML configs
+├── daemon/                    # Daemon runtime (PID, state, logs, history)
+│   ├── daemon.pid
+│   ├── daemon.log
+│   ├── state.json
+│   └── history/*.jsonl
 └── agents/<code>/
     ├── workspace/     # Working directory for execution
     ├── prompts/       # Rendered prompt files
@@ -102,7 +109,7 @@ Customizable via `ZIMA_HOME` env var.
 
 ### Legacy Components (Unused in v2)
 
-`core/daemon.py`, `core/scheduler.py`, `core/state_manager.py` — retained for reference only. v2 replaced 15-min cycle architecture with single execution (see ADR 004).
+`core/daemon.py`, `core/scheduler.py`, `core/state_manager.py` — retained for reference only. v2 replaced 15-min cycle architecture with single execution (see ADR 004). `core/daemon_scheduler.py` is the new v3 daemon scheduler.
 
 ## Code Conventions
 
