@@ -6,6 +6,7 @@ Usage: python -m zima.daemon_runner --schedule <schedule_code>
 
 import argparse
 import os
+import signal
 import sys
 from pathlib import Path
 
@@ -50,9 +51,16 @@ def main():
     pid_file.parent.mkdir(parents=True, exist_ok=True)
     pid_file.write_text(str(os.getpid()), encoding="utf-8")
 
+    # Handle SIGTERM (Linux) for graceful shutdown
+    def _handle_signal(signum, frame):
+        scheduler.stop()
+
+    if sys.platform != "win32":
+        signal.signal(signal.SIGTERM, _handle_signal)
+
     try:
         scheduler.run()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, SystemExit):
         scheduler.stop()
     finally:
         pid_file.unlink(missing_ok=True)

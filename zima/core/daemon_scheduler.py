@@ -98,12 +98,14 @@ class DaemonScheduler:
         if not self.running:
             return
 
-        self.current_stage = stage_name
+        previous_stage = self.current_stage
         self._log(f"Stage '{stage_name}' triggered in cycle {self.current_cycle}")
 
-        # Kill previous stage PJobs
+        # Kill previous stage PJobs (use previous stage name for history)
         with self._lock:
-            self._kill_all_pjobs(stage_name=f"pre-{stage_name}")
+            self._kill_all_pjobs(stage_name=previous_stage or "startup")
+
+        self.current_stage = stage_name
 
         pjob_codes = cycle_type.get_stage_pjobs(stage_name)
         for code in pjob_codes:
@@ -130,6 +132,7 @@ class DaemonScheduler:
             )
         else:
             kwargs["start_new_session"] = True
+        kwargs["close_fds"] = True
 
         try:
             proc = subprocess.Popen(cmd, **kwargs)

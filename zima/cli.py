@@ -338,6 +338,16 @@ def daemon_start(
     # Detach file handle — daemon process owns it now
     log_fh.close()
 
+    # Brief check that child didn't exit immediately (e.g. validation failure)
+    import time
+
+    time.sleep(0.5)
+    if proc.poll() is not None:
+        pid_file.unlink(missing_ok=True)
+        console.print(f"[red]✗[/red] Daemon exited immediately (code {proc.returncode})")
+        console.print(f"   Check log: {log_file}")
+        raise typer.Exit(1)
+
     pid_file.write_text(str(proc.pid), encoding="utf-8")
     console.print(f"[green]✓[/green] Daemon started (PID {proc.pid})")
     console.print(f"   Schedule: {schedule}")
