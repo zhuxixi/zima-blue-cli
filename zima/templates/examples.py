@@ -144,8 +144,37 @@ spec:
       dream: [pjob-a3]
   cycleMapping:
     - A
+    - A
     - idle
     - A
+    - A
+    - idle
+    - A
+    - A
+    - idle
+    - A
+    - A
+    - idle
+    - A
+    - A
+    - idle
+    - idle
+    - A
+    - A
+    - idle
+    - A
+    - A
+    - idle
+    - A
+    - A
+    - idle
+    - A
+    - A
+    - idle
+    - A
+    - A
+    - idle
+    - idle
 """
 
 EXAMPLES = {

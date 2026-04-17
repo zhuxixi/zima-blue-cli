@@ -319,22 +319,27 @@ def daemon_start(
     ]
 
     log_fh = open(log_file, "w", encoding="utf-8")
-    if sys.platform == "win32":
-        proc = subprocess.Popen(
-            cmd,
-            stdout=log_fh,
-            stderr=subprocess.STDOUT,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
-            close_fds=True,
-        )
-    else:
-        proc = subprocess.Popen(
-            cmd,
-            stdout=log_fh,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-            close_fds=True,
-        )
+    try:
+        if sys.platform == "win32":
+            proc = subprocess.Popen(
+                cmd,
+                stdout=log_fh,
+                stderr=subprocess.STDOUT,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
+                close_fds=True,
+            )
+        else:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=log_fh,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                close_fds=True,
+            )
+    except Exception as e:
+        log_fh.close()
+        console.print(f"[red]✗[/red] Failed to start daemon: {e}")
+        raise typer.Exit(1)
     # Detach file handle — daemon process owns it now
     log_fh.close()
 

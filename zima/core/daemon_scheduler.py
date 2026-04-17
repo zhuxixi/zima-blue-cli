@@ -122,6 +122,7 @@ class DaemonScheduler:
         # Build platform-specific subprocess kwargs
         log_fh = open(log_file, "w", encoding="utf-8")
         kwargs: dict = {
+            "stdin": subprocess.DEVNULL,
             "stdout": log_fh,
             "stderr": subprocess.STDOUT,
         }
