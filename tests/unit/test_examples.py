@@ -72,6 +72,7 @@ class TestExamplesStructure:
             "env": "Env",
             "pmg": "PMG",
             "pjob": "PJob",
+            "schedule": "Schedule",
         }
         assert (
             data["kind"] == kind_map[kind]
@@ -82,18 +83,18 @@ class TestExamplesCoverage:
     """Tests for EXAMPLES dict coverage."""
 
     def test_examples_covers_all_six_kinds(self):
-        """EXAMPLES dict must contain exactly 6 kinds."""
-        expected = {"agent", "workflow", "variable", "env", "pmg", "pjob"}
+        """EXAMPLES dict must contain all entity kinds."""
+        expected = {"agent", "workflow", "variable", "env", "pmg", "pjob", "schedule"}
         assert set(EXAMPLES.keys()) == expected
 
     def test_valid_kinds_constant(self):
-        """VALID_KINDS must be the correct set of 6 kind strings."""
-        expected = {"Agent", "Workflow", "Variable", "Env", "PMG", "PJob"}
+        """VALID_KINDS must be the correct set of kind strings."""
+        expected = {"Agent", "Workflow", "Variable", "Env", "PMG", "PJob", "Schedule"}
         assert VALID_KINDS == expected
 
     def test_valid_kinds_size(self):
-        """VALID_KINDS must have exactly 6 entries."""
-        assert len(VALID_KINDS) == 6
+        """VALID_KINDS must have the correct number of entries."""
+        assert len(VALID_KINDS) == 7
 
 
 class TestAgentRoundTrip:
