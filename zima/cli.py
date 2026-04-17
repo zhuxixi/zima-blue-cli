@@ -368,7 +368,8 @@ def daemon_stop():
         pid = int(pid_file.read_text(encoding="utf-8").strip())
         if sys.platform == "win32":
             # Try graceful shutdown first, then force after 5s
-            subprocess.run(["taskkill", "/PID", str(pid)], check=False)
+            # /T kills the entire process tree (PJobs spawned with CREATE_NEW_PROCESS_GROUP)
+            subprocess.run(["taskkill", "/PID", str(pid), "/T"], check=False)
             import time
 
             time.sleep(5)
@@ -380,7 +381,7 @@ def daemon_stop():
                 handle = kernel32.OpenProcess(1, False, pid)
                 if handle:
                     kernel32.CloseHandle(handle)
-                    subprocess.run(["taskkill", "/PID", str(pid), "/F"], check=False)
+                    subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], check=False)
             except Exception:
                 pass
         else:
