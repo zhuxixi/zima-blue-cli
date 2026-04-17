@@ -1,60 +1,69 @@
 """
-Daemon runner - executed as a separate process for background agent execution
+Daemon runner - executed as a separate process for background scheduling.
 
-Usage: python -m zima.daemon_runner <agent_dir>
+Usage: python -m zima.daemon_runner --schedule <schedule_code>
 """
 
+import argparse
+import os
+import signal
 import sys
-from datetime import datetime
 from pathlib import Path
 
-from zima.utils import setup_windows_utf8
+from zima.config.manager import ConfigManager
+from zima.core.daemon_scheduler import DaemonScheduler
+from zima.models.schedule import ScheduleConfig
+from zima.utils import get_zima_home, setup_windows_utf8
 
 setup_windows_utf8()
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Zima Daemon Runner")
+    parser.add_argument("--schedule", required=True, help="Schedule code to run")
+    return parser.parse_args()
+
+
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python -m zima.daemon_runner <agent_dir>")
+    args = parse_args()
+    schedule_code = args.schedule
+
+    manager = ConfigManager()
+    if not manager.config_exists("schedule", schedule_code):
+        print(f"Error: Schedule '{schedule_code}' not found")
         sys.exit(1)
 
-    agent_dir = Path(sys.argv[1])
+    data = manager.load_config("schedule", schedule_code)
+    schedule = ScheduleConfig.from_dict(data)
 
-    if not agent_dir.exists():
-        print(f"Error: Agent directory not found: {agent_dir}")
+    errors = schedule.validate(resolve_refs=True)
+    if errors:
+        print("Error: Schedule validation failed:")
+        for e in errors:
+            print(f"  - {e}")
         sys.exit(1)
 
-    # Load config
-    from zima.models import AgentConfig
+    daemon_dir = get_zima_home() / "daemon"
+    scheduler = DaemonScheduler(schedule, daemon_dir)
 
-    config_path = agent_dir / "agent.yaml"
+    # Write PID file
+    pid_file = daemon_dir / "daemon.pid"
+    pid_file.parent.mkdir(parents=True, exist_ok=True)
+    pid_file.write_text(str(os.getpid()), encoding="utf-8")
 
-    if not config_path.exists():
-        print(f"Error: Agent config not found: {config_path}")
-        sys.exit(1)
+    # Handle SIGTERM (Linux) for graceful shutdown
+    def _handle_signal(signum, frame):
+        scheduler.stop()
 
-    config = AgentConfig.from_yaml(config_path)
-
-    # Initialize components
-    from zima.core import CycleScheduler, KimiRunner, StateManager
-
-    runner = KimiRunner(config, agent_dir)
-    state_manager = StateManager(agent_dir)
-    scheduler = CycleScheduler(config, runner, state_manager)
-
-    print(f"[{datetime.now().isoformat()}] Daemon started for agent: {config.name}")
-    print(f"[{datetime.now().isoformat()}] Agent directory: {agent_dir}")
+    if sys.platform != "win32":
+        signal.signal(signal.SIGTERM, _handle_signal)
 
     try:
         scheduler.run()
-    except Exception as e:
-        print(f"[{datetime.now().isoformat()}] Daemon error: {e}")
-        import traceback
-
-        traceback.print_exc()
-        sys.exit(1)
-
-    print(f"[{datetime.now().isoformat()}] Daemon stopped")
+    except (KeyboardInterrupt, SystemExit):
+        scheduler.stop()
+    finally:
+        pid_file.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
