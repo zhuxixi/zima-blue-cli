@@ -26,7 +26,7 @@ class DaemonScheduler:
         self.active_pjobs: dict[str, subprocess.Popen] = {}
         self._pjob_log_handles: dict[str, object] = {}
         self._timers: list[threading.Timer] = []
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
         # Ensure runtime directories
         self.daemon_dir.mkdir(parents=True, exist_ok=True)
