@@ -149,6 +149,23 @@ To add a new **Configuration Entity**:
 2. Add kind to `ConfigManager.KINDS`
 3. Create commands in `zima/commands/<entity>.py`
 4. Register Typer subcommand in `zima/cli.py`
+5. Add example YAML to `zima/templates/examples.py` (`EXAMPLES` dict + `VALID_KINDS`)
+
+## Gotchas
+
+### GitHub PR Code Review Feedback
+
+PR 评论有三个独立 API，不同 CR 工具用不同 API 提交，获取完整反馈必须查所有端点：
+- Issue comments: `gh api repos/{owner}/{repo}/issues/{n}/comments`
+- Reviews: `gh api repos/{owner}/{repo}/pulls/{n}/reviews`
+- Inline comments: `gh api repos/{owner}/{repo}/pulls/{n}/comments`
+
+### Daemon / Subprocess Patterns
+
+- Detached subprocess: 必须设 `stdin=subprocess.DEVNULL` 防止 stdin 阻塞
+- 守护进程内 threading lock: 用 `RLock` 而非 `Lock`（嵌套调用链会死锁）
+- Windows taskkill: 加 `/T` 杀整个进程树（PJob 子进程不会随 daemon 一起死）
+- 新增运行时路径必须用 `get_zima_home()` 而非 `Path.home() / ".zima"`（ZIMA_HOME env var）
 
 ## Documentation
 
