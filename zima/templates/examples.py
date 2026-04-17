@@ -118,6 +118,36 @@ spec:
     append: false
 """
 
+SCHEDULE_EXAMPLE = """\
+apiVersion: zima.io/v1
+kind: Schedule
+metadata:
+  code: daily-32
+  name: "Daily 32-cycle Schedule"
+spec:
+  cycleMinutes: 45
+  dailyCycles: 32
+  stages:
+    - name: work
+      offsetMinutes: 0
+      durationMinutes: 20
+    - name: rest
+      offsetMinutes: 20
+      durationMinutes: 15
+    - name: dream
+      offsetMinutes: 35
+      durationMinutes: 10
+  cycleTypes:
+    - typeId: A
+      work: [pjob-a1]
+      rest: [pjob-a2]
+      dream: [pjob-a3]
+  cycleMapping:
+    - A
+    - idle
+    - A
+"""
+
 EXAMPLES = {
     "agent": AGENT_EXAMPLE,
     "workflow": WORKFLOW_EXAMPLE,
@@ -125,6 +155,7 @@ EXAMPLES = {
     "env": ENV_EXAMPLE,
     "pmg": PMG_EXAMPLE,
     "pjob": PJOB_EXAMPLE,
+    "schedule": SCHEDULE_EXAMPLE,
 }
 
-VALID_KINDS = {"Agent", "Workflow", "Variable", "Env", "PMG", "PJob"}
+VALID_KINDS = {"Agent", "Workflow", "Variable", "Env", "PMG", "PJob", "Schedule"}

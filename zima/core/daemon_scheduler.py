@@ -9,7 +9,6 @@ import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from pathlib import Path
 
 from zima.models.schedule import ScheduleConfig
 

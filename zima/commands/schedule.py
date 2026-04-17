@@ -26,7 +26,9 @@ def create(
 ):
     """Create a new Schedule"""
     if example:
-        print(EXAMPLE_YAML)
+        from zima.templates.examples import EXAMPLES
+
+        print(EXAMPLES["schedule"])
         raise typer.Exit(0)
 
     if not name or not code:
@@ -242,35 +244,3 @@ def set_mapping(
     cfg.cycle_mapping[index] = type_id
     manager.save_config("schedule", code, cfg.to_dict())
     console.print(f"[green]✓[/green] Set cycleMapping[{index}] = '{type_id}'")
-
-
-EXAMPLE_YAML = """\
-apiVersion: zima.io/v1
-kind: Schedule
-metadata:
-  code: daily-32
-  name: "每日32周期调度"
-spec:
-  cycleMinutes: 45
-  dailyCycles: 32
-  stages:
-    - name: work
-      offsetMinutes: 0
-      durationMinutes: 20
-    - name: rest
-      offsetMinutes: 20
-      durationMinutes: 15
-    - name: dream
-      offsetMinutes: 35
-      durationMinutes: 10
-  cycleTypes:
-    - typeId: A
-      work: [pjob-a1]
-      rest: [pjob-a2]
-      dream: [pjob-a3]
-  cycleMapping:
-    - A
-    - idle
-    - A
-    # ... total 32 items
-"""
