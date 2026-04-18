@@ -175,7 +175,7 @@ def validate(
     errors = cfg.validate(resolve_refs=strict)
 
     if errors:
-        console.print(f"[red]✗[/red] Validation failed:")
+        console.print("[red]✗[/red] Validation failed:")
         for e in errors:
             console.print(f"   [red]•[/red] {e}")
         raise typer.Exit(1)
@@ -238,7 +238,9 @@ def set_mapping(
     if type_id != "idle":
         valid_type_ids = {ct.type_id for ct in cfg.cycle_types}
         if type_id not in valid_type_ids:
-            console.print(f"[red]✗[/red] Unknown typeId '{type_id}'. Valid: {sorted(valid_type_ids) or '(none defined)'}")
+            console.print(
+                f"[red]✗[/red] Unknown typeId '{type_id}'. Valid: {sorted(valid_type_ids) or '(none defined)'}"
+            )
             raise typer.Exit(1)
 
     cfg.cycle_mapping[index] = type_id

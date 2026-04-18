@@ -1,5 +1,3 @@
-import pytest
-
 from zima.models.schedule import ScheduleConfig, ScheduleCycleType, ScheduleStage
 
 

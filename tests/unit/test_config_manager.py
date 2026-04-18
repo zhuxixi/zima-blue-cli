@@ -22,7 +22,15 @@ class TestConfigManagerBasics(TestIsolator):
 
     def test_kinds_constant(self):
         """Test KINDS constant."""
-        assert ConfigManager.KINDS == {"agent", "workflow", "variable", "env", "pmg", "pjob", "schedule"}
+        assert ConfigManager.KINDS == {
+            "agent",
+            "workflow",
+            "variable",
+            "env",
+            "pmg",
+            "pjob",
+            "schedule",
+        }
 
 
 class TestConfigManagerCRUD(TestIsolator):
