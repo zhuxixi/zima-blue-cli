@@ -2,16 +2,16 @@
 
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](tests/)
+[![CI](https://github.com/zhuxixi/zima-blue-cli/workflows/CI/badge.svg)](https://github.com/zhuxixi/zima-blue-cli/actions)
 
-> "我选择了蓝色。那是那么强烈的蓝色。" —— 《齐马蓝》
+> "I chose blue. That intense blue." — *Zima Blue*
 
-**Zima Blue CLI** 是一个个人 Agent 编排平台，让你能够在自己的电脑上运行一个 7×24 小时自主工作的 AI Agent 工厂。
+**Zima Blue CLI** is a personal Agent orchestration platform that lets you run a 7x24 autonomous AI Agent factory on your own computer.
 
-你只需定义 Prompt 模板和配置参数，Zima 就会自动唤起 Kimi CLI 执行明确的 SOP 任务，并返回结构化结果。
+Simply define Prompt templates and configuration parameters, and Zima will automatically invoke Kimi CLI to execute tasks and return structured results.
 
 ```
-定义 Prompt 模板 → 配置参数 → 执行 → 获取结果
+Define Prompt Template → Configure Parameters → Execute → Get Results
 ```
 
 ---
@@ -24,19 +24,20 @@
 - [CLI Commands](#cli-commands)
 - [Documentation](#documentation)
 - [Development](#development)
+- [Naming Origin](#naming-origin)
 - [License](#license)
 
 ---
 
 ## Features
 
-- **🤖 Multi-Agent Support** — 支持 Kimi、Claude、Gemini 等多种 AI 执行器
-- **📋 Configuration Entities** — 分层配置设计：Agent + Workflow + Variable + Env + PMG
-- **🚀 PJob Execution Layer** — 声明式任务配置，一键组合并执行
-- **📝 Jinja2 Templates** — 灵活的 Prompt 模板与变量替换
-- **🔒 Secret Management** — 支持环境变量、文件、Vault 等多种密钥来源
-- **🧪 Full Test Coverage** — 单元测试 + 集成测试（含真实 Kimi 调用测试）
-- **🧹 Auto Cleanup** — 内置清理脚本，管理临时文件与缓存
+- **🤖 Multi-Agent Support** — Supports Kimi, Claude, Gemini, and other AI executors
+- **📋 Configuration Entities** — Layered config design: Agent + Workflow + Variable + Env + PMG
+- **🚀 PJob Execution Layer** — Declarative task configuration, one-command composition and execution
+- **📝 Jinja2 Templates** — Flexible Prompt templates with variable substitution
+- **🔒 Secret Management** — Supports environment variables, files, Vault, and other secret sources
+- **🧪 Full Test Coverage** — Unit tests + integration tests (including real Kimi invocation tests)
+- **🧹 Auto Cleanup** — Built-in cleanup scripts for cache and temporary files
 
 ---
 
@@ -44,7 +45,7 @@
 
 ### Configuration Entities
 
-Zima 采用分层配置设计，通过组合不同实体实现灵活的任务执行：
+Zima uses a layered configuration design, enabling flexible task execution through composition:
 
 | Entity | Purpose | Example |
 |--------|---------|---------|
@@ -143,7 +144,11 @@ zima pjob history review-task
 ### Cleanup
 
 ```bash
-./cleanup.sh --auto      # Clean cache and temporary files
+# Unix / Linux / macOS
+./cleanup.sh --auto
+
+# Windows
+cleanup.bat --auto
 ```
 
 ---
