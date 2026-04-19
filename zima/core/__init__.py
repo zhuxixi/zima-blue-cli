@@ -2,6 +2,5 @@
 
 from .claude_runner import ClaudeRunner
 from .daemon_scheduler import DaemonScheduler
-from .runner import AgentRunner
 
-__all__ = ["AgentRunner", "ClaudeRunner", "DaemonScheduler"]
+__all__ = ["ClaudeRunner", "DaemonScheduler"]
