@@ -9,7 +9,7 @@
 ## 📁 目录
 
 1. [CLI 命令接口](#1-cli-命令接口)
-   - [1.1 顶层命令](#11-顶层命令)
+   - [1.1 Daemon 管理](#11-daemon-管理)
    - [1.2 Agent 管理](#12-agent-管理)
    - [1.3 Workflow 管理](#13-workflow-管理)
    - [1.4 Variable 管理](#14-variable-管理)
@@ -25,33 +25,18 @@
 
 ## 1. CLI 命令接口
 
-### 1.1 顶层命令
+### 1.1 Daemon 管理
 
-| 命令 | 功能 | 状态 |
-|------|------|------|
-| `zima create` | 快速创建新 Agent (简写) | ✅ 已实现 |
-| `zima run` | 单次执行 Agent (简写) | ✅ 已实现 |
-| `zima list` | 列出所有 Agent (简写) | ✅ 已实现 |
-| `zima show` | 查看 Agent 配置 (简写) | ✅ 已实现 |
-| `zima logs` | 查看 Agent 日志 (简写) | ✅ 已实现 |
-| `zima agent` | Agent 管理命令组 | ✅ 已实现 |
-| `zima workflow` | Workflow 管理命令组 | ✅ 已实现 |
-| `zima variable` | Variable 管理命令组 | ✅ 已实现 |
-| `zima env` | Environment 管理命令组 | ✅ 已实现 |
-| `zima pmg` | PMG (Parameters Group) 管理命令组 | ✅ 已实现 |
-| `zima pjob` | PJob (Parameterized Job) 管理命令组 | ✅ 已实现 |
+**命令**: `zima daemon <subcommand>`
 
-#### 简写命令详解
+守护进程管理，用于启动/停止/查看调度器守护进程。
 
-这些命令是 `zima agent <cmd>` 的快捷方式：
-
-```bash
-zima create <name>     # 等价于: zima agent create --name <name>
-zima run <name>        # 等价于: zima agent run <name>
-zima list              # 等价于: zima agent list
-zima show <name>       # 等价于: zima agent show <name>
-zima logs <name>       # 等价于: zima agent logs <name>
-```
+| 子命令 | 功能 | 示例 |
+|--------|------|------|
+| `start` | 启动守护进程 | `zima daemon start --schedule my-schedule` |
+| `stop` | 停止守护进程 | `zima daemon stop` |
+| `status` | 查看守护进程状态 | `zima daemon status` |
+| `logs` | 查看守护进程日志 | `zima daemon logs --tail 50` |
 
 ---
 
@@ -691,6 +676,7 @@ RunResult
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v2.3 | 2026-04-19 | CLI 命令层级重组：移除顶层命令，新增 daemon 子命令组 |
 | v2.2 | 2026-03-29 | 新增 PJob 后台执行 (`--background`, `--follow`) 和输出目录自动处理 |
 | v2.1 | 2026-03-28 | 新增完整 CLI 命令文档 (agent/workflow/variable/env/pmg/pjob) |
 | v2.0 | 2026-03-26 | 简化架构，新增配置实体系统，PJob 执行层 |
