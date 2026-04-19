@@ -59,6 +59,10 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "integration: mark test as integration test",
+    "slow: mark test as slow (deselect with '-m \"not slow\"')",
+]
 
 [tool.coverage.run]
 source = ["zima"]

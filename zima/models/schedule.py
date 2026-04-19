@@ -171,9 +171,7 @@ class ScheduleConfig(BaseConfig):
         valid_type_ids.add("idle")
         for i, mapped_type in enumerate(self.cycle_mapping):
             if mapped_type not in valid_type_ids:
-                errors.append(
-                    f"cycleMapping[{i}] references unknown typeId '{mapped_type}'"
-                )
+                errors.append(f"cycleMapping[{i}] references unknown typeId '{mapped_type}'")
 
         # Optional: validate PJob refs exist
         if resolve_refs:

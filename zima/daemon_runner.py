@@ -8,7 +8,6 @@ import argparse
 import os
 import signal
 import sys
-from pathlib import Path
 
 from zima.config.manager import ConfigManager
 from zima.core.daemon_scheduler import DaemonScheduler

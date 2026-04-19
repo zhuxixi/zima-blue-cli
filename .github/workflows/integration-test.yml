@@ -1,0 +1,210 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'zima/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - '.github/workflows/integration-test.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'zima/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - '.github/workflows/integration-test.yml'
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Test type to run'
+        required: true
+        default: 'fast'
+        type: choice
+        options:
+          - fast
+          - full
+
+env:
+  PYTHONIOENCODING: utf-8
+  PYTHONUTF8: 1
+
+jobs:
+  # ============ Lint ============
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml') }}
+          restore-keys: ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run ruff check
+        run: ruff check zima/ tests/
+
+      - name: Run black check
+        run: black --check zima/ tests/ --line-length 100
+
+  # ============ Fast Tests (PR + push) ============
+  test-fast:
+    runs-on: ${{ matrix.os }}
+    needs: lint
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.test_type == 'fast'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.13']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml') }}
+          restore-keys: ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run tests (Ubuntu)
+        if: runner.os == 'Linux'
+        run: pytest tests/ -m "not slow" --cov=zima --cov-report=xml --cov-fail-under=60 --tb=short -v
+        timeout-minutes: 10
+
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
+        run: pytest tests/ -m "not slow" --tb=short -v
+        timeout-minutes: 20
+
+      - name: Upload coverage data
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-data
+          path: coverage.xml
+          retention-days: 1
+
+  # ============ Full Tests (manual only) ============
+  test-full:
+    runs-on: ${{ matrix.os }}
+    needs: lint
+    if: github.event.inputs.test_type == 'full'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.13']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml') }}
+          restore-keys: ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run full test suite
+        run: pytest tests/ -v --tb=short
+        timeout-minutes: 20
+
+  # ============ Quality Gate ============
+  quality-gate:
+    runs-on: ubuntu-latest
+    needs: [lint, test-fast]
+    if: always()
+    steps:
+      - name: Check all jobs passed
+        run: |
+          echo "lint: ${{ needs.lint.result }}"
+          echo "test-fast: ${{ needs.test-fast.result }}"
+          fast_ok="${{ needs.test-fast.result }}"
+          if [[ "${{ needs.lint.result }}" == "success" && ("$fast_ok" == "success" || "$fast_ok" == "skipped") ]]; then
+            echo "Quality gate passed!"
+            exit 0
+          else
+            echo "Quality gate FAILED!"
+            exit 1
+          fi
+
+  # ============ Coverage Report ============
+  coverage:
+    runs-on: ubuntu-latest
+    needs: [test-fast]
+    if: always() && needs.test-fast.result == 'success' && github.event_name == 'pull_request'
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download coverage data
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-data
+
+      - name: Post coverage comment on PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python -c "
+          import xml.etree.ElementTree as ET
+          import subprocess
+
+          tree = ET.parse('coverage.xml')
+          root = tree.getroot()
+          rate = float(root.attrib['line-rate'])
+          lines_covered = int(root.attrib['lines-covered'])
+          lines_valid = int(root.attrib['lines-valid'])
+
+          rows = []
+          for cls in root.iter('class'):
+              name = cls.attrib['filename']
+              r = float(cls.attrib['line-rate'])
+              rows.append((name, r))
+          rows.sort(key=lambda x: x[1])
+
+          comment = '## Test Coverage\n\n'
+          comment += '**Overall: {:.1f}%** ({}/{} lines)\n\n'.format(rate * 100, lines_covered, lines_valid)
+          comment += '| Module | Coverage | Status |\n|--------|----------|--------|\n'
+          for name, r in rows:
+              icon = ':green_circle:' if r >= 0.8 else ':yellow_circle:' if r >= 0.5 else ':red_circle:'
+              comment += '| {} | {:.1f}% | {} |\n'.format(name, r * 100, icon)
+
+          pr = '${{ github.event.pull_request.number }}'
+          subprocess.run(['gh', 'pr', 'comment', pr, '--body', comment])
+          "
