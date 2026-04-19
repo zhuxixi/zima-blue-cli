@@ -15,7 +15,7 @@ pip install -e ".[dev]"          # includes pytest, black, ruff
 
 # Run CLI
 zima --help
-zima run <agent-name>
+zima pjob run <pjob-code>
 
 # Format
 black zima/ tests/ --line-length 100
@@ -63,10 +63,9 @@ The core design is composability through seven YAML-based configuration types:
 ### Key Layers
 
 - **`zima/cli.py`** — Typer CLI entry point. Registers subcommand groups. Has Windows UTF-8 fix.
-- **`zima/commands/`** — CLI subcommand implementations (agent, workflow, variable, env, pmg, pjob, schedule).
+- **`zima/commands/`** — CLI subcommand implementations (agent, workflow, variable, env, pmg, pjob, schedule, daemon).
 - **`zima/config/manager.py`** — `ConfigManager`: unified CRUD for all config types. Single class handles create/read/update/delete/list for every entity kind via `KINDS` set.
 - **`zima/models/`** — Dataclasses for each entity. `BaseConfig` provides common YAML load/save. `Metadata` has code/name/description.
-- **`zima/core/runner.py`** — `AgentRunner`: simple single-execution via subprocess. Builds kimi command, captures output, parses JSON result.
 - **`zima/execution/executor.py`** — `PJobExecutor`: resolves ConfigBundle (agent+workflow+variable+env+pmg), renders template, builds command, executes subprocess.
 - **`zima/models/config_bundle.py`** — `ConfigBundle`: assembled config set ready for execution.
 - **`zima/core/kimi_runner.py`** / **`zima/core/claude_runner.py`** — Agent-specific subprocess runners for Kimi and Claude.

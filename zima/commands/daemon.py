@@ -38,9 +38,11 @@ def start(
                 kernel32.CloseHandle(handle)
                 console.print(f"[yellow]⚠[/yellow] Daemon already running (PID {pid})")
                 raise typer.Exit(1)
-        except Exception:
-            pass
-        pid_file.unlink(missing_ok=True)
+            # Process not alive — clean up stale PID file
+            pid_file.unlink(missing_ok=True)
+        except (ValueError, OSError):
+            # Corrupted or unreadable PID file — clean up
+            pid_file.unlink(missing_ok=True)
 
     manager = ConfigManager()
     if not manager.config_exists("schedule", schedule):
@@ -72,6 +74,7 @@ def start(
         if sys.platform == "win32":
             proc = subprocess.Popen(
                 cmd,
+                stdin=subprocess.DEVNULL,
                 stdout=log_fh,
                 stderr=subprocess.STDOUT,
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW,
@@ -80,6 +83,7 @@ def start(
         else:
             proc = subprocess.Popen(
                 cmd,
+                stdin=subprocess.DEVNULL,
                 stdout=log_fh,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
