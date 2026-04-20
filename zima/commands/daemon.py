@@ -14,6 +14,33 @@ from zima.config.manager import ConfigManager
 from zima.models.schedule import ScheduleConfig
 from zima.utils import get_zima_home
 
+
+def _is_process_alive(pid: int) -> bool:
+    """Check if a process with the given PID is alive.
+
+    Uses PROCESS_QUERY_LIMITED_INFORMATION on Windows (more reliable
+    than PROCESS_TERMINATE for cross-privilege checks) and os.kill
+    with signal 0 on Unix.
+    """
+    if sys.platform == "win32":
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(0x1000, False, pid)
+        if handle:
+            kernel32.CloseHandle(handle)
+            return True
+        return False
+    else:
+        import os
+
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+
 app = typer.Typer(name="daemon", help="Daemon management commands")
 console = Console(legacy_windows=False, force_terminal=True)
 
@@ -30,12 +57,7 @@ def start(
         try:
             pid = int(pid_file.read_text(encoding="utf-8").strip())
             # Check if process is alive
-            import ctypes
-
-            kernel32 = ctypes.windll.kernel32
-            handle = kernel32.OpenProcess(1, False, pid)
-            if handle:
-                kernel32.CloseHandle(handle)
+            if _is_process_alive(pid):
                 console.print(f"[yellow]⚠[/yellow] Daemon already running (PID {pid})")
                 raise typer.Exit(1)
             # Process not alive — clean up stale PID file
@@ -129,12 +151,7 @@ def stop():
             time.sleep(5)
             # Force kill if still alive
             try:
-                import ctypes
-
-                kernel32 = ctypes.windll.kernel32
-                handle = kernel32.OpenProcess(1, False, pid)
-                if handle:
-                    kernel32.CloseHandle(handle)
+                if _is_process_alive(pid):
                     subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], check=False)
             except Exception:
                 pass
@@ -168,23 +185,7 @@ def status():
         raise typer.Exit(1)
 
     # Check if alive
-    alive = False
-    if sys.platform == "win32":
-        import ctypes
-
-        kernel32 = ctypes.windll.kernel32
-        handle = kernel32.OpenProcess(1, False, pid)
-        if handle:
-            kernel32.CloseHandle(handle)
-            alive = True
-    else:
-        import os
-
-        try:
-            os.kill(pid, 0)
-            alive = True
-        except OSError:
-            pass
+    alive = _is_process_alive(pid)
 
     if not alive:
         console.print(f"[yellow]Daemon PID {pid} is not alive[/yellow]")
