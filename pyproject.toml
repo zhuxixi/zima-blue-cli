@@ -62,6 +62,7 @@ addopts = "-q"
 markers = [
     "integration: mark test as integration test",
     "slow: mark test as slow (deselect with '-m \"not slow\"')",
+    "real_agent: tests that call the real Kimi/Claude CLI (slow, manual)",
 ]
 
 [tool.coverage.run]

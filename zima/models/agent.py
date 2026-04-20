@@ -200,6 +200,10 @@ class AgentConfig(BaseConfig):
         Returns:
             Base command list (e.g., ["kimi", "--print", "--yolo"])
         """
+        # Mock override: if mockCommand is set, use it instead of real CLI
+        if self.parameters.get("mockCommand"):
+            return [str(self.parameters["mockCommand"])]
+
         templates = {
             "kimi": ["kimi", "--print", "--yolo"],
             "claude": ["claude", "-p"],
