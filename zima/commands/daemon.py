@@ -186,24 +186,28 @@ def status():
 
     try:
         pid = int(pid_file.read_text(encoding="utf-8").strip())
-    except ValueError:
-        console.print("[red]Invalid PID file[/red]")
+    except (ValueError, OSError):
+        console.print("[red]Cannot read PID file[/red]")
         raise typer.Exit(1)
 
     # Check if alive
     alive = _is_process_alive(pid)
 
     if not alive:
+        pid_file.unlink(missing_ok=True)
         console.print(f"[yellow]Daemon PID {pid} is not alive[/yellow]")
         raise typer.Exit(0)
 
     console.print(f"[green]Daemon is running[/green] (PID {pid})")
 
     if state_file.exists():
-        state = json.loads(state_file.read_text(encoding="utf-8"))
-        console.print(f"   Current cycle: {state.get('currentCycle', 'unknown')}")
-        console.print(f"   Current stage: {state.get('currentStage', 'unknown')}")
-        console.print(f"   Active PJobs: {state.get('activePjobs', [])}")
+        try:
+            state = json.loads(state_file.read_text(encoding="utf-8"))
+            console.print(f"   Current cycle: {state.get('currentCycle', 'unknown')}")
+            console.print(f"   Current stage: {state.get('currentStage', 'unknown')}")
+            console.print(f"   Active PJobs: {state.get('activePjobs', [])}")
+        except json.JSONDecodeError:
+            console.print("[yellow]   Corrupted state file[/yellow]")
 
 
 @app.command()

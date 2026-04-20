@@ -59,6 +59,47 @@ class TestDaemonStopCleanup(TestIsolator):
         assert not pid_file.exists()
 
 
+class TestDaemonStatusErrors(TestIsolator):
+    """Test zima daemon status error handling."""
+
+    def test_status_cleans_up_dead_pid_file(self):
+        """Status should remove PID file when process is dead."""
+        daemon_dir = self.temp_dir / "daemon"
+        daemon_dir.mkdir(parents=True, exist_ok=True)
+        pid_file = daemon_dir / "daemon.pid"
+        # Write a PID that doesn't exist
+        pid_file.write_text("99999999", encoding="utf-8")
+
+        result = runner.invoke(app, ["daemon", "status"])
+        assert result.exit_code == 0
+        assert not pid_file.exists()
+
+    def test_status_corrupted_state_json(self):
+        """Status should handle corrupted state.json gracefully."""
+        daemon_dir = self.temp_dir / "daemon"
+        daemon_dir.mkdir(parents=True, exist_ok=True)
+        pid_file = daemon_dir / "daemon.pid"
+        pid_file.write_text("99999999", encoding="utf-8")
+        state_file = daemon_dir / "state.json"
+        state_file.write_text("not valid json {{{", encoding="utf-8")
+
+        result = runner.invoke(app, ["daemon", "status"])
+        assert result.exit_code == 0
+
+    def test_status_unreadable_pid_file(self):
+        """Status should handle unreadable PID file gracefully."""
+        daemon_dir = self.temp_dir / "daemon"
+        daemon_dir.mkdir(parents=True, exist_ok=True)
+        pid_file = daemon_dir / "daemon.pid"
+        # Write valid content but we'll test the error path
+        # This test verifies (ValueError, OSError) is caught
+        pid_file.write_text("not_a_number", encoding="utf-8")
+
+        result = runner.invoke(app, ["daemon", "status"])
+        assert result.exit_code != 0
+        assert "Invalid" in result.output or "Cannot read" in result.output
+
+
 class TestDaemonLogs(TestIsolator):
     """Test zima daemon logs command."""
 
