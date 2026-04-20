@@ -43,14 +43,20 @@ def _process_alive(pid: int) -> bool:
             return True
         except ProcessLookupError:
             return False
-    # Windows: OpenProcess returns NULL (0) if process has exited
+        except PermissionError:
+            # Process exists but we don't have permission to signal it
+            return True
+    # Windows: OpenProcess + GetExitCodeProcess to check if still running
     kernel32 = ctypes.windll.kernel32
     SYNCHRONIZE = 0x100000
     handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
-    if handle:
-        kernel32.CloseHandle(handle)
-        return True  # process still alive
-    return False  # process has exited
+    if not handle:
+        return False  # process has exited
+    # Check exit code — STILL_ACTIVE (259) means the process is running
+    exit_code = ctypes.c_ulong()
+    kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+    kernel32.CloseHandle(handle)
+    return exit_code.value == 259  # STILL_ACTIVE
 
 
 def _mock_script_path() -> Path:
@@ -81,7 +87,8 @@ class TestIssue38MockVerification(TestIsolator):
         # Use mockCommand parameter -- get_cli_command_template() returns this
         # instead of "kimi" when building the command.
         # mockCommand replaces the base CLI (e.g. "kimi") with a custom command.
-        data["spec"]["parameters"]["mockCommand"] = f"{sys.executable} {mock_script}"
+        # Pass as a list to handle paths with spaces correctly.
+        data["spec"]["parameters"]["mockCommand"] = [sys.executable, str(mock_script)]
         manager.save_config("agent", code, data)
         return code
 
