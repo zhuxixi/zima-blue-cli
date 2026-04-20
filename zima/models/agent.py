@@ -197,6 +197,10 @@ class AgentConfig(BaseConfig):
         """
         Get base CLI command template for this agent type.
 
+        If ``mockCommand`` is set in parameters, returns that command split
+        by whitespace (intended for test use only).  Otherwise returns the
+        type-based template.
+
         Returns:
             Base command list (e.g., ["kimi", "--print", "--yolo"])
         """

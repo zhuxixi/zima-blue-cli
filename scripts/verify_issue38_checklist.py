@@ -9,6 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from zima.utils import get_zima_home
+
 
 def check_pass(name: str, detail: str = "") -> dict:
     return {"status": "PASS", "name": name, "detail": detail}
@@ -22,14 +24,6 @@ def check_file_exists(path: Path, name: str) -> dict:
     if path.exists():
         return check_pass(name, str(path))
     return check_fail(name, f"Not found: {path}")
-
-
-def get_zima_home() -> Path:
-    """Get ZIMA_HOME, defaulting to ~/.zima."""
-    env = os.environ.get("ZIMA_HOME")
-    if env:
-        return Path(env)
-    return Path.home() / ".zima"
 
 
 def main() -> int:
