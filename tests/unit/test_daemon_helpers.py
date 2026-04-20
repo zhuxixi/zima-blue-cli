@@ -1,8 +1,7 @@
 """Unit tests for daemon command helpers."""
 
 import sys
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from zima.commands.daemon import _is_process_alive
 
@@ -19,9 +18,7 @@ class TestIsProcessAliveWindows:
             mock_ctypes.windll.kernel32.OpenProcess.return_value = mock_handle
 
             assert _is_process_alive(1234) is True
-            mock_ctypes.windll.kernel32.OpenProcess.assert_called_once_with(
-                0x1000, False, 1234
-            )
+            mock_ctypes.windll.kernel32.OpenProcess.assert_called_once_with(0x1000, False, 1234)
             mock_ctypes.windll.kernel32.CloseHandle.assert_called_once_with(mock_handle)
 
     @patch("sys.platform", "win32")

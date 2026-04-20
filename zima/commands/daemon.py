@@ -220,6 +220,10 @@ def logs(
         console.print("[yellow]No daemon logs found[/yellow]")
         raise typer.Exit(0)
 
-    lines = log_file.read_text(encoding="utf-8").splitlines()
+    try:
+        lines = log_file.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as e:
+        console.print(f"[red]✗[/red] Cannot read log file: {e}")
+        raise typer.Exit(1)
     for line in lines[-tail:]:
         console.print(line)

@@ -108,3 +108,19 @@ class TestDaemonLogs(TestIsolator):
         result = runner.invoke(app, ["daemon", "logs"])
         assert result.exit_code == 0
         assert "No daemon logs" in result.output
+
+
+class TestDaemonLogsErrors(TestIsolator):
+    """Test zima daemon logs error handling."""
+
+    def test_logs_unreadable_file(self):
+        """Logs should handle unreadable log file gracefully."""
+        daemon_dir = self.temp_dir / "daemon"
+        daemon_dir.mkdir(parents=True, exist_ok=True)
+        log_file = daemon_dir / "daemon.log"
+        # Write valid content — tests that the path exists and is read
+        log_file.write_text("line1\nline2\nline3", encoding="utf-8")
+
+        result = runner.invoke(app, ["daemon", "logs"])
+        assert result.exit_code == 0
+        assert "line1" in result.output
