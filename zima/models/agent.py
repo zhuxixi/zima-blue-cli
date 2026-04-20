@@ -202,7 +202,9 @@ class AgentConfig(BaseConfig):
         """
         # Mock override: if mockCommand is set, use it instead of real CLI
         if self.parameters.get("mockCommand"):
-            return [str(self.parameters["mockCommand"])]
+            # Split by whitespace (simple shell-like splitting).
+            # mockCommand is intended for test use only.
+            return str(self.parameters["mockCommand"]).split()
 
         templates = {
             "kimi": ["kimi", "--print", "--yolo"],
