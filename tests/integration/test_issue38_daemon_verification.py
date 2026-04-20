@@ -5,7 +5,6 @@ from __future__ import annotations
 import ctypes
 import json
 import os
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -301,28 +300,14 @@ class TestIssue38MockVerification(TestIsolator):
 # --- Real-call test class ---
 
 
-def _check_kimi_available() -> bool:
-    """Check if kimi-cli is available and working."""
-    try:
-        result = subprocess.run(
-            ["kimi", "--version"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=5,
-        )
-        return result.returncode == 0
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return False
-
-
+@pytest.mark.real_agent
 class TestIssue38RealCall(TestIsolator):
     """Real-agent verification -- requires Kimi CLI installed and authenticated."""
 
     @pytest.fixture(autouse=True)
-    def skip_if_no_real_agent(self):
-        if not _check_kimi_available():
-            pytest.skip("kimi-cli not available -- required for real-call verification tests")
+    def skip_if_no_real_agent(self, request):
+        if not request.config.getoption("--run-real-agent", default=False):
+            pytest.skip("Use --run-real-agent to run real-call verification tests")
 
     def _ensure_dirs(self, *kinds: str):
         zima_home = get_zima_home()
