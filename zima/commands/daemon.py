@@ -43,7 +43,12 @@ def _is_process_alive(pid: int) -> bool:
 
             os.kill(pid, 0)
             return True
-    except (OSError, Exception):
+    except PermissionError:
+        # Process exists but we lack permission to signal it
+        return True
+    except (ProcessLookupError, OSError):
+        return False
+    except Exception:
         return False
 
 
@@ -167,14 +172,15 @@ def stop():
 
             try:
                 os.kill(pid, signal.SIGTERM)
-            except OSError:
+            except ProcessLookupError:
                 pass  # Process already dead (stale PID)
-            time.sleep(2)
-            if _is_process_alive(pid):
-                try:
-                    os.kill(pid, signal.SIGKILL)
-                except OSError:
-                    pass
+            else:
+                time.sleep(2)
+                if _is_process_alive(pid):
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                    except OSError:
+                        pass
         pid_file.unlink(missing_ok=True)
         console.print(f"[green]✓[/green] Daemon stopped (PID {pid})")
     except Exception as e:

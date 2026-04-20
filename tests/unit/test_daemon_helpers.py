@@ -55,10 +55,19 @@ class TestIsProcessAliveUnix:
 
     @patch("sys.platform", "linux")
     def test_dead_process(self):
-        """Returns False when os.kill raises OSError."""
+        """Returns False when os.kill raises ProcessLookupError."""
         with patch.dict("sys.modules", {"os": MagicMock()}):
             mock_os = sys.modules["os"]
-            mock_os.kill.side_effect = OSError()
+            mock_os.kill.side_effect = ProcessLookupError()
 
             assert _is_process_alive(1234) is False
             mock_os.kill.assert_called_once_with(1234, 0)
+
+    @patch("sys.platform", "linux")
+    def test_permission_denied_returns_alive(self):
+        """Returns True when os.kill raises PermissionError (process exists)."""
+        with patch.dict("sys.modules", {"os": MagicMock()}):
+            mock_os = sys.modules["os"]
+            mock_os.kill.side_effect = PermissionError()
+
+            assert _is_process_alive(1234) is True
