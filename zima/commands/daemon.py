@@ -14,6 +14,42 @@ from zima.config.manager import ConfigManager
 from zima.models.schedule import ScheduleConfig
 from zima.utils import get_zima_home
 
+
+def _is_process_alive(pid: int) -> bool:
+    """Check if a process with the given PID is alive.
+
+    Uses PROCESS_QUERY_LIMITED_INFORMATION on Windows (more reliable
+    than PROCESS_TERMINATE for cross-privilege checks) and os.kill
+    with signal 0 on Unix.
+
+    Args:
+        pid: Process ID to check.
+
+    Returns:
+        True if the process is alive, False otherwise.
+    """
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(0x1000, False, pid)
+            if handle:
+                kernel32.CloseHandle(handle)
+                return True
+            return False
+        else:
+            import os
+
+            os.kill(pid, 0)
+            return True
+    except PermissionError:
+        # Process exists but we lack permission to signal it
+        return True
+    except (ProcessLookupError, OSError):
+        return False
+
+
 app = typer.Typer(name="daemon", help="Daemon management commands")
 console = Console(legacy_windows=False, force_terminal=True)
 
@@ -30,12 +66,7 @@ def start(
         try:
             pid = int(pid_file.read_text(encoding="utf-8").strip())
             # Check if process is alive
-            import ctypes
-
-            kernel32 = ctypes.windll.kernel32
-            handle = kernel32.OpenProcess(1, False, pid)
-            if handle:
-                kernel32.CloseHandle(handle)
+            if _is_process_alive(pid):
                 console.print(f"[yellow]⚠[/yellow] Daemon already running (PID {pid})")
                 raise typer.Exit(1)
             # Process not alive — clean up stale PID file
@@ -129,12 +160,7 @@ def stop():
             time.sleep(5)
             # Force kill if still alive
             try:
-                import ctypes
-
-                kernel32 = ctypes.windll.kernel32
-                handle = kernel32.OpenProcess(1, False, pid)
-                if handle:
-                    kernel32.CloseHandle(handle)
+                if _is_process_alive(pid):
                     subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], check=False)
             except Exception:
                 pass
@@ -142,7 +168,17 @@ def stop():
             import os
             import signal
 
-            os.kill(pid, signal.SIGTERM)
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass  # Process already dead (stale PID)
+            else:
+                time.sleep(2)
+                if _is_process_alive(pid):
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass  # Process died between check and kill
         pid_file.unlink(missing_ok=True)
         console.print(f"[green]✓[/green] Daemon stopped (PID {pid})")
     except Exception as e:
@@ -163,40 +199,30 @@ def status():
 
     try:
         pid = int(pid_file.read_text(encoding="utf-8").strip())
-    except ValueError:
-        console.print("[red]Invalid PID file[/red]")
+    except (ValueError, OSError):
+        console.print("[red]Cannot read PID file[/red]")
         raise typer.Exit(1)
 
     # Check if alive
-    alive = False
-    if sys.platform == "win32":
-        import ctypes
-
-        kernel32 = ctypes.windll.kernel32
-        handle = kernel32.OpenProcess(1, False, pid)
-        if handle:
-            kernel32.CloseHandle(handle)
-            alive = True
-    else:
-        import os
-
-        try:
-            os.kill(pid, 0)
-            alive = True
-        except OSError:
-            pass
+    alive = _is_process_alive(pid)
 
     if not alive:
+        pid_file.unlink(missing_ok=True)
         console.print(f"[yellow]Daemon PID {pid} is not alive[/yellow]")
         raise typer.Exit(0)
 
     console.print(f"[green]Daemon is running[/green] (PID {pid})")
 
     if state_file.exists():
-        state = json.loads(state_file.read_text(encoding="utf-8"))
-        console.print(f"   Current cycle: {state.get('currentCycle', 'unknown')}")
-        console.print(f"   Current stage: {state.get('currentStage', 'unknown')}")
-        console.print(f"   Active PJobs: {state.get('activePjobs', [])}")
+        try:
+            state = json.loads(state_file.read_text(encoding="utf-8"))
+            if not isinstance(state, dict):
+                raise ValueError("state.json is not a JSON object")
+            console.print(f"   Current cycle: {state.get('currentCycle', 'unknown')}")
+            console.print(f"   Current stage: {state.get('currentStage', 'unknown')}")
+            console.print(f"   Active PJobs: {state.get('activePjobs', [])}")
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError, ValueError):
+            console.print("[yellow]   Corrupted state file[/yellow]")
 
 
 @app.command()
@@ -209,6 +235,10 @@ def logs(
         console.print("[yellow]No daemon logs found[/yellow]")
         raise typer.Exit(0)
 
-    lines = log_file.read_text(encoding="utf-8").splitlines()
+    try:
+        lines = log_file.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as e:
+        console.print(f"[red]✗[/red] Cannot read log file: {e}")
+        raise typer.Exit(1)
     for line in lines[-tail:]:
         console.print(line)
