@@ -48,8 +48,6 @@ def _is_process_alive(pid: int) -> bool:
         return True
     except (ProcessLookupError, OSError):
         return False
-    except Exception:
-        return False
 
 
 app = typer.Typer(name="daemon", help="Daemon management commands")
@@ -179,8 +177,8 @@ def stop():
                 if _is_process_alive(pid):
                     try:
                         os.kill(pid, signal.SIGKILL)
-                    except OSError:
-                        pass
+                    except ProcessLookupError:
+                        pass  # Process died between check and kill
         pid_file.unlink(missing_ok=True)
         console.print(f"[green]✓[/green] Daemon stopped (PID {pid})")
     except Exception as e:
@@ -221,7 +219,7 @@ def status():
             console.print(f"   Current cycle: {state.get('currentCycle', 'unknown')}")
             console.print(f"   Current stage: {state.get('currentStage', 'unknown')}")
             console.print(f"   Active PJobs: {state.get('activePjobs', [])}")
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
             console.print("[yellow]   Corrupted state file[/yellow]")
 
 
