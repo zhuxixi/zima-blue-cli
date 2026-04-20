@@ -21,24 +21,30 @@ def _is_process_alive(pid: int) -> bool:
     Uses PROCESS_QUERY_LIMITED_INFORMATION on Windows (more reliable
     than PROCESS_TERMINATE for cross-privilege checks) and os.kill
     with signal 0 on Unix.
+
+    Args:
+        pid: Process ID to check.
+
+    Returns:
+        True if the process is alive, False otherwise.
     """
-    if sys.platform == "win32":
-        import ctypes
+    try:
+        if sys.platform == "win32":
+            import ctypes
 
-        kernel32 = ctypes.windll.kernel32
-        handle = kernel32.OpenProcess(0x1000, False, pid)
-        if handle:
-            kernel32.CloseHandle(handle)
-            return True
-        return False
-    else:
-        import os
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(0x1000, False, pid)
+            if handle:
+                kernel32.CloseHandle(handle)
+                return True
+            return False
+        else:
+            import os
 
-        try:
             os.kill(pid, 0)
             return True
-        except OSError:
-            return False
+    except (OSError, Exception):
+        return False
 
 
 app = typer.Typer(name="daemon", help="Daemon management commands")
@@ -159,7 +165,10 @@ def stop():
             import os
             import signal
 
-            os.kill(pid, signal.SIGTERM)
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                pass  # Process already dead (stale PID)
             time.sleep(2)
             if _is_process_alive(pid):
                 try:
@@ -206,7 +215,7 @@ def status():
             console.print(f"   Current cycle: {state.get('currentCycle', 'unknown')}")
             console.print(f"   Current stage: {state.get('currentStage', 'unknown')}")
             console.print(f"   Active PJobs: {state.get('activePjobs', [])}")
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, OSError):
             console.print("[yellow]   Corrupted state file[/yellow]")
 
 
