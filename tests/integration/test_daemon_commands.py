@@ -43,6 +43,22 @@ class TestDaemonStatus(TestIsolator):
         assert "not running" in result.output
 
 
+class TestDaemonStopCleanup(TestIsolator):
+    """Test zima daemon stop PID cleanup behavior."""
+
+    def test_stop_removes_stale_pid_file(self):
+        """Daemon stop should remove PID file even for nonexistent process."""
+        daemon_dir = self.temp_dir / "daemon"
+        daemon_dir.mkdir(parents=True, exist_ok=True)
+        pid_file = daemon_dir / "daemon.pid"
+        # Write a PID that doesn't exist
+        pid_file.write_text("99999999", encoding="utf-8")
+
+        result = runner.invoke(app, ["daemon", "stop"])
+        assert result.exit_code == 0
+        assert not pid_file.exists()
+
+
 class TestDaemonLogs(TestIsolator):
     """Test zima daemon logs command."""
 

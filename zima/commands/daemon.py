@@ -160,6 +160,12 @@ def stop():
             import signal
 
             os.kill(pid, signal.SIGTERM)
+            time.sleep(2)
+            if _is_process_alive(pid):
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except OSError:
+                    pass
         pid_file.unlink(missing_ok=True)
         console.print(f"[green]✓[/green] Daemon stopped (PID {pid})")
     except Exception as e:
