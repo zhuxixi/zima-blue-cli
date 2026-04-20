@@ -216,10 +216,12 @@ def status():
     if state_file.exists():
         try:
             state = json.loads(state_file.read_text(encoding="utf-8"))
+            if not isinstance(state, dict):
+                raise ValueError("state.json is not a JSON object")
             console.print(f"   Current cycle: {state.get('currentCycle', 'unknown')}")
             console.print(f"   Current stage: {state.get('currentStage', 'unknown')}")
             console.print(f"   Active PJobs: {state.get('activePjobs', [])}")
-        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError, ValueError):
             console.print("[yellow]   Corrupted state file[/yellow]")
 
 
