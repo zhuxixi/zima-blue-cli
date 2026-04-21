@@ -40,12 +40,23 @@ def _process_alive(pid: int) -> bool:
     if sys.platform != "win32":
         try:
             os.kill(pid, 0)
-            return True
         except ProcessLookupError:
             return False
         except PermissionError:
             # Process exists but we don't have permission to signal it
             return True
+        # On Linux, a zombie (defunct) process still responds to signal 0
+        # but is effectively dead. Check /proc/{pid}/status to filter zombies.
+        try:
+            status_path = Path(f"/proc/{pid}/status")
+            if status_path.exists():
+                status_text = status_path.read_text()
+                for line in status_text.splitlines():
+                    if line.startswith("State:") and "Z" in line:
+                        return False  # Zombie/defunct
+        except (OSError, PermissionError):
+            pass
+        return True
     # Windows: OpenProcess + GetExitCodeProcess to check if still running
     kernel32 = ctypes.windll.kernel32
     SYNCHRONIZE = 0x100000
