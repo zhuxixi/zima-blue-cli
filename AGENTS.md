@@ -98,12 +98,14 @@ zima pjob run <code>
 │   ├── daemon.log
 │   ├── state.json
 │   └── history/*.jsonl
+├── temp/                      # Temporary execution artifacts
+│   └── pjobs/                # PJob execution working directories (auto-cleaned)
 └── history/
     └── pjobs.json           # Execution history (per-PJob records, max 100 each)
 ```
 
 **Execution artifacts** (ephemeral by default):
-- Working directory: system temp dir (`%TEMP%/zima-pjobs/<code>-<id>/` on Windows, `/tmp/zima-pjobs/...` on Unix)
+- Working directory: `~/.zima/temp/pjobs/<code>-<id>/` (under ZIMA_HOME, not system temp)
 - Rendered prompt: `<temp_dir>/prompt.md`
 - Temp dir is cleaned up after execution unless `keep_temp` or `save_to` is set
 - Full stdout/stderr is returned in-memory; only a 500-char preview is persisted to history
