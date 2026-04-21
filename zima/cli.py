@@ -8,6 +8,7 @@ setup_windows_utf8()
 
 import typer
 
+from zima import get_version
 from zima.commands import agent as agent_cmd
 from zima.commands import daemon as daemon_cmd
 from zima.commands import env as env_cmd
@@ -23,6 +24,13 @@ app = typer.Typer(
     add_completion=False,
 )
 
+
+def _version_callback(value: bool):
+    if value:
+        typer.echo(f"zima {get_version()}")
+        raise typer.Exit()
+
+
 # Register subcommands
 app.add_typer(agent_cmd.app, name="agent")
 app.add_typer(workflow_cmd.app, name="workflow")
@@ -35,9 +43,17 @@ app.add_typer(daemon_cmd.app, name="daemon")
 
 
 @app.callback()
-def main():
+def main(
+    version: bool = typer.Option(
+        None,
+        "--version",
+        "-v",
+        help="Show version and exit",
+        callback=_version_callback,
+        is_eager=True,
+    ),
+):
     """ZimaBlue CLI - Agent Runner"""
-    pass
 
 
 if __name__ == "__main__":
