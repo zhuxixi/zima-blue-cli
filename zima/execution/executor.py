@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-import tempfile
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -16,7 +15,7 @@ from typing import Optional
 from zima.config.manager import ConfigManager
 from zima.models.config_bundle import ConfigBundle
 from zima.models.pjob import Overrides, PJobConfig
-from zima.utils import generate_timestamp
+from zima.utils import generate_timestamp, get_zima_home
 
 
 class ExecutionStatus(Enum):
@@ -301,8 +300,8 @@ class PJobExecutor:
         return bundle
 
     def _create_temp_dir(self, pjob_code: str, execution_id: str) -> Path:
-        """Create temporary directory for execution."""
-        temp_dir = Path(tempfile.gettempdir()) / "zima-pjobs" / f"{pjob_code}-{execution_id}"
+        """Create temporary directory for execution under ZIMA_HOME."""
+        temp_dir = get_zima_home() / "temp" / "pjobs" / f"{pjob_code}-{execution_id}"
         temp_dir.mkdir(parents=True, exist_ok=True)
         return temp_dir
 

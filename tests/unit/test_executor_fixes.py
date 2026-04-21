@@ -96,3 +96,45 @@ class TestFixShellCommand:
         monkeypatch.setattr(os, "name", "posix")
         result = PJobExecutor._fix_shell_command("cd /tmp && ls")
         assert result == "cd /tmp && ls"
+
+
+class TestCreateTempDir:
+    """Test PJobExecutor._create_temp_dir() uses ZIMA_HOME (#47)."""
+
+    def test_temp_dir_under_zima_home(self, monkeypatch):
+        import tempfile
+        from pathlib import Path
+
+        fake_home = Path(tempfile.mkdtemp(prefix="zima-test-tempdir-"))
+        monkeypatch.setenv("ZIMA_HOME", str(fake_home))
+
+        executor = PJobExecutor()
+        result = executor._create_temp_dir("my-pjob", "abc123")
+
+        expected = fake_home / "temp" / "pjobs" / "my-pjob-abc123"
+        assert result == expected
+        assert result.exists()
+
+        # Cleanup
+        import shutil
+        shutil.rmtree(fake_home, ignore_errors=True)
+
+    def test_temp_dir_creates_parents(self, monkeypatch):
+        import tempfile
+        from pathlib import Path
+
+        fake_home = Path(tempfile.mkdtemp(prefix="zima-test-tempdir-"))
+        monkeypatch.setenv("ZIMA_HOME", str(fake_home))
+
+        # temp/pjobs/ should not exist yet
+        assert not (fake_home / "temp").exists()
+
+        executor = PJobExecutor()
+        result = executor._create_temp_dir("test-pjob", "id1")
+
+        assert (fake_home / "temp" / "pjobs").exists()
+        assert result.exists()
+
+        # Cleanup
+        import shutil
+        shutil.rmtree(fake_home, ignore_errors=True)
