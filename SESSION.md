@@ -9,6 +9,17 @@
 
 ## Recent Sessions (最近5次)
 
+### Session 26 - 2026-04-21
+
+修复 issue #43：AGENTS.md/CLAUDE.md 数据布局文档与实际代码不一致。文档描述的 ~/.zima/agents/<code>/ 目录结构（workspace/prompts/logs）从未在代码中实现。实际行为：执行使用系统临时目录 %TEMP%/zima-pjobs/<code>-<id>/，渲染后的 prompt 写入 <temp_dir>/prompt.md，执行历史集中存储在 ~/.zima/history/pjobs.json（每 PJob 最多 100 条，stdout/stderr 预览截断至 500 字符）。
+
+修改内容：
+1. 修正 AGENTS.md 和 CLAUDE.md 的 Execution Flow 与 Data Layout 为实际行为
+2. 为 5 份历史 superpowers design doc/plan 添加 Issue #43 过时标注
+3. 修正 docs/architecture/README.md、docs/design/AGENT-PHASE-TASKS.md、ZIMA_CLI_ISSUES.md 中的旧路径引用
+4. 修正 scripts/verify_issue38_checklist.py 检查逻辑为 history/pjobs.json
+5. 所有 254 个 unit tests 通过
+
 ### Session 25 - 2026-03-30
 
 ## Session 8 - 2026-03-30
@@ -132,34 +143,27 @@ Optional: 注意事项、时间管理建议
 - zima/commands/pjob.py - 修复后台执行标志和 follow 输出
 - zima/core/daemon.py - 同样修复后台进程创建标志
 
-### Session 21 - 2026-03-29
-
-实现 PJob 后台执行功能并修复输出目录处理 bug。
-
-本次会话完成了以下工作：
-1. **添加 PJob 后台执行** (`--background` / `-b`) - 启动 detached 子进程执行 PJob，主进程立即返回，适合长时间运行的 Agent 任务
-2. **添加日志跟踪功能** (`--follow` / `-f`) - 配合 `--background` 实时跟踪日志输出，Ctrl+C 停止跟踪但后台进程继续运行
-3. **修复 PermissionError** - `_save_output()` 当 `save_to` 指向已存在的目录时，自动生成 `result-YYYY-MM-DD-HH-MM-SS.md` 文件名
-4. **创建 background_runner.py** - 后台执行模块，负责在 detached 进程中执行 PJob 并记录历史
-5. **更新文档** - API-INTERFACE.md 和 PJOB-DESIGN.md 添加后台执行设计和使用示例
-6. **优化 coverage-workflow** - 添加 50 分钟测试耗时警告和续跑模式，指导 Agent 基于已有分析报告继续工作
-
-涉及文件：
-- zima/commands/pjob.py - 添加 --background 和 --follow 参数
-- zima/execution/background_runner.py - 新建后台执行模块
-- zima/execution/executor.py - 修复 _save_output() 目录处理
-- docs/API-INTERFACE.md - 更新 CLI 文档
-- docs/design/PJOB-DESIGN.md - 添加后台执行设计章节
-
 ## Earlier Sessions (历史会话)
 
+- **Session 21** (2026-03-29): 实现 PJob 后台执行功能并修复输出目录处理 bug。
+- **Session 20** (2026-03-29): 根据 ZIMA_CLI_ISSUES.md 修复多个 P0/P1/P2 问题，并添加 Ctrl+C 优雅中断功能。
 - **Session 20** (2026-03-29): 根据 ZIMA_CLI_ISSUES.md 修复多个 P0/P1/P2 问题，并添加 Ctrl+C 优雅中断功能。
 - **Session 19** (2026-03-29): 修复 P2 问题 8.1 - Agent 创建重复问题。
+- **Session 19** (2026-03-29): 修复 P2 问题 8.1 - Agent 创建重复问题。
+- **Session 18** (2026-03-29): 修复 P1/P2 问题 3.2 和 4.2 - 改进错误信息和模板语法检查。
 - **Session 18** (2026-03-29): 修复 P1/P2 问题 3.2 和 4.2 - 改进错误信息和模板语法检查。
 - **Session 17** (2026-03-29): 修复 P2 问题 7.1 - Agent 类型文档缺失。
+- **Session 17** (2026-03-29): 修复 P2 问题 7.1 - Agent 类型文档缺失。
+- **Session 16** (2026-03-29): 修复 P1 问题 3.1 和 7.2 - 增强 PJob 验证机制。
 - **Session 16** (2026-03-29): 修复 P1 问题 3.1 和 7.2 - 增强 PJob 验证机制。
 - **Session 15** (2026-03-29): 修复 P0 问题 1.1 - 执行失败无详细日志。
 - **Session 15** (2026-03-29): 修复 P0 问题 1.1 - 执行失败无详细日志。
+- **Session 15** (2026-03-29): 修复 P0 问题 1.1 - 执行失败无详细日志。
+- **Session 15** (2026-03-29): 修复 P0 问题 1.1 - 执行失败无详细日志。
+- **Session 14** (2026-03-29): 修复 Windows 下 CLI 命令的 Unicode 编码错误。
+- **Session 14** (2026-03-29): 修复 Windows 下 CLI 命令的 Unicode 编码错误。
+- **Session 14** (2026-03-29): 修复 Windows 下 CLI 命令的 Unicode 编码错误。
+- **Session 14** (2026-03-29): 修复 Windows 下 CLI 命令的 Unicode 编码错误。
 - **Session 14** (2026-03-29): 修复 Windows 下 CLI 命令的 Unicode 编码错误。
 - **Session 14** (2026-03-29): 修复 Windows 下 CLI 命令的 Unicode 编码错误。
 - **Session 14** (2026-03-29): 修复 Windows 下 CLI 命令的 Unicode 编码错误。
@@ -172,23 +176,11 @@ Optional: 注意事项、时间管理建议
 - **Session 13** (2026-03-29): 修复 test_create_kimi_agent 单元测试断言，使其与更新后的 Kimi 默认模型 kimi-c...
 - **Session 13** (2026-03-29): 修复 test_create_kimi_agent 单元测试断言，使其与更新后的 Kimi 默认模型 kimi-c...
 - **Session 13** (2026-03-29): 修复 test_create_kimi_agent 单元测试断言，使其与更新后的 Kimi 默认模型 kimi-c...
-- **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
-- **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
-- **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
-- **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
-- **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
-- **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
-- **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
-- **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
-- **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
-- **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
-- **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
-- **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
-- **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
-- **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
-- **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
-- **Session 12** (2026-03-29): 修复 KimiRunner 模型参数传递并更新默认模型。将 KimiRunner 中硬编码的 kimi CLI 命...
+- **Session 13** (2026-03-29): 修复 test_create_kimi_agent 单元测试断言，使其与更新后的 Kimi 默认模型 kimi-c...
+- **Session 13** (2026-03-29): 修复 test_create_kimi_agent 单元测试断言，使其与更新后的 Kimi 默认模型 kimi-c...
+- **Session 13** (2026-03-29): 修复 test_create_kimi_agent 单元测试断言，使其与更新后的 Kimi 默认模型 kimi-c...
+- **Session 13** (2026-03-29): 修复 test_create_kimi_agent 单元测试断言，使其与更新后的 Kimi 默认模型 kimi-c...
 
 ---
 
-*Total: 40 sessions | Last Updated: 2026-03-30*
+*Total: 40 sessions | Last Updated: 2026-04-21*
