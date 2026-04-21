@@ -197,9 +197,19 @@ class AgentConfig(BaseConfig):
         """
         Get base CLI command template for this agent type.
 
+        If ``mockCommand`` is set in parameters, returns that command as a
+        list (intended for test use only).  ``mockCommand`` accepts either a
+        string or a list of strings.  Otherwise returns the type-based
+        template.
+
         Returns:
             Base command list (e.g., ["kimi", "--print", "--yolo"])
         """
+        # Mock override: if mockCommand is set, use it instead of real CLI
+        if self.parameters.get("mockCommand"):
+            cmd = self.parameters["mockCommand"]
+            return cmd if isinstance(cmd, list) else [str(cmd)]
+
         templates = {
             "kimi": ["kimi", "--print", "--yolo"],
             "claude": ["claude", "-p"],
