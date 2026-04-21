@@ -96,3 +96,29 @@ class TestFixShellCommand:
         monkeypatch.setattr(os, "name", "posix")
         result = PJobExecutor._fix_shell_command("cd /tmp && ls")
         assert result == "cd /tmp && ls"
+
+
+class TestCreateTempDir:
+    """Test PJobExecutor._create_temp_dir() uses ZIMA_HOME (#47)."""
+
+    def test_temp_dir_under_zima_home(self, monkeypatch, temp_dir):
+        monkeypatch.setenv("ZIMA_HOME", str(temp_dir))
+
+        executor = PJobExecutor()
+        result = executor._create_temp_dir("my-pjob", "abc123")
+
+        expected = temp_dir / "temp" / "pjobs" / "my-pjob-abc123"
+        assert result == expected
+        assert result.exists()
+
+    def test_temp_dir_creates_parents(self, monkeypatch, temp_dir):
+        monkeypatch.setenv("ZIMA_HOME", str(temp_dir))
+
+        # temp/pjobs/ should not exist yet
+        assert not (temp_dir / "temp").exists()
+
+        executor = PJobExecutor()
+        result = executor._create_temp_dir("test-pjob", "id1")
+
+        assert (temp_dir / "temp" / "pjobs").exists()
+        assert result.exists()
