@@ -16,7 +16,9 @@ def main():
     parser.add_argument("--max-steps-per-turn", type=int, default=10, help="Max steps per turn")
     parser.add_argument("--max-ralph-iterations", type=int, default=3)
     parser.add_argument("--max-retries-per-step", type=int, default=1)
-    parser.add_argument("--add-dir", action="append", default=[], help="Additional working directories")
+    parser.add_argument(
+        "--add-dir", action="append", default=[], help="Additional working directories"
+    )
     parser.add_argument("--output-format", default="text")
     # Flags from get_cli_command_template() and build_command()
     parser.add_argument("--yolo", action="store_true")
