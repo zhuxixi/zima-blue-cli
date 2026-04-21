@@ -50,3 +50,9 @@ Thumbs.db
 # Git worktrees
 .worktrees/
 
+# Test coverage
+.coverage
+
+# Claude worktrees
+.claude/worktrees/
+
