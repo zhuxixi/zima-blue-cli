@@ -25,7 +25,7 @@ app = typer.Typer(
 )
 
 
-def _version_callback(value: bool):
+def _version_callback(value: bool) -> None:
     if value:
         typer.echo(f"zima {get_version()}")
         raise typer.Exit()
