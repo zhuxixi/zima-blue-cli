@@ -299,9 +299,14 @@ class TestIssue38MockVerification(TestIsolator):
         # Verify PID file removed
         assert not pid_file.exists(), "PID file should be removed after stop"
 
-        # Wait briefly then verify process is dead
-        time.sleep(1.0)
-        assert not _process_alive(pid), f"Daemon process {pid} should be dead after stop"
+        # Poll until process is dead (CI containers can be slow to reap)
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline:
+            if not _process_alive(pid):
+                break
+            time.sleep(0.5)
+        else:
+            pytest.fail(f"Daemon process {pid} still alive 10s after stop")
 
 
 # --- Real-call test class ---
