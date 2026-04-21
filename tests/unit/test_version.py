@@ -25,5 +25,8 @@ class TestGetVersion:
 
         import zima
 
+        # Must patch zima.version (not importlib.metadata.version) because
+        # the module-level `from importlib.metadata import version` creates
+        # a local binding that get_version() references.
         monkeypatch.setattr(zima, "version", _raise)
         assert get_version() == "unknown"
