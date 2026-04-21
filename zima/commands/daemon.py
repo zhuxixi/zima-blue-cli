@@ -173,12 +173,17 @@ def stop():
             except ProcessLookupError:
                 pass  # Process already dead (stale PID)
             else:
-                time.sleep(2)
+                time.sleep(3)
                 if _is_process_alive(pid):
+                    # Kill entire process group (daemon + PJob children)
+                    # Daemon is started with start_new_session=True, so PGID == PID
                     try:
-                        os.kill(pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass  # Process died between check and kill
+                        os.killpg(pid, signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError):
+                        try:
+                            os.kill(pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
         pid_file.unlink(missing_ok=True)
         console.print(f"[green]✓[/green] Daemon stopped (PID {pid})")
     except Exception as e:
