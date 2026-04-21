@@ -20,6 +20,7 @@ class DaemonScheduler:
         self.schedule = schedule
         self.daemon_dir = daemon_dir
         self.running = False
+        self._stop_check = None
         self.current_cycle = -1
         self.current_stage: str | None = None
         self.active_pjobs: dict[str, subprocess.Popen] = {}
@@ -32,13 +33,24 @@ class DaemonScheduler:
         self.log_dir = daemon_dir / "history"
         self.log_dir.mkdir(parents=True, exist_ok=True)
 
-    def run(self) -> None:
-        """Main scheduling loop."""
+    def run(self, stop_check=None) -> None:
+        """Main scheduling loop.
+
+        Args:
+            stop_check: Optional callable returning True when an external
+                        stop signal (e.g. SIGTERM) was received.
+        """
+        self._stop_check = stop_check
         self.running = True
         self._log("DaemonScheduler started")
         self._save_state()
 
         while self.running:
+            # Check external stop flag (set by signal handler)
+            if self._stop_check and self._stop_check():
+                self._log("Stop signal detected")
+                break
+
             now = datetime.now()
             cycle_num = self._current_cycle_num(now)
             cycle_start = self._cycle_start_time(now)
@@ -223,6 +235,8 @@ class DaemonScheduler:
         """Sleep in small chunks so stop() is responsive."""
         end = time.time() + seconds
         while time.time() < end and self.running:
+            if self._stop_check and self._stop_check():
+                break
             time.sleep(min(1.0, end - time.time()))
 
     def _current_cycle_num(self, dt: datetime) -> int:
