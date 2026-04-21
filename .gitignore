@@ -56,3 +56,6 @@ Thumbs.db
 # Claude worktrees
 .claude/worktrees/
 
+# Misc
+pr_diff.txt
+
