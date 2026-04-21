@@ -30,21 +30,19 @@ def main() -> int:
     zima_home = get_zima_home()
     checks = []
 
-    # AC #1 + #3: PJob execution log
-    agent_logs_dir = zima_home / "agents"
-    log_files = []
-    if agent_logs_dir.exists():
-        for agent_dir in agent_logs_dir.iterdir():
-            if not agent_dir.is_dir():
-                continue
-            logs_dir = agent_dir / "logs"
-            if logs_dir.exists():
-                log_files.extend(logs_dir.glob("*.log"))
-
-    if log_files:
-        checks.append(check_pass("PJob execution log exists", str(log_files[0])))
+    # AC #1 + #3: PJob execution history
+    history_file = zima_home / "history" / "pjobs.json"
+    if history_file.exists():
+        try:
+            history_data = json.loads(history_file.read_text(encoding="utf-8"))
+            if history_data:
+                checks.append(check_pass("PJob execution history exists", str(history_file)))
+            else:
+                checks.append(check_fail("PJob execution history exists", "File is empty"))
+        except json.JSONDecodeError as e:
+            checks.append(check_fail("PJob execution history exists", f"Invalid JSON: {e}"))
     else:
-        checks.append(check_fail("PJob execution log exists", "No .log files in ~/.zima/agents/*/logs/"))
+        checks.append(check_fail("PJob execution history exists", f"Not found: {history_file}"))
 
     # AC #4: Daemon state file
     state_file = zima_home / "daemon" / "state.json"

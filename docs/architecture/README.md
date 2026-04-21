@@ -78,22 +78,24 @@ agents/my-agent/
 
 ## 2. 文件结构
 
+> ⚠️ **Outdated (Issue #43)**: This section describes a legacy per-agent directory layout (`~/.zima/agents/{agent-name}/`) that was never implemented. The actual system stores configs centrally in `~/.zima/configs/` and uses the system temp directory for execution artifacts. See [AGENTS.md](../../../AGENTS.md) for the accurate data layout.
+
 ```
-~/.zima/agents/{agent-name}/
+~/.zima/agents/{agent-name}/        # LEGACY — not implemented
 │
-├── agent.yaml              # Agent 配置
+├── agent.yaml              # Agent 配置 (stored in ~/.zima/configs/agents/)
 │   ├── metadata: name, description
 │   ├── spec.workspace: ./workspace
 │   ├── spec.prompt: file + vars
 │   └── spec.execution: maxTime, maxStepsPerTurn, maxRalphIterations
 │
-├── prompt.md               # Prompt 模板（定义工作流）
+├── prompt.md               # Prompt 模板（运行时渲染到 temp dir）
 │   └── 包含：任务描述、步骤、输出格式
 │
-├── workspace/              # 工作目录
+├── workspace/              # 工作目录 (运行时 temp dir)
 │   └── (Agent 操作的项目文件)
 │
-└── logs/                   # 执行日志
+└── logs/                   # 执行日志 (stored in ~/.zima/history/pjobs.json)
     └── run_20260326_120000.log
 ```
 

@@ -186,7 +186,7 @@ spec:
     maxStepsPerTurn: 50
     yolo: true
     workDir: C:/Users/zhuzh/work/personal/jfox/zk-cli
-    promptFile: C:/Users/zhuzh/.zima/agents/coverage-agent/tasks/main.txt
+    promptFile: C:/Users/zhuzh/work/personal/zima-blue-cli/prompts/coverage-agent/main.txt
 ```
 
 ### PMG

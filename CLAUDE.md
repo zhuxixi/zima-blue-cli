@@ -84,7 +84,7 @@ zima pjob run <code>
   → Renders Workflow template with Variables
   → Builds CLI command from Agent parameters
   → Executes subprocess (kimi/claude/gemini)
-  → Captures output, logs to ~/.zima/agents/<code>/logs/
+  → Captures output, stores execution history centrally
   → Returns ExecutionResult
 ```
 
@@ -98,11 +98,15 @@ zima pjob run <code>
 │   ├── daemon.log
 │   ├── state.json
 │   └── history/*.jsonl
-└── agents/<code>/
-    ├── workspace/     # Working directory for execution
-    ├── prompts/       # Rendered prompt files
-    └── logs/          # Execution logs
+└── history/
+    └── pjobs.json           # Execution history (per-PJob records, max 100 each)
 ```
+
+**Execution artifacts** (ephemeral by default):
+- Working directory: system temp dir (`%TEMP%/zima-pjobs/<code>-<id>/` on Windows, `/tmp/zima-pjobs/...` on Unix)
+- Rendered prompt: `<temp_dir>/prompt.md`
+- Temp dir is cleaned up after execution unless `keep_temp` or `save_to` is set
+- Full stdout/stderr is returned in-memory; only a 500-char preview is persisted to history
 
 Customizable via `ZIMA_HOME` env var.
 

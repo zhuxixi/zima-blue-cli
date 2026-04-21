@@ -10,7 +10,7 @@
 现有代码：
 - `zima/cli.py` - 旧版命令（create/run/list/show/logs）
 - `zima/models/agent.py` - 旧版模型（仅支持 Kimi）
-- 配置文件存储在 `~/.zima/agents/{name}/`
+- 配置文件存储在 `~/.zima/agents/{name}/`  **(Legacy — never implemented; configs are in `~/.zima/configs/agents/` see Issue #43)**
 
 目标架构：
 - 新命令：`zima agent [create|update|delete|list|show|edit|validate|test]`

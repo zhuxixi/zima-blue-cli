@@ -8,6 +8,8 @@
 
 **Tech Stack:** GitHub CLI (`gh`), Python 3.10+, FastAPI, PyJWT, PyGithub
 
+> ⚠️ **Outdated Reference (Issue #43)**: This document references `~/.zima/agents/<code>/logs/` for execution results. The actual implementation uses the system temp directory (`zima-pjobs/`) and stores history centrally in `~/.zima/history/pjobs.json`. See [AGENTS.md](../../../AGENTS.md) for the accurate data layout.
+
 ---
 
 ## Task 1: Update issue #29 with refined spec

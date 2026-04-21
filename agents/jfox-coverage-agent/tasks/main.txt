@@ -87,7 +87,7 @@ Shell({"command": "zima time jfox-coverage-agent"})
 ```
 项目路径: C:/Users/zhuzh/work/personal/jfox/zk-cli
 测试目录: tests/
-Agent 目录: ~/.zima/agents/jfox-coverage-agent/
+Agent 目录: ~/.zima/configs/agents/jfox-coverage-agent.yaml (central config)
 状态文件: agent_state.json
 ```
 

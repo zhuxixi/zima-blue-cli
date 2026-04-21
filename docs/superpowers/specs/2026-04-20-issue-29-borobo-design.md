@@ -5,6 +5,8 @@
 **Related**: Issue #29 (Zima CLI vNext: Event-Driven Scheduling)
 **JFox Note**: 202604191043230289 (GitHub CR Bot ecosystem analysis)
 
+> ⚠️ **Outdated Reference (Issue #43)**: This document references `~/.zima/agents/<code>/logs/` for execution results. The actual implementation uses the system temp directory (`zima-pjobs/`) and stores history centrally in `~/.zima/history/pjobs.json`. See [AGENTS.md](../../../../AGENTS.md) for the accurate data layout.
+
 ## Background
 
 Issue #29 describes a vision for event-driven Zima CLI with GitHub Webhook integration. This spec extracts the GitHub-facing portion into a separate project called **borobo** — a GitHub App bot that orchestrates automated development workflows via issue labels and PR events.

@@ -1,3 +1,38 @@
+# AGENTS.md Ground-Up Rewrite Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Rewrite AGENTS.md to accurately reflect the current codebase, mirroring CLAUDE.md's structure as a self-contained guide for Kimi Code agents.
+
+**Architecture:** Single-file rewrite of AGENTS.md (English, ~170 lines) that mirrors CLAUDE.md sections. Minor update to CLAUDE.md's Documentation section to reflect AGENTS.md's new purpose.
+
+**Tech Stack:** Markdown documentation only. No code changes.
+
+**Design spec:** `docs/superpowers/specs/2026-04-20-agents-md-rewrite-design.md`
+
+> ⚠️ **Outdated Reference (Issue #43)**: This plan includes the legacy per-agent directory layout (`~/.zima/agents/<code>/`). The actual implementation uses the system temp directory (`zima-pjobs/`) and stores history centrally in `~/.zima/history/pjobs.json`. See [AGENTS.md](../../../AGENTS.md) for the accurate data layout.
+
+---
+
+## File Structure
+
+| Action | File | Responsibility |
+|--------|------|----------------|
+| Rewrite | `AGENTS.md` | Agent context file for Kimi Code — self-contained project guide |
+| Modify | `CLAUDE.md:170-175` | Update Documentation section — change AGENTS.md description from "Agent development guide (identity, naming, knowledge base)" to "Agent context file for Kimi Code agents" |
+
+---
+
+### Task 1: Rewrite AGENTS.md
+
+**Files:**
+- Rewrite: `AGENTS.md`
+
+- [ ] **Step 1: Write the new AGENTS.md**
+
+Replace the entire content of `AGENTS.md` with:
+
+```markdown
 # AGENTS.md
 
 This file provides guidance to Kimi Code agents when working with code in this repository.
@@ -84,7 +119,7 @@ zima pjob run <code>
   → Renders Workflow template with Variables
   → Builds CLI command from Agent parameters
   → Executes subprocess (kimi/claude/gemini)
-  → Captures output, stores execution history centrally
+  → Captures output, logs to ~/.zima/agents/<code>/logs/
   → Returns ExecutionResult
 ```
 
@@ -98,15 +133,11 @@ zima pjob run <code>
 │   ├── daemon.log
 │   ├── state.json
 │   └── history/*.jsonl
-└── history/
-    └── pjobs.json           # Execution history (per-PJob records, max 100 each)
+└── agents/<code>/
+    ├── workspace/     # Working directory for execution
+    ├── prompts/       # Rendered prompt files
+    └── logs/          # Execution logs
 ```
-
-**Execution artifacts** (ephemeral by default):
-- Working directory: system temp dir (`%TEMP%/zima-pjobs/<code>-<id>/` on Windows, `/tmp/zima-pjobs/...` on Unix)
-- Rendered prompt: `<temp_dir>/prompt.md`
-- Temp dir is cleaned up after execution unless `keep_temp` or `save_to` is set
-- Full stdout/stderr is returned in-memory; only a 500-char preview is persisted to history
 
 Customizable via `ZIMA_HOME` env var.
 
@@ -178,3 +209,54 @@ PR reviews use three independent APIs. Different CR tools submit via different e
 - `docs/decisions/` — ADRs; ADR-004 (single execution) is the current model
 - `docs/design/` — Feature design documents (PJob design, API interface, etc.)
 - `SESSION.md` — Development session history
+```
+
+- [ ] **Step 2: Verify the file looks correct**
+
+Run: `head -5 AGENTS.md && echo "---" && tail -5 AGENTS.md`
+Expected: Header says "guidance to Kimi Code agents", footer has Documentation section.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add AGENTS.md
+git commit -m "docs: rewrite AGENTS.md to match current codebase
+
+Ground-up rewrite of AGENTS.md as English documentation for Kimi Code
+agents. Mirrors CLAUDE.md structure. Removes all unimplemented vision
+content (memory architecture, agent naming, trust levels, old agent.yaml
+format, stale phase checklist, dead reference links).
+
+Closes #31"
+```
+
+---
+
+### Task 2: Update CLAUDE.md Documentation section
+
+**Files:**
+- Modify: `CLAUDE.md:170` — change AGENTS.md description
+
+- [ ] **Step 1: Update the AGENTS.md reference in CLAUDE.md**
+
+Change line 170 in `CLAUDE.md`:
+
+```
+# Before
+- `AGENTS.md` — Agent development guide (identity, naming, knowledge base)
+
+# After
+- `AGENTS.md` — Agent context file for Kimi Code agents
+```
+
+- [ ] **Step 2: Verify the change**
+
+Run: `grep "AGENTS.md" CLAUDE.md`
+Expected: Single line reading `- `AGENTS.md` — Agent context file for Kimi Code agents`
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add CLAUDE.md
+git commit -m "docs(claude-md): update AGENTS.md description to reflect rewrite"
+```
