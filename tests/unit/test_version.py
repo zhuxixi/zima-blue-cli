@@ -18,10 +18,12 @@ class TestGetVersion:
 
     def test_fallback_on_missing_package(self, monkeypatch):
         """Verify 'unknown' fallback when package metadata is not found."""
-        import importlib.metadata
+        from importlib.metadata import PackageNotFoundError
 
         def _raise(name):
-            raise importlib.metadata.PackageNotFoundError(name)
+            raise PackageNotFoundError(name)
 
-        monkeypatch.setattr(importlib.metadata, "version", _raise)
+        import zima
+
+        monkeypatch.setattr(zima, "version", _raise)
         assert get_version() == "unknown"
