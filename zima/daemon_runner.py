@@ -50,18 +50,24 @@ def main():
     pid_file.parent.mkdir(parents=True, exist_ok=True)
     pid_file.write_text(str(os.getpid()), encoding="utf-8")
 
-    # Handle SIGTERM (Linux) for graceful shutdown
+    # Handle SIGTERM (Linux) for graceful shutdown.
+    # Only set a flag — avoid blocking work inside the signal handler
+    # (e.g. _kill_all_pjobs + proc.wait) which can deadlock.
+    _stop_requested = False
+
     def _handle_signal(signum, frame):
-        scheduler.stop()
+        nonlocal _stop_requested
+        _stop_requested = True
 
     if sys.platform != "win32":
         signal.signal(signal.SIGTERM, _handle_signal)
 
     try:
-        scheduler.run()
+        scheduler.run(stop_check=lambda: _stop_requested)
     except (KeyboardInterrupt, SystemExit):
-        scheduler.stop()
+        pass
     finally:
+        scheduler.stop()
         pid_file.unlink(missing_ok=True)
 
 
