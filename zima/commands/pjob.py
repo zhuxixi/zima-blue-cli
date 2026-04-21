@@ -16,7 +16,7 @@ from zima.config.manager import ConfigManager
 from zima.execution.executor import PJobExecutor
 from zima.execution.history import ExecutionHistory
 from zima.models.pjob import Overrides, PJobConfig
-from zima.utils import validate_code_with_error
+from zima.utils import get_zima_home, validate_code_with_error
 
 app = typer.Typer(name="pjob", help="PJob management - execute Agent tasks")
 console = Console(legacy_windows=False, force_terminal=True)
@@ -577,7 +577,7 @@ def run(
         from pathlib import Path
 
         execution_id = str(uuid.uuid4())[:8]
-        log_dir = Path.home() / ".zima" / "logs" / "background"
+        log_dir = get_zima_home() / "logs" / "background"
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / f"{code}-{execution_id}.log"
 
