@@ -2,6 +2,7 @@
 
 from typer.testing import CliRunner
 
+from tests.conftest import strip_ansi
 from zima.cli import app
 
 runner = CliRunner()
@@ -28,4 +29,4 @@ class TestCLIVersion:
     def test_version_in_help(self):
         result = runner.invoke(app, ["--help"])
         assert result.exit_code == 0
-        assert "--version" in result.output
+        assert "--version" in strip_ansi(result.output)
