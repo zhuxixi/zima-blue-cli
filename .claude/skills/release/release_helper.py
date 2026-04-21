@@ -79,7 +79,7 @@ def parse_bump(arg: str, current: str) -> str:
 
 
 def update_files(new_version: str, current_version: str):
-    """更新 pyproject.toml 版本号"""
+    """更新 pyproject.toml 版本号并运行 uv lock"""
     if not PYPROJECT_TOML.exists():
         output_error(f"未找到 {PYPROJECT_TOML}")
 
@@ -94,6 +94,20 @@ def update_files(new_version: str, current_version: str):
         flags=re.MULTILINE,
     )
     PYPROJECT_TOML.write_text(new_toml, encoding="utf-8")
+
+    # uv lock — 如果失败则回滚
+    result = subprocess.run(
+        ["uv", "lock"],
+        cwd=str(PROJECT_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if result.returncode != 0:
+        # 回滚
+        PYPROJECT_TOML.write_text(toml_content, encoding="utf-8")
+        output_error(f"uv lock 失败，已回滚文件变更: {result.stderr}")
 
 
 def get_last_tag() -> str:
@@ -291,7 +305,7 @@ def main():
         "changelog_preview": changelog,
         "changelog_entries": entries,
         "changelog_summary": summarize_entries(entries),
-        "files_modified": ["pyproject.toml", "CHANGELOG.md"],
+        "files_modified": ["pyproject.toml", "uv.lock", "CHANGELOG.md"],
     }
 
     if dry_run:

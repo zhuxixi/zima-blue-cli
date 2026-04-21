@@ -47,7 +47,7 @@ gh pr list --state open --head "chore/bump-*"
 用 `--dry-run` 先预览计算结果：
 
 ```bash
-python .claude/skills/release/release_helper.py <version> --dry-run
+uv run python .claude/skills/release/release_helper.py <version> --dry-run
 ```
 
 解析 JSON 输出，提取 `current_version`、`new_version`、`changelog_preview`、`changelog_summary`。
@@ -67,6 +67,7 @@ CHANGELOG 预览:
 
 将修改的文件:
   - pyproject.toml
+  - uv.lock
   - CHANGELOG.md
 ```
 
@@ -75,7 +76,7 @@ CHANGELOG 预览:
 ### Step 4: 运行辅助脚本（正式模式）
 
 ```bash
-python .claude/skills/release/release_helper.py <version>
+uv run python .claude/skills/release/release_helper.py <version>
 ```
 
 确认脚本退出码为 0。如果非 0，读取错误信息并告知用户，停止流程。
@@ -87,7 +88,7 @@ python .claude/skills/release/release_helper.py <version>
 git checkout -b chore/bump-version-{new_version}
 
 # 暂存文件
-git add pyproject.toml CHANGELOG.md
+git add pyproject.toml uv.lock CHANGELOG.md
 
 # 提交
 git commit -m "chore: bump version to {new_version}"
