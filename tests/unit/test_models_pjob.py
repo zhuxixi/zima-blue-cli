@@ -356,9 +356,7 @@ class TestPJobSpecActions:
             "agent": "a",
             "workflow": "w",
             "actions": {
-                "postExec": [
-                    {"condition": "success", "type": "github_label", "addLabels": ["x"]}
-                ]
+                "postExec": [{"condition": "success", "type": "github_label", "addLabels": ["x"]}]
             },
         }
         spec = PJobSpec.from_dict(d)

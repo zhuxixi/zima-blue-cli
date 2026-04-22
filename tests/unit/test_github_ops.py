@@ -57,9 +57,7 @@ class TestGitHubOps:
         """Test that gh CLI failure raises RuntimeError."""
         ops = GitHubOps()
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=1, stdout="", stderr="label not found"
-            )
+            mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="label not found")
             with pytest.raises(RuntimeError, match="GitHub CLI failed"):
                 ops.add_label("owner/repo", 123, "bad-label")
 

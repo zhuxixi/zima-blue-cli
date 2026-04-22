@@ -26,28 +26,21 @@ class GitHubOps:
         )
         if check and result.returncode != 0:
             raise RuntimeError(
-                f"GitHub CLI failed: {' '.join(cmd)}\n"
-                f"stderr: {result.stderr.strip()}"
+                f"GitHub CLI failed: {' '.join(cmd)}\n" f"stderr: {result.stderr.strip()}"
             )
         return result
 
     def add_label(self, repo: str, number: int, label: str) -> None:
         """Add a label to an issue or PR."""
-        self._run(
-            ["issue", "edit", str(number), "--add-label", label, "--repo", repo]
-        )
+        self._run(["issue", "edit", str(number), "--add-label", label, "--repo", repo])
 
     def remove_label(self, repo: str, number: int, label: str) -> None:
         """Remove a label from an issue or PR."""
-        self._run(
-            ["issue", "edit", str(number), "--remove-label", label, "--repo", repo]
-        )
+        self._run(["issue", "edit", str(number), "--remove-label", label, "--repo", repo])
 
     def post_comment(self, repo: str, number: int, body: str) -> None:
         """Post a comment on an issue or PR."""
-        self._run(
-            ["issue", "comment", str(number), "--body", body, "--repo", repo]
-        )
+        self._run(["issue", "comment", str(number), "--body", body, "--repo", repo])
 
     def fetch_pr_diff(self, repo: str, number: int) -> str:
         """Fetch PR diff as text."""

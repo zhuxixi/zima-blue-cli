@@ -287,7 +287,9 @@ class PJobExecutor:
 
             # Cleanup temp directory
             _pjob_cleanup = locals().get("pjob")
-            if temp_dir and not (keep_temp or (_pjob_cleanup is not None and _pjob_cleanup.spec.execution.keep_temp)):
+            if temp_dir and not (
+                keep_temp or (_pjob_cleanup is not None and _pjob_cleanup.spec.execution.keep_temp)
+            ):
                 shutil.rmtree(temp_dir, ignore_errors=True)
                 result.temp_dir = None
                 result.prompt_file = None
