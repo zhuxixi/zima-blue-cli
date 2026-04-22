@@ -66,11 +66,15 @@ The core design is composability through seven YAML-based configuration types:
 - **`zima/commands/`** — CLI subcommand implementations (agent, workflow, variable, env, pmg, pjob, schedule, daemon).
 - **`zima/config/manager.py`** — `ConfigManager`: unified CRUD for all config types. Single class handles create/read/update/delete/list for every entity kind via `KINDS` set.
 - **`zima/models/`** — Dataclasses for each entity. `BaseConfig` provides common YAML load/save. `Metadata` has code/name/description.
-- **`zima/execution/executor.py`** — `PJobExecutor`: resolves ConfigBundle (agent+workflow+variable+env+pmg), renders template, builds command, executes subprocess.
+- **`zima/execution/executor.py`** — `PJobExecutor`: resolves ConfigBundle (agent+workflow+variable+env+pmg), renders template, builds command, executes subprocess, runs postExec actions.
 - **`zima/models/config_bundle.py`** — `ConfigBundle`: assembled config set ready for execution.
 - **`zima/core/kimi_runner.py`** / **`zima/core/claude_runner.py`** — Agent-specific subprocess runners for Kimi and Claude.
 - **`zima/execution/background_runner.py`** — Background PJob execution in detached process.
 - **`zima/execution/history.py`** — Execution history tracking with PID recording.
+- **`zima/execution/actions_runner.py`** — `ActionsRunner`: executes postExec actions (GitHub label/comment) after agent exit.
+- **`zima/review/parser.py`** — `ReviewParser`: parses `<zima-review>` XML blocks from agent stdout into structured review results.
+- **`zima/github/ops.py`** — `GitHubOps`: wraps `gh` CLI for label add/remove, comment post, PR diff fetch.
+- **`zima/models/actions.py`** — `PostExecAction` / `ActionsConfig`: dataclasses for PJob post-execution automation.
 - **`zima/daemon_runner.py`** — Entry point for detached daemon process (`python -m zima.daemon_runner`).
 - **`zima/core/daemon_scheduler.py`** — `DaemonScheduler`: 32-cycle PJob scheduling with stage timers, PJob spawn/kill, JSONL history.
 - **`zima/utils.py`** — Shared utilities (`ensure_dir`, etc.).
@@ -84,9 +88,15 @@ zima pjob run <code>
   → Renders Workflow template with Variables
   → Builds CLI command from Agent parameters
   → Executes subprocess (kimi/claude/gemini)
+  → Runs postExec actions (e.g. GitHub label transition) in finally block
   → Captures output, stores execution history centrally
   → Returns ExecutionResult
 ```
+
+**Post-exec actions** run unconditionally in the `finally` block:
+- On success (returncode=0): `condition: success` actions fire
+- On failure/timeout/cancel: `condition: failure` actions fire, `action_errors` recorded
+- Reviewer PJobs: `<zima-review>` XML in stdout is parsed, verdict maps to effective returncode
 
 ### Data Layout
 
@@ -154,7 +164,7 @@ To add a new **Configuration Entity**:
 2. Add kind to `ConfigManager.KINDS`
 3. Create commands in `zima/commands/<entity>.py`
 4. Register Typer subcommand in `zima/cli.py`
-5. Add example YAML to `zima/templates/examples.py` (`EXAMPLES` dict + `VALID_KINDS`)
+5. Add example YAML to `zima/templates/examples.py` (`EXAMPLES` dict + `VALID_KINDS`). `EXAMPLES` is nested: `EXAMPLES[kind][example_name]` → YAML string.
 
 ## Gotchas
 

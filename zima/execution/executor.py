@@ -235,23 +235,18 @@ class PJobExecutor:
             # 10. Execute post-hooks
             self._run_hooks(pjob.spec.hooks.get("postExec", []), env_vars, bundle.work_dir)
 
-            # 11. Execute postExec actions
-            # Merge variable values into env for {{VAR}} action substitution
-            action_env = env_vars.copy()
-            if bundle.variable:
-                action_env.update(bundle.variable.values)
-            self._run_post_exec_actions(pjob, result, action_env)
-
             # 12. Handle output
             if pjob.spec.output.save_to:
                 self._save_output(result, pjob.spec.output)
 
         except subprocess.TimeoutExpired:
             result.status = ExecutionStatus.TIMEOUT
+            result.returncode = -1
             result.stderr = "Execution timed out"
             result.error_detail = f"Timeout after {pjob.spec.execution.timeout}s"
         except KeyboardInterrupt:
             result.status = ExecutionStatus.CANCELLED
+            result.returncode = -2
             result.stderr = "Execution cancelled by user (Ctrl+C)"
             # Attempt to terminate subprocess gracefully
             if self._current_process and self._current_process.poll() is None:
@@ -264,13 +259,28 @@ class PJobExecutor:
             import traceback
 
             result.status = ExecutionStatus.FAILED
+            result.returncode = -3
             result.stderr = _friendly_error(e)
             result.error_detail = traceback.format_exc()
         finally:
+            # 11. Execute postExec actions even on timeout/cancel/error
+            try:
+                _pjob = locals().get("pjob")
+                _bundle = locals().get("bundle")
+                _env_vars = locals().get("env_vars")
+                if _pjob is not None and _env_vars is not None and _pjob.spec.actions.post_exec:
+                    action_env = _env_vars.copy()
+                    if _bundle is not None and _bundle.variable:
+                        action_env.update(_bundle.variable.values)
+                    self._run_post_exec_actions(_pjob, result, action_env)
+            except Exception:
+                pass  # Action errors already recorded in result.action_errors
+
             result.finished_at = generate_timestamp()
 
             # Cleanup temp directory
-            if temp_dir and not (keep_temp or pjob.spec.execution.keep_temp):
+            _pjob_cleanup = locals().get("pjob")
+            if temp_dir and not (keep_temp or (_pjob_cleanup is not None and _pjob_cleanup.spec.execution.keep_temp)):
                 shutil.rmtree(temp_dir, ignore_errors=True)
                 result.temp_dir = None
                 result.prompt_file = None
