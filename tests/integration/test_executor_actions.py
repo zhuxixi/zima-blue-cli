@@ -104,3 +104,91 @@ class TestExecutorActions:
 
         assert result.status.value == "success"
         mock_ops.post_comment.assert_not_called()
+
+
+class TestReviewerEndToEnd:
+    @pytest.fixture
+    def reviewer_configs(self, isolated_zima_home, config_manager):
+        """Set up complete reviewer agent + workflow + pjob configs."""
+        from zima.models.workflow import WorkflowConfig
+        from zima.models.variable import VariableConfig
+
+        # Agent with mockCommand that outputs approved review XML
+        agent_data = {
+            "apiVersion": "zima.io/v1",
+            "kind": "Agent",
+            "metadata": {"code": "reviewer-agent", "name": "Reviewer Agent"},
+            "spec": {
+                "type": "kimi",
+                "parameters": {
+                    "mockCommand": [
+                        "echo",
+                        "Review complete.\n<zima-review>\n  <verdict>approved</verdict>\n  <summary>LGTM</summary>\n</zima-review>",
+                    ]
+                },
+            },
+        }
+        config_manager.save_config("agent", "reviewer-agent", agent_data)
+
+        # Workflow
+        wf = WorkflowConfig.create(
+            code="reviewer-wf",
+            name="Reviewer Workflow",
+            template="Review PR {{pr_number}}: {{pr_diff}}",
+            variables=[
+                {"name": "pr_number", "type": "string", "required": True},
+                {"name": "pr_diff", "type": "string", "required": True},
+            ],
+        )
+        config_manager.save_config("workflow", "reviewer-wf", wf.to_dict())
+
+        # Variable
+        var = VariableConfig.create(
+            code="reviewer-var",
+            name="Reviewer Vars",
+            values={"pr_number": "42", "pr_diff": "+code"},
+        )
+        config_manager.save_config("variable", "reviewer-var", var.to_dict())
+
+        return agent_data, wf.to_dict(), var.to_dict()
+
+    def test_reviewer_approved_triggers_label(self, reviewer_configs, isolated_zima_home):
+        """Full flow: reviewer agent outputs approved -> label transition triggered."""
+        from zima.config.manager import ConfigManager
+        from zima.models.actions import ActionsConfig, PostExecAction
+        from zima.models.pjob import PJobConfig
+
+        manager = ConfigManager()
+
+        pjob = PJobConfig.create(
+            code="reviewer-e2e",
+            name="Reviewer E2E",
+            agent="reviewer-agent",
+            workflow="reviewer-wf",
+            variable="reviewer-var",
+        )
+        pjob.metadata.labels = ["reviewer"]
+        pjob.spec.actions = ActionsConfig(
+            post_exec=[
+                PostExecAction(
+                    condition="success",
+                    type="github_label",
+                    add_labels=["zima:approved"],
+                    remove_labels=["zima:needs-review"],
+                    repo="owner/repo",
+                    issue="42",
+                )
+            ]
+        )
+        manager.save_config("pjob", "reviewer-e2e", pjob.to_dict())
+
+        executor = PJobExecutor()
+        mock_ops = MagicMock()
+        executor._actions_runner._ops = mock_ops
+
+        result = executor.execute("reviewer-e2e")
+
+        assert result.status.value == "success"
+        assert "approved" in result.stdout
+        mock_ops.add_label.assert_called_once_with("owner/repo", 42, "zima:approved")
+        mock_ops.remove_label.assert_called_once_with("owner/repo", 42, "zima:needs-review")
