@@ -18,7 +18,7 @@ class TestAgentConfigCreation(TestIsolator):
         assert config.metadata.code == "kimi-agent"
         assert config.metadata.name == "Kimi Agent"
         assert config.type == "kimi"
-        assert config.parameters["model"] == "kimi-code/kimi-for-coding"
+        assert "model" not in config.parameters
         assert config.parameters["yolo"] is True
         assert config.parameters["maxStepsPerTurn"] == 50
 
@@ -27,7 +27,7 @@ class TestAgentConfigCreation(TestIsolator):
         config = AgentConfig.create(code="claude-agent", name="Claude Agent", agent_type="claude")
 
         assert config.type == "claude"
-        assert config.parameters["model"] == "claude-sonnet-4-6"
+        assert "model" not in config.parameters
         assert config.parameters["maxTurns"] == 100
 
     def test_create_gemini_agent(self):
@@ -35,7 +35,7 @@ class TestAgentConfigCreation(TestIsolator):
         config = AgentConfig.create(code="gemini-agent", name="Gemini Agent", agent_type="gemini")
 
         assert config.type == "gemini"
-        assert config.parameters["model"] == "gemini-2.5-flash"
+        assert "model" not in config.parameters
         assert config.parameters["approvalMode"] == "default"
 
     def test_create_with_custom_params(self):
@@ -320,6 +320,35 @@ class TestAgentConfigCommandBuilding(TestIsolator):
 
         assert "overridden-model" in cmd
 
+    def test_build_kimi_command_no_model_by_default(self):
+        """Test that --model is omitted when no model is set."""
+        config = AgentConfig.create("test", "Test", "kimi")
+        cmd = config.build_command()
+
+        assert "--model" not in cmd
+
+    def test_build_kimi_command_explicit_model(self):
+        """Test that --model is included when explicitly set."""
+        config = AgentConfig.create("test", "Test", "kimi", parameters={"model": "kimi-k2"})
+        cmd = config.build_command()
+
+        assert "--model" in cmd
+        assert "kimi-k2" in cmd
+
+    def test_build_claude_command_no_model_by_default(self):
+        """Test that --model is omitted for claude when no model is set."""
+        config = AgentConfig.create("test", "Test", "claude")
+        cmd = config.build_command()
+
+        assert "--model" not in cmd
+
+    def test_build_gemini_command_no_model_by_default(self):
+        """Test that -m is omitted for gemini when no model is set."""
+        config = AgentConfig.create("test", "Test", "gemini")
+        cmd = config.build_command()
+
+        assert "-m" not in cmd
+
 
 class TestAgentConfigDefaults(TestIsolator):
     """Test default references management."""
@@ -371,5 +400,4 @@ class TestValidAgentTypes(TestIsolator):
         """Test that parameter templates exist for all valid types."""
         for agent_type in VALID_AGENT_TYPES:
             assert agent_type in AGENT_PARAMETER_TEMPLATES
-            assert "model" in AGENT_PARAMETER_TEMPLATES[agent_type]
             assert "workDir" in AGENT_PARAMETER_TEMPLATES[agent_type]

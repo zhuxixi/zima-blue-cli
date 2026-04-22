@@ -17,7 +17,7 @@ class TestClaudeAgentConfig:
         """Test Claude default parameters are correct."""
         config = AgentConfig.create("test-claude", "Test Claude", "claude")
 
-        assert config.parameters["model"] == "claude-sonnet-4-6"
+        assert "model" not in config.parameters
         assert config.parameters["maxTurns"] == 100
         assert config.parameters["permissionMode"] == "plan"
         assert config.parameters["outputFormat"] == "stream-json"
@@ -52,8 +52,7 @@ class TestClaudeAgentConfig:
 
         assert "claude" in cmd
         assert "-p" in cmd
-        assert "--model" in cmd
-        assert "claude-sonnet-4-6" in cmd
+        assert "--model" not in cmd
         assert "--max-turns" in cmd
         assert "100" in cmd
         assert "--permission-mode" in cmd
@@ -147,7 +146,7 @@ class TestClaudeAgentConfig:
 
         assert "claude" in cmd
         assert "-p" in cmd
-        assert "--model" in cmd
+        assert "--model" not in cmd
 
 
 class TestClaudeRunnerParsing:
