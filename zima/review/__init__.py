@@ -1,5 +1,5 @@
 """Code review result models and parser."""
 
-from zima.review.parser import ReviewIssue, ReviewResult
+from zima.review.parser import ReviewIssue, ReviewParser, ReviewResult
 
-__all__ = ["ReviewIssue", "ReviewResult"]
+__all__ = ["ReviewIssue", "ReviewParser", "ReviewResult"]
