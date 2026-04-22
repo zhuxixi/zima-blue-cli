@@ -114,7 +114,7 @@ class BaseConfig(YamlSerializable):
         Returns:
             Configuration instance
         """
-        spec_data = data.get("spec", {})
+        spec_data = data.get("spec", {}) if isinstance(data, dict) else {}
         kwargs = {
             "api_version": data.get("apiVersion", "zima.io/v1"),
             "kind": data.get("kind", ""),
