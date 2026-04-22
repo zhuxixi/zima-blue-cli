@@ -39,8 +39,8 @@ class TestKimiAgentConfigLayer:
             code="test-kimi-default", name="Test Kimi Agent", agent_type="kimi"
         )
 
-        # Verify default parameters from template are merged
-        assert agent.parameters["model"] == "kimi-code/kimi-for-coding"
+        # Verify default parameters from template are merged (model omitted)
+        assert "model" not in agent.parameters
         assert agent.parameters["maxStepsPerTurn"] == 50
         assert agent.parameters["maxRalphIterations"] == 10
         assert agent.parameters["maxRetriesPerStep"] == 3
