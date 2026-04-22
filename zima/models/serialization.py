@@ -29,8 +29,21 @@ def _unwrap_optional(t):
     return None
 
 
-def _is_list_of_dataclasses(t):
+def _resolve_type(t, field_name, cls=None):
+    """Resolve a type annotation that may be a string (from PEP 563)."""
+    if isinstance(t, str) and cls is not None:
+        try:
+            import inspect
+
+            t = inspect.get_annotations(cls, eval_str=True).get(field_name, t)
+        except Exception:
+            pass
+    return t
+
+
+def _is_list_of_dataclasses(t, cls=None, field_name=None):
     """Check if t is list[X] or Optional[list[X]] where X is a dataclass."""
+    t = _resolve_type(t, field_name, cls)
     inner = _unwrap_optional(t)
     if inner is not None:
         t = inner
@@ -42,8 +55,9 @@ def _is_list_of_dataclasses(t):
     return False
 
 
-def _get_item_type_from_list(t):
+def _get_item_type_from_list(t, cls=None, field_name=None):
     """Extract the dataclass type from list[X] or Optional[list[X]]."""
+    t = _resolve_type(t, field_name, cls)
     inner = _unwrap_optional(t)
     if inner is not None:
         t = inner
@@ -81,17 +95,19 @@ def serialize(obj, aliases=None) -> dict:
     if aliases is None:
         aliases = getattr(obj, "FIELD_ALIASES", {}) if hasattr(obj, "FIELD_ALIASES") else {}
 
+    cls = type(obj)
     result = {}
     for f in fields(obj):
         key = aliases.get(f.name, convert_to_camel_case(f.name))
         value = getattr(obj, f.name)
+        resolved_type = _resolve_type(f.type, f.name, cls)
 
-        if is_dataclass(f.type):
+        if is_dataclass(resolved_type):
             if value is not None:
                 value = value.to_dict()
-        elif _is_list_of_dataclasses(f.type):
+        elif _is_list_of_dataclasses(resolved_type, cls, f.name):
             if value is not None:
-                item_type = _get_item_type_from_list(f.type)
+                item_type = _get_item_type_from_list(resolved_type, cls, f.name)
                 if item_type is not None and hasattr(item_type, "to_dict"):
                     value = [v.to_dict() if hasattr(v, "to_dict") else v for v in value]
 
@@ -137,15 +153,17 @@ def deserialize(cls, data, aliases=None):
                 kwargs[f.name] = value
                 continue
 
+        resolved_type = _resolve_type(f.type, f.name, cls)
+
         # Recursively deserialize nested dataclasses
-        if is_dataclass(f.type):
-            inner = _unwrap_optional(f.type)
-            target_cls = inner if inner is not None else f.type
+        if is_dataclass(resolved_type):
+            inner = _unwrap_optional(resolved_type)
+            target_cls = inner if inner is not None else resolved_type
             if value is not None and is_dataclass(target_cls):
                 if isinstance(value, dict):
                     value = deserialize(target_cls, value)
-        elif _is_list_of_dataclasses(f.type):
-            item_type = _get_item_type_from_list(f.type)
+        elif _is_list_of_dataclasses(resolved_type, cls, f.name):
+            item_type = _get_item_type_from_list(resolved_type, cls, f.name)
             if item_type is not None and value is not None:
                 value = [deserialize(item_type, v) if isinstance(v, dict) else v for v in value]
 
@@ -163,6 +181,7 @@ def serialize_spec(obj, aliases=None) -> dict:
     if aliases is None:
         aliases = getattr(obj, "FIELD_ALIASES", {}) if hasattr(obj, "FIELD_ALIASES") else {}
 
+    cls = type(obj)
     result = {}
     for f in fields(obj):
         if f.name in BASE_CONFIG_FIELDS:
@@ -170,13 +189,14 @@ def serialize_spec(obj, aliases=None) -> dict:
 
         key = aliases.get(f.name, convert_to_camel_case(f.name))
         value = getattr(obj, f.name)
+        resolved_type = _resolve_type(f.type, f.name, cls)
 
-        if is_dataclass(f.type):
+        if is_dataclass(resolved_type):
             if value is not None:
                 value = value.to_dict()
-        elif _is_list_of_dataclasses(f.type):
+        elif _is_list_of_dataclasses(resolved_type, cls, f.name):
             if value is not None:
-                item_type = _get_item_type_from_list(f.type)
+                item_type = _get_item_type_from_list(resolved_type, cls, f.name)
                 if item_type is not None and hasattr(item_type, "to_dict"):
                     value = [v.to_dict() if hasattr(v, "to_dict") else v for v in value]
 
@@ -220,15 +240,17 @@ def deserialize_spec(cls, spec_data, aliases=None) -> dict:
                 kwargs[f.name] = value
                 continue
 
+        resolved_type = _resolve_type(f.type, f.name, cls)
+
         # Recursively deserialize nested dataclasses
-        if is_dataclass(f.type):
-            inner = _unwrap_optional(f.type)
-            target_cls = inner if inner is not None else f.type
+        if is_dataclass(resolved_type):
+            inner = _unwrap_optional(resolved_type)
+            target_cls = inner if inner is not None else resolved_type
             if value is not None and is_dataclass(target_cls):
                 if isinstance(value, dict):
                     value = deserialize(target_cls, value)
-        elif _is_list_of_dataclasses(f.type):
-            item_type = _get_item_type_from_list(f.type)
+        elif _is_list_of_dataclasses(resolved_type, cls, f.name):
+            item_type = _get_item_type_from_list(resolved_type, cls, f.name)
             if item_type is not None and value is not None:
                 value = [deserialize(item_type, v) if isinstance(v, dict) else v for v in value]
 

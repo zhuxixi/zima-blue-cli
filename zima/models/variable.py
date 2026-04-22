@@ -24,6 +24,9 @@ class VariableConfig(BaseConfig):
     """
 
     kind: str = "Variable"
+    SPEC_FIELD_ALIASES = {
+        "for_workflow": "forWorkflow",
+    }
     for_workflow: str = ""  # workflow code reference
     values: dict[str, Any] = field(default_factory=dict)
 
@@ -97,35 +100,6 @@ class VariableConfig(BaseConfig):
     def is_valid(self) -> bool:
         """Check if configuration is valid."""
         return len(self.validate()) == 0
-
-    def to_dict(self) -> dict:
-        """Convert to dictionary."""
-        return {
-            "apiVersion": self.api_version,
-            "kind": self.kind,
-            "metadata": self.metadata.to_dict(),
-            "spec": {
-                "forWorkflow": self.for_workflow,
-                "values": self.values,
-            },
-            "createdAt": self.created_at,
-            "updatedAt": self.updated_at,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> VariableConfig:
-        """Create from dictionary."""
-        spec = data.get("spec", {})
-
-        return cls(
-            api_version=data.get("apiVersion", "zima.io/v1"),
-            kind=data.get("kind", "Variable"),
-            metadata=Metadata.from_dict(data.get("metadata", {})),
-            for_workflow=spec.get("forWorkflow", ""),
-            values=spec.get("values", {}),
-            created_at=data.get("createdAt", ""),
-            updated_at=data.get("updatedAt", ""),
-        )
 
     @classmethod
     def from_yaml_file(cls, path: Path) -> VariableConfig:

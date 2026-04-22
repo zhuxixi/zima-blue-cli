@@ -272,6 +272,9 @@ class PMGConfig(BaseConfig):
     """
 
     kind: str = "PMG"
+    SPEC_FIELD_ALIASES = {
+        "for_types": "forTypes",
+    }
     for_types: list[str] = field(default_factory=list)
     parameters: list[ParameterDef] = field(default_factory=list)
     raw: str = ""
@@ -411,60 +414,6 @@ class PMGConfig(BaseConfig):
     def is_valid(self) -> bool:
         """Check if configuration is valid."""
         return len(self.validate()) == 0
-
-    def to_dict(self) -> dict:
-        """Convert to dictionary."""
-        return {
-            "apiVersion": self.api_version,
-            "kind": self.kind,
-            "metadata": self.metadata.to_dict(),
-            "spec": {
-                "forTypes": self.for_types,
-                "parameters": [p.to_dict() for p in self.parameters],
-                "raw": self.raw,
-                "extends": [e.to_dict() for e in self.extends],
-                "conditions": [c.to_dict() for c in self.conditions],
-            },
-            "createdAt": self.created_at,
-            "updatedAt": self.updated_at,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> PMGConfig:
-        """Create from dictionary."""
-        spec = data.get("spec", {})
-
-        # Parse parameters
-        param_data = spec.get("parameters", [])
-        parameters = [ParameterDef.from_dict(p) if isinstance(p, dict) else p for p in param_data]
-
-        # Parse extends
-        extend_data = spec.get("extends", [])
-        extends = []
-        for e in extend_data:
-            if isinstance(e, dict):
-                extends.append(ExtendDef.from_dict(e))
-            elif isinstance(e, str):
-                extends.append(ExtendDef(code=e))
-
-        # Parse conditions
-        condition_data = spec.get("conditions", [])
-        conditions = [
-            ConditionDef.from_dict(c) if isinstance(c, dict) else c for c in condition_data
-        ]
-
-        return cls(
-            api_version=data.get("apiVersion", "zima.io/v1"),
-            kind=data.get("kind", "PMG"),
-            metadata=Metadata.from_dict(data.get("metadata", {})),
-            for_types=spec.get("forTypes", []),
-            parameters=parameters,
-            raw=spec.get("raw", ""),
-            extends=extends,
-            conditions=conditions,
-            created_at=data.get("createdAt", ""),
-            updated_at=data.get("updatedAt", ""),
-        )
 
     @classmethod
     def from_yaml_file(cls, path: Path) -> PMGConfig:

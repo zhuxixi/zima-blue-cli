@@ -57,6 +57,7 @@ class AgentConfig(BaseConfig):
     """
 
     kind: str = "Agent"
+    SPEC_FIELD_ALIASES = {}
     type: str = "kimi"
     parameters: dict = field(default_factory=dict)
     defaults: dict = field(default_factory=dict)
@@ -146,37 +147,6 @@ class AgentConfig(BaseConfig):
     def is_valid(self) -> bool:
         """Check if configuration is valid."""
         return len(self.validate()) == 0
-
-    def to_dict(self) -> dict:
-        """Convert to dictionary."""
-        return {
-            "apiVersion": self.api_version,
-            "kind": self.kind,
-            "metadata": self.metadata.to_dict(),
-            "spec": {
-                "type": self.type,
-                "parameters": self.parameters,
-                "defaults": self.defaults,
-            },
-            "createdAt": self.created_at,
-            "updatedAt": self.updated_at,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> AgentConfig:
-        """Create from dictionary."""
-        spec = data.get("spec", {})
-
-        return cls(
-            api_version=data.get("apiVersion", "zima.io/v1"),
-            kind=data.get("kind", "Agent"),
-            metadata=Metadata.from_dict(data.get("metadata", {})),
-            type=spec.get("type", "kimi"),
-            parameters=spec.get("parameters", {}),
-            defaults=spec.get("defaults", {}),
-            created_at=data.get("createdAt", ""),
-            updated_at=data.get("updatedAt", ""),
-        )
 
     @classmethod
     def from_yaml_file(cls, path: Path) -> AgentConfig:
