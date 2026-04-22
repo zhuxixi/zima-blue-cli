@@ -12,7 +12,6 @@ from zima.utils import generate_timestamp, validate_code
 # Agent-specific parameters templates
 AGENT_PARAMETER_TEMPLATES = {
     "kimi": {
-        "model": "kimi-code/kimi-for-coding",
         "maxStepsPerTurn": 50,
         "maxRalphIterations": 10,
         "maxRetriesPerStep": 3,
@@ -22,7 +21,6 @@ AGENT_PARAMETER_TEMPLATES = {
         "outputFormat": "text",
     },
     "claude": {
-        "model": "claude-sonnet-4-6",
         "maxTurns": 100,
         "permissionMode": "plan",
         "outputFormat": "stream-json",
@@ -34,7 +32,6 @@ AGENT_PARAMETER_TEMPLATES = {
         "addDirs": [],
     },
     "gemini": {
-        "model": "gemini-2.5-flash",
         "approvalMode": "default",
         "checkpointing": False,
         "workDir": "./workspace",
