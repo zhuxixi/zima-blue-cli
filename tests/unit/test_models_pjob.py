@@ -329,3 +329,57 @@ class TestPJobConfig:
         assert refs["variable"] == "var1"
         assert refs["env"] == "env1"
         assert "pmg" not in refs
+
+
+class TestPJobSpecActions:
+    def test_spec_with_actions(self):
+        """Test PJobSpec with actions configuration."""
+        from zima.models.actions import ActionsConfig, PostExecAction
+
+        actions = ActionsConfig(
+            post_exec=[
+                PostExecAction(
+                    condition="success",
+                    type="github_label",
+                    add_labels=["zima:needs-fix"],
+                    remove_labels=["zima:needs-review"],
+                )
+            ]
+        )
+        spec = PJobSpec(agent="a", workflow="w", actions=actions)
+        assert len(spec.actions.post_exec) == 1
+        assert spec.actions.post_exec[0].condition == "success"
+
+    def test_spec_actions_from_dict(self):
+        """Test parsing PJobSpec with actions from dictionary."""
+        d = {
+            "agent": "a",
+            "workflow": "w",
+            "actions": {
+                "postExec": [{"condition": "success", "type": "github_label", "addLabels": ["x"]}]
+            },
+        }
+        spec = PJobSpec.from_dict(d)
+        assert len(spec.actions.post_exec) == 1
+        assert spec.actions.post_exec[0].add_labels == ["x"]
+
+    def test_spec_actions_to_dict(self):
+        """Test serializing PJobSpec with actions to dictionary."""
+        from zima.models.actions import ActionsConfig, PostExecAction
+
+        spec = PJobSpec(
+            agent="a",
+            workflow="w",
+            actions=ActionsConfig(
+                post_exec=[PostExecAction(condition="failure", type="github_comment", body="oops")]
+            ),
+        )
+        d = spec.to_dict()
+        assert "actions" in d
+        assert d["actions"]["postExec"][0]["condition"] == "failure"
+
+    def test_spec_actions_empty_omitted(self):
+        """Test that empty actions are omitted from to_dict."""
+        spec = PJobSpec(agent="a", workflow="w")
+        d = spec.to_dict()
+        assert "actions" not in d

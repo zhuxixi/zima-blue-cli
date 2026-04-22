@@ -13,8 +13,10 @@ from pathlib import Path
 from typing import Optional
 
 from zima.config.manager import ConfigManager
+from zima.execution.actions_runner import ActionsRunner
 from zima.models.config_bundle import ConfigBundle
 from zima.models.pjob import Overrides, PJobConfig
+from zima.review.parser import ReviewParser
 from zima.utils import generate_timestamp, get_zima_home
 
 
@@ -48,6 +50,7 @@ class ExecutionResult:
         finished_at: Finish timestamp
         execution_id: Unique execution ID
         temp_dir: Temporary directory (if kept)
+        action_errors: Post-exec action failure messages
     """
 
     pjob_code: str = ""
@@ -66,6 +69,7 @@ class ExecutionResult:
     prompt_file: Optional[Path] = None  # Rendered workflow prompt file
     prompt_content: str = ""  # Rendered workflow content (kept for dry-run)
     pid: Optional[int] = None  # 执行的进程 PID
+    action_errors: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -84,6 +88,7 @@ class ExecutionResult:
             "execution_id": self.execution_id,
             "temp_dir": str(self.temp_dir) if self.temp_dir else None,
             "pid": self.pid,
+            "action_errors": self.action_errors,
         }
 
     @property
@@ -141,6 +146,7 @@ class PJobExecutor:
         """Initialize executor."""
         self.config_manager = ConfigManager()
         self._current_process: Optional[subprocess.Popen] = None
+        self._actions_runner = ActionsRunner()
 
     def execute(
         self,
@@ -229,16 +235,18 @@ class PJobExecutor:
             # 10. Execute post-hooks
             self._run_hooks(pjob.spec.hooks.get("postExec", []), env_vars, bundle.work_dir)
 
-            # 11. Handle output
+            # 12. Handle output
             if pjob.spec.output.save_to:
                 self._save_output(result, pjob.spec.output)
 
         except subprocess.TimeoutExpired:
             result.status = ExecutionStatus.TIMEOUT
+            result.returncode = 124
             result.stderr = "Execution timed out"
             result.error_detail = f"Timeout after {pjob.spec.execution.timeout}s"
         except KeyboardInterrupt:
             result.status = ExecutionStatus.CANCELLED
+            result.returncode = 130
             result.stderr = "Execution cancelled by user (Ctrl+C)"
             # Attempt to terminate subprocess gracefully
             if self._current_process and self._current_process.poll() is None:
@@ -251,13 +259,37 @@ class PJobExecutor:
             import traceback
 
             result.status = ExecutionStatus.FAILED
+            result.returncode = 1
             result.stderr = _friendly_error(e)
             result.error_detail = traceback.format_exc()
         finally:
+            # 11. Execute postExec actions even on timeout/cancel/error,
+            # but skip on dry-run (finally runs after return in try block).
+            if not dry_run:
+                try:
+                    _pjob = locals().get("pjob")
+                    _bundle = locals().get("bundle")
+                    _env_vars = locals().get("env_vars")
+                    if _pjob is not None and _env_vars is not None and _pjob.spec.actions.post_exec:
+                        action_env = _env_vars.copy()
+                        if _bundle is not None and _bundle.variable:
+                            action_env.update(_bundle.variable.values)
+                        self._run_post_exec_actions(_pjob, result, action_env)
+                except Exception as e:
+                    import traceback
+
+                    error_msg = f"Post-exec action setup failed: {e}"
+                    result.action_errors.append(error_msg)
+                    print(f"Warning: {error_msg}")
+                    print(traceback.format_exc())
+
             result.finished_at = generate_timestamp()
 
             # Cleanup temp directory
-            if temp_dir and not (keep_temp or pjob.spec.execution.keep_temp):
+            _pjob_cleanup = locals().get("pjob")
+            if temp_dir and not (
+                keep_temp or (_pjob_cleanup is not None and _pjob_cleanup.spec.execution.keep_temp)
+            ):
                 shutil.rmtree(temp_dir, ignore_errors=True)
                 result.temp_dir = None
                 result.prompt_file = None
@@ -433,6 +465,50 @@ class PJobExecutor:
                 # Log warning but don't fail
                 print(f"Warning: Hook failed: {hook}")
                 print(f"  Error: {e}")
+
+    def _run_post_exec_actions(
+        self, pjob: PJobConfig, result: ExecutionResult, env_vars: dict[str, str]
+    ) -> None:
+        """Run postExec actions based on execution result.
+
+        Args:
+            pjob: PJob configuration.
+            result: Execution result from agent.
+            env_vars: Resolved environment variables for substitution.
+        """
+        if not pjob.spec.actions.post_exec:
+            return
+
+        # Don't parse review XML on timeout or cancellation — agent didn't finish
+        is_timeout_or_cancel = result.status in (
+            ExecutionStatus.TIMEOUT,
+            ExecutionStatus.CANCELLED,
+        )
+
+        review_result = None
+        if not is_timeout_or_cancel and "<zima-review>" in result.stdout:
+            review_result = ReviewParser.parse(result.stdout)
+
+        # Map review verdict to effective returncode for action conditions
+        effective_returncode = result.returncode
+        if review_result and review_result.verdict == "approved":
+            effective_returncode = 0
+        elif review_result and review_result.verdict in ("needs_fix", "needs_discussion"):
+            effective_returncode = 1
+
+        try:
+            self._actions_runner.run(
+                actions=pjob.spec.actions,
+                returncode=effective_returncode,
+                env=env_vars,
+            )
+        except Exception as e:
+            import traceback
+
+            error_msg = f"Post-exec action failed: {e}"
+            result.action_errors.append(error_msg)
+            print(f"Warning: {error_msg}")
+            print(traceback.format_exc())
 
     def _run_command(
         self,

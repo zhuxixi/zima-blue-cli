@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
+from zima.models.actions import ActionsConfig
 from zima.models.base import BaseConfig, Metadata
 from zima.utils import generate_timestamp, validate_code
 
@@ -153,6 +154,7 @@ class PJobSpec:
         execution: Execution options
         hooks: Pre/post execution hooks
         output: Output handling options
+        actions: Post-execution actions configuration
     """
 
     agent: str = ""
@@ -164,6 +166,7 @@ class PJobSpec:
     execution: ExecutionOptions = field(default_factory=ExecutionOptions)
     hooks: dict = field(default_factory=dict)
     output: OutputOptions = field(default_factory=OutputOptions)
+    actions: ActionsConfig = field(default_factory=ActionsConfig)
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -185,6 +188,8 @@ class PJobSpec:
             result["hooks"] = self.hooks
         if self.output.save_to or self.output.format != "raw":
             result["output"] = self.output.to_dict()
+        if self.actions.post_exec:
+            result["actions"] = self.actions.to_dict()
         return result
 
     @classmethod
@@ -200,6 +205,7 @@ class PJobSpec:
             execution=ExecutionOptions.from_dict(data.get("execution", {})),
             hooks=data.get("hooks", {}),
             output=OutputOptions.from_dict(data.get("output", {})),
+            actions=ActionsConfig.from_dict(data.get("actions", {})),
         )
 
 

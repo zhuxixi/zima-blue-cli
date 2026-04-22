@@ -38,7 +38,7 @@ def create(
     if example:
         from zima.templates.examples import EXAMPLES
 
-        print(EXAMPLES["env"])
+        print(next(iter(EXAMPLES["env"].values())))
         raise typer.Exit(0)
 
     if not code:

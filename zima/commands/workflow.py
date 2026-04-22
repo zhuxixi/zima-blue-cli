@@ -42,7 +42,7 @@ def create(
     if example:
         from zima.templates.examples import EXAMPLES
 
-        print(EXAMPLES["workflow"])
+        print(next(iter(EXAMPLES["workflow"].values())))
         raise typer.Exit(0)
 
     if not name:

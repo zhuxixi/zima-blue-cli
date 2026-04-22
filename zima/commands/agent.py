@@ -39,7 +39,7 @@ def create(
     if example:
         from zima.templates.examples import EXAMPLES
 
-        print(EXAMPLES["agent"])
+        print(next(iter(EXAMPLES["agent"].values())))
         raise typer.Exit(0)
 
     if not name:
