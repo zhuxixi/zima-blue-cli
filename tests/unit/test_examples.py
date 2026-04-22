@@ -17,6 +17,7 @@ from zima.templates.examples import (
     EXAMPLES,
     PJOB_EXAMPLE,
     PMG_EXAMPLE,
+    REVIEWER_WORKFLOW,
     VALID_KINDS,
     VARIABLE_EXAMPLE,
     WORKFLOW_EXAMPLE,
@@ -33,38 +34,45 @@ KIND_MODEL_MAP = {
 }
 
 
+def _get_first_example(kind: str) -> str:
+    """Get the first (default) example for a given kind."""
+    return list(EXAMPLES[kind].values())[0]
+
+
 class TestExamplesStructure:
     """Parametrized tests for YAML structure correctness."""
 
     @pytest.mark.parametrize("kind", list(EXAMPLES.keys()))
     def test_example_is_valid_yaml(self, kind: str):
         """Each example must parse as valid YAML."""
-        data = yaml.safe_load(EXAMPLES[kind])
-        assert isinstance(data, dict)
+        for example_yaml in EXAMPLES[kind].values():
+            data = yaml.safe_load(example_yaml)
+            assert isinstance(data, dict)
 
     @pytest.mark.parametrize("kind", list(EXAMPLES.keys()))
     def test_example_has_required_top_level_fields(self, kind: str):
         """Each example must have apiVersion, kind, metadata, spec."""
-        data = yaml.safe_load(EXAMPLES[kind])
-        assert "apiVersion" in data, f"{kind}: missing apiVersion"
-        assert "kind" in data, f"{kind}: missing kind"
-        assert "metadata" in data, f"{kind}: missing metadata"
-        assert "spec" in data, f"{kind}: missing spec"
+        for example_yaml in EXAMPLES[kind].values():
+            data = yaml.safe_load(example_yaml)
+            assert "apiVersion" in data, f"{kind}: missing apiVersion"
+            assert "kind" in data, f"{kind}: missing kind"
+            assert "metadata" in data, f"{kind}: missing metadata"
+            assert "spec" in data, f"{kind}: missing spec"
 
     @pytest.mark.parametrize("kind", list(EXAMPLES.keys()))
     def test_example_metadata_has_code_and_name(self, kind: str):
         """Each example metadata must have code and name."""
-        data = yaml.safe_load(EXAMPLES[kind])
-        metadata = data["metadata"]
-        assert "code" in metadata, f"{kind}: metadata missing code"
-        assert "name" in metadata, f"{kind}: metadata missing name"
-        assert metadata["code"], f"{kind}: metadata.code is empty"
-        assert metadata["name"], f"{kind}: metadata.name is empty"
+        for example_yaml in EXAMPLES[kind].values():
+            data = yaml.safe_load(example_yaml)
+            metadata = data["metadata"]
+            assert "code" in metadata, f"{kind}: metadata missing code"
+            assert "name" in metadata, f"{kind}: metadata missing name"
+            assert metadata["code"], f"{kind}: metadata.code is empty"
+            assert metadata["name"], f"{kind}: metadata.name is empty"
 
     @pytest.mark.parametrize("kind", list(EXAMPLES.keys()))
     def test_example_kind_matches_entity(self, kind: str):
         """Each example kind field must match its entity type (capitalized)."""
-        data = yaml.safe_load(EXAMPLES[kind])
         kind_map = {
             "agent": "Agent",
             "workflow": "Workflow",
@@ -74,9 +82,11 @@ class TestExamplesStructure:
             "pjob": "PJob",
             "schedule": "Schedule",
         }
-        assert (
-            data["kind"] == kind_map[kind]
-        ), f"{kind}: kind={data['kind']}, expected={kind_map[kind]}"
+        for example_yaml in EXAMPLES[kind].values():
+            data = yaml.safe_load(example_yaml)
+            assert (
+                data["kind"] == kind_map[kind]
+            ), f"{kind}: kind={data['kind']}, expected={kind_map[kind]}"
 
 
 class TestExamplesCoverage:
@@ -213,3 +223,47 @@ class TestPJobRoundTrip:
         assert config.spec.output.format == "raw"
         assert config.spec.output.append is False
         assert config.is_valid()
+
+
+class TestReviewerWorkflow:
+    """Tests for the reviewer-cr workflow template."""
+
+    def test_reviewer_workflow_exists(self):
+        assert "reviewer-cr" in EXAMPLES["workflow"]
+
+    def test_reviewer_workflow_renders(self):
+        wf_yaml = EXAMPLES["workflow"]["reviewer-cr"]
+        data = yaml.safe_load(wf_yaml)
+        wf = WorkflowConfig.from_dict(data)
+
+        rendered = wf.render(
+            {
+                "repo": "owner/repo",
+                "pr_number": "42",
+                "pr_title": "Fix bug",
+                "pr_diff": "+some code",
+            }
+        )
+        assert "owner/repo" in rendered
+        assert "zima-review" in rendered
+        assert "<verdict>" in rendered
+
+    def test_reviewer_workflow_has_required_variables(self):
+        wf_yaml = EXAMPLES["workflow"]["reviewer-cr"]
+        data = yaml.safe_load(wf_yaml)
+        wf = WorkflowConfig.from_dict(data)
+
+        var_names = {v.name for v in wf.variables}
+        assert var_names == {"repo", "pr_number", "pr_title", "pr_diff"}
+
+        for v in wf.variables:
+            assert v.required is True
+
+    def test_reviewer_workflow_is_valid(self):
+        wf_yaml = EXAMPLES["workflow"]["reviewer-cr"]
+        data = yaml.safe_load(wf_yaml)
+        wf = WorkflowConfig.from_dict(data)
+        assert wf.is_valid()
+
+    def test_reviewer_workflow_constant_matches_dict(self):
+        assert REVIEWER_WORKFLOW == EXAMPLES["workflow"]["reviewer-cr"]

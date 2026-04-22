@@ -28,7 +28,7 @@ def create(
     if example:
         from zima.templates.examples import EXAMPLES
 
-        print(EXAMPLES["schedule"])
+        print(list(EXAMPLES["schedule"].values())[0])
         raise typer.Exit(0)
 
     if not name or not code:

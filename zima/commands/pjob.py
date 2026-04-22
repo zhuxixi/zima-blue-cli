@@ -50,7 +50,7 @@ def create(
     if example:
         from zima.templates.examples import EXAMPLES
 
-        print(EXAMPLES["pjob"])
+        print(list(EXAMPLES["pjob"].values())[0])
         raise typer.Exit(0)
 
     if not name:
