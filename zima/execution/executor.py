@@ -13,8 +13,10 @@ from pathlib import Path
 from typing import Optional
 
 from zima.config.manager import ConfigManager
+from zima.execution.actions_runner import ActionsRunner
 from zima.models.config_bundle import ConfigBundle
 from zima.models.pjob import Overrides, PJobConfig
+from zima.review.parser import ReviewParser
 from zima.utils import generate_timestamp, get_zima_home
 
 
@@ -141,6 +143,7 @@ class PJobExecutor:
         """Initialize executor."""
         self.config_manager = ConfigManager()
         self._current_process: Optional[subprocess.Popen] = None
+        self._actions_runner = ActionsRunner()
 
     def execute(
         self,
@@ -229,7 +232,10 @@ class PJobExecutor:
             # 10. Execute post-hooks
             self._run_hooks(pjob.spec.hooks.get("postExec", []), env_vars, bundle.work_dir)
 
-            # 11. Handle output
+            # 11. Execute postExec actions
+            self._run_post_exec_actions(pjob, result, env_vars)
+
+            # 12. Handle output
             if pjob.spec.output.save_to:
                 self._save_output(result, pjob.spec.output)
 
@@ -433,6 +439,36 @@ class PJobExecutor:
                 # Log warning but don't fail
                 print(f"Warning: Hook failed: {hook}")
                 print(f"  Error: {e}")
+
+    def _run_post_exec_actions(
+        self, pjob: PJobConfig, result: ExecutionResult, env_vars: dict[str, str]
+    ) -> None:
+        """Run postExec actions based on execution result.
+
+        Args:
+            pjob: PJob configuration.
+            result: Execution result from agent.
+            env_vars: Resolved environment variables for substitution.
+        """
+        if not pjob.spec.actions.post_exec:
+            return
+
+        review_result = None
+        if "reviewer" in pjob.metadata.labels:
+            review_result = ReviewParser.parse(result.stdout)
+
+        try:
+            self._actions_runner.run(
+                actions=pjob.spec.actions,
+                returncode=result.returncode,
+                env=env_vars,
+                review_result=review_result,
+            )
+        except Exception as e:
+            import traceback
+
+            print(f"Warning: Post-exec action failed: {e}")
+            print(traceback.format_exc())
 
     def _run_command(
         self,
