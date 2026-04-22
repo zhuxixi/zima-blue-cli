@@ -154,6 +154,7 @@ class PJobSpec:
         execution: Execution options
         hooks: Pre/post execution hooks
         output: Output handling options
+        actions: Post-execution actions configuration
     """
 
     agent: str = ""

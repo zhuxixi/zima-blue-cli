@@ -50,6 +50,7 @@ class ExecutionResult:
         finished_at: Finish timestamp
         execution_id: Unique execution ID
         temp_dir: Temporary directory (if kept)
+        action_errors: Post-exec action failure messages
     """
 
     pjob_code: str = ""
@@ -68,6 +69,7 @@ class ExecutionResult:
     prompt_file: Optional[Path] = None  # Rendered workflow prompt file
     prompt_content: str = ""  # Rendered workflow content (kept for dry-run)
     pid: Optional[int] = None  # 执行的进程 PID
+    action_errors: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -86,6 +88,7 @@ class ExecutionResult:
             "execution_id": self.execution_id,
             "temp_dir": str(self.temp_dir) if self.temp_dir else None,
             "pid": self.pid,
+            "action_errors": self.action_errors,
         }
 
     @property
@@ -458,7 +461,7 @@ class PJobExecutor:
             return
 
         review_result = None
-        if "reviewer" in pjob.metadata.labels:
+        if "<zima-review>" in result.stdout:
             review_result = ReviewParser.parse(result.stdout)
 
         # Map review verdict to effective returncode for action conditions
@@ -477,7 +480,9 @@ class PJobExecutor:
         except Exception as e:
             import traceback
 
-            print(f"Warning: Post-exec action failed: {e}")
+            error_msg = f"Post-exec action failed: {e}"
+            result.action_errors.append(error_msg)
+            print(f"Warning: {error_msg}")
             print(traceback.format_exc())
 
     def _run_command(
