@@ -6,7 +6,6 @@ from typing import Optional
 
 from zima.github.ops import GitHubOps
 from zima.models.actions import ActionsConfig, PostExecAction
-from zima.review.parser import ReviewResult
 
 
 def _matches_condition(condition: str, returncode: int) -> bool:
@@ -43,7 +42,6 @@ class ActionsRunner:
         actions: ActionsConfig,
         returncode: int,
         env: dict[str, str],
-        review_result: Optional[ReviewResult] = None,
     ) -> None:
         """Execute all matching postExec actions.
 
@@ -51,7 +49,6 @@ class ActionsRunner:
             actions: Actions configuration from PJob.
             returncode: Agent process exit code.
             env: Environment variables for {{VAR}} substitution.
-            review_result: Parsed review result (optional, for reviewer PJobs).
         """
         for action in actions.post_exec:
             if not _matches_condition(action.condition, returncode):
@@ -65,21 +62,21 @@ class ActionsRunner:
 
         def sub(value: str) -> str:
             for key, val in env.items():
-                value = value.replace(f"{{{key}}}", str(val))
+                value = value.replace(f"{{{{{key}}}}}", str(val))
             return value
 
         return PostExecAction(
             condition=action.condition,
             type=action.type,
-            add_labels=[sub(l) for l in action.add_labels],
-            remove_labels=[sub(l) for l in action.remove_labels],
+            add_labels=[sub(label) for label in action.add_labels],
+            remove_labels=[sub(label) for label in action.remove_labels],
             repo=sub(action.repo),
             issue=sub(action.issue),
             body=sub(action.body),
         )
 
     def _execute_action(self, action: PostExecAction) -> None:
-        """Execute a single action."""
+        """Execute a single action, logging individual failures but continuing."""
         if not action.repo or not action.issue:
             return
 
@@ -90,10 +87,19 @@ class ActionsRunner:
 
         if action.type == "github_label":
             for label in action.add_labels:
-                self._ops.add_label(action.repo, issue_num, label)
+                try:
+                    self._ops.add_label(action.repo, issue_num, label)
+                except RuntimeError as e:
+                    print(f"Warning: Failed to add label '{label}': {e}")
             for label in action.remove_labels:
-                self._ops.remove_label(action.repo, issue_num, label)
+                try:
+                    self._ops.remove_label(action.repo, issue_num, label)
+                except RuntimeError as e:
+                    print(f"Warning: Failed to remove label '{label}': {e}")
 
         elif action.type == "github_comment":
             if action.body:
-                self._ops.post_comment(action.repo, issue_num, action.body)
+                try:
+                    self._ops.post_comment(action.repo, issue_num, action.body)
+                except RuntimeError as e:
+                    print(f"Warning: Failed to post comment: {e}")

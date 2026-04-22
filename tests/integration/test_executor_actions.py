@@ -7,9 +7,10 @@ import pytest
 from zima.execution.executor import PJobExecutor
 from zima.models.actions import ActionsConfig, PostExecAction
 from zima.models.pjob import PJobConfig
+from tests.base import TestIsolator
 
 
-class TestExecutorActions:
+class TestExecutorActions(TestIsolator):
     @pytest.fixture
     def mock_configs(self, isolated_zima_home, config_manager, sample_agent_dict):
         """Set up agent and workflow configs for testing."""
@@ -106,7 +107,7 @@ class TestExecutorActions:
         mock_ops.post_comment.assert_not_called()
 
 
-class TestReviewerEndToEnd:
+class TestReviewerEndToEnd(TestIsolator):
     @pytest.fixture
     def reviewer_configs(self, isolated_zima_home, config_manager):
         """Set up complete reviewer agent + workflow + pjob configs."""

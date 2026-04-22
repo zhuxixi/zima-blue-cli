@@ -233,7 +233,11 @@ class PJobExecutor:
             self._run_hooks(pjob.spec.hooks.get("postExec", []), env_vars, bundle.work_dir)
 
             # 11. Execute postExec actions
-            self._run_post_exec_actions(pjob, result, env_vars)
+            # Merge variable values into env for {{VAR}} action substitution
+            action_env = env_vars.copy()
+            if bundle.variable:
+                action_env.update(bundle.variable.values)
+            self._run_post_exec_actions(pjob, result, action_env)
 
             # 12. Handle output
             if pjob.spec.output.save_to:
@@ -457,12 +461,18 @@ class PJobExecutor:
         if "reviewer" in pjob.metadata.labels:
             review_result = ReviewParser.parse(result.stdout)
 
+        # Map review verdict to effective returncode for action conditions
+        effective_returncode = result.returncode
+        if review_result and review_result.verdict == "approved":
+            effective_returncode = 0
+        elif review_result and review_result.verdict in ("needs_fix", "needs_discussion"):
+            effective_returncode = 1
+
         try:
             self._actions_runner.run(
                 actions=pjob.spec.actions,
-                returncode=result.returncode,
+                returncode=effective_returncode,
                 env=env_vars,
-                review_result=review_result,
             )
         except Exception as e:
             import traceback

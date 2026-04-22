@@ -1,8 +1,13 @@
+"""Code review result parser - extracts structured review output from agent stdout."""
+
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
 from xml.etree import ElementTree as ET
+
+# Maximum XML content size to prevent billion laughs / XML bomb attacks
+_MAX_REVIEW_XML_SIZE = 1024 * 1024  # 1 MB
 
 
 @dataclass
@@ -53,6 +58,13 @@ class ReviewParser:
             ReviewResult(verdict="needs_discussion") if no block is found
             or the XML is invalid.
         """
+        # Security: limit input size to prevent billion laughs / XML bomb
+        if len(stdout) > _MAX_REVIEW_XML_SIZE:
+            return ReviewResult(
+                verdict="needs_discussion",
+                summary="Agent output too large for review parsing",
+            )
+
         match = re.search(r"<zima-review>(.*?)</zima-review>", stdout, re.DOTALL)
         if not match:
             # Also try to match an unclosed <zima-review> tag (malformed XML)

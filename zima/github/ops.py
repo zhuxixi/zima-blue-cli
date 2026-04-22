@@ -1,3 +1,5 @@
+"""GitHub CLI wrapper for PJob post-execution actions."""
+
 from __future__ import annotations
 
 import json
@@ -21,6 +23,7 @@ class GitHubOps:
             text=True,
             timeout=self.timeout,
             check=False,
+            stdin=subprocess.DEVNULL,
         )
         if check and result.returncode != 0:
             raise RuntimeError(

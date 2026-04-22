@@ -117,24 +117,23 @@ class TestActionsRunner:
             assert "my-org/my-repo" in called_body
             assert "42" in called_body
 
-    def test_run_with_review_result(self):
-        """Test runner accepts optional review_result parameter."""
+    def test_run_failure_condition(self):
+        """Test runner matches failure condition with non-zero returncode."""
         runner = ActionsRunner()
-        review = ReviewResult(verdict="approved", summary="LGTM")
         actions = ActionsConfig(
             post_exec=[
                 PostExecAction(
-                    condition="success",
-                    type="github_label",
-                    add_labels=["zima:approved"],
+                    condition="failure",
+                    type="github_comment",
+                    body="Failed",
                     repo="o/r",
                     issue="1",
                 )
             ]
         )
         with patch.object(runner, "_ops") as mock_ops:
-            runner.run(actions, returncode=0, env={}, review_result=review)
-            mock_ops.add_label.assert_called_once()
+            runner.run(actions, returncode=1, env={})
+            mock_ops.post_comment.assert_called_once_with("o/r", 1, "Failed")
 
     def test_run_skips_without_repo_or_issue(self):
         """Test actions without repo/issue are silently skipped."""

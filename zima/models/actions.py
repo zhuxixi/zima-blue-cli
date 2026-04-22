@@ -50,8 +50,8 @@ class PostExecAction:
 
     @classmethod
     def from_dict(cls, data: dict) -> PostExecAction:
-        """Create from dictionary."""
-        return cls(
+        """Create from dictionary and validate."""
+        action = cls(
             condition=data.get("condition", "always"),
             type=data.get("type", "github_label"),
             add_labels=data.get("addLabels", []),
@@ -60,6 +60,10 @@ class PostExecAction:
             issue=str(data.get("issue", "")),
             body=data.get("body", ""),
         )
+        errors = action.validate()
+        if errors:
+            raise ValueError("; ".join(errors))
+        return action
 
     def validate(self) -> list[str]:
         """Validate action configuration."""
@@ -83,11 +87,15 @@ class ActionsConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> ActionsConfig:
-        """Create from dictionary."""
+        """Create from dictionary and validate."""
         actions = []
         for action_data in data.get("postExec", []):
             actions.append(PostExecAction.from_dict(action_data))
-        return cls(post_exec=actions)
+        config = cls(post_exec=actions)
+        errors = config.validate()
+        if errors:
+            raise ValueError("; ".join(errors))
+        return config
 
     def validate(self) -> list[str]:
         """Validate all actions."""

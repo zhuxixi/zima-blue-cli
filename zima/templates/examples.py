@@ -195,16 +195,19 @@ spec:
       - condition: success
         type: github_label
         addLabels:
+          - zima:review-approved
+        removeLabels:
+          - zima:needs-review
+        repo: "{{repo}}"
+        issue: "{{pr_number}}"
+      - condition: failure
+        type: github_label
+        addLabels:
           - zima:needs-fix
         removeLabels:
           - zima:needs-review
-        repo: "{{REPO}}"
-        issue: "{{PR_NUMBER}}"
-      - condition: failure
-        type: github_comment
-        body: "Code review execution failed. Please check logs."
-        repo: "{{REPO}}"
-        issue: "{{PR_NUMBER}}"
+        repo: "{{repo}}"
+        issue: "{{pr_number}}"
 """
 
 REVIEWER_VARIABLES = """\

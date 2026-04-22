@@ -290,16 +290,16 @@ class TestReviewerPJob:
         # First action: success -> github_label
         assert config.spec.actions.post_exec[0].condition == "success"
         assert config.spec.actions.post_exec[0].type == "github_label"
-        assert "zima:needs-fix" in config.spec.actions.post_exec[0].add_labels
+        assert "zima:review-approved" in config.spec.actions.post_exec[0].add_labels
         assert "zima:needs-review" in config.spec.actions.post_exec[0].remove_labels
-        assert config.spec.actions.post_exec[0].repo == "{{REPO}}"
-        assert config.spec.actions.post_exec[0].issue == "{{PR_NUMBER}}"
-        # Second action: failure -> github_comment
+        assert config.spec.actions.post_exec[0].repo == "{{repo}}"
+        assert config.spec.actions.post_exec[0].issue == "{{pr_number}}"
+        # Second action: failure -> github_label
         assert config.spec.actions.post_exec[1].condition == "failure"
-        assert config.spec.actions.post_exec[1].type == "github_comment"
-        assert config.spec.actions.post_exec[1].body == "Code review execution failed. Please check logs."
-        assert config.spec.actions.post_exec[1].repo == "{{REPO}}"
-        assert config.spec.actions.post_exec[1].issue == "{{PR_NUMBER}}"
+        assert config.spec.actions.post_exec[1].type == "github_label"
+        assert "zima:needs-fix" in config.spec.actions.post_exec[1].add_labels
+        assert config.spec.actions.post_exec[1].repo == "{{repo}}"
+        assert config.spec.actions.post_exec[1].issue == "{{pr_number}}"
         assert config.is_valid()
 
     def test_reviewer_pjob_constant_matches_dict(self):
