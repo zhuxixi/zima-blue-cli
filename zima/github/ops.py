@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import subprocess
 
 
@@ -57,12 +56,3 @@ class GitHubOps:
             capture=True,
         )
         return result.stdout
-
-    def fetch_issue_body(self, repo: str, number: int) -> str:
-        """Fetch issue body as text."""
-        result = self._run(
-            ["issue", "view", str(number), "--repo", repo, "--json", "body"],
-            capture=True,
-        )
-        data = json.loads(result.stdout)
-        return data.get("body", "")

@@ -1,8 +1,7 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-from zima.models.actions import ActionsConfig, PostExecAction
 from zima.execution.actions_runner import ActionsRunner, _matches_condition
-from zima.review.parser import ReviewResult
+from zima.models.actions import ActionsConfig, PostExecAction
 
 
 class TestMatchesCondition:

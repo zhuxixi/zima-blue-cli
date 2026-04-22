@@ -4,10 +4,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from tests.base import TestIsolator
 from zima.execution.executor import PJobExecutor
 from zima.models.actions import ActionsConfig, PostExecAction
 from zima.models.pjob import PJobConfig
-from tests.base import TestIsolator
 
 
 class TestExecutorActions(TestIsolator):
@@ -111,8 +111,8 @@ class TestReviewerEndToEnd(TestIsolator):
     @pytest.fixture
     def reviewer_configs(self, isolated_zima_home, config_manager):
         """Set up complete reviewer agent + workflow + pjob configs."""
-        from zima.models.workflow import WorkflowConfig
         from zima.models.variable import VariableConfig
+        from zima.models.workflow import WorkflowConfig
 
         # Agent with mockCommand that outputs approved review XML
         agent_data = {

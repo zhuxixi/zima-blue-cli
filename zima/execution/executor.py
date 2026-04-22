@@ -241,12 +241,12 @@ class PJobExecutor:
 
         except subprocess.TimeoutExpired:
             result.status = ExecutionStatus.TIMEOUT
-            result.returncode = -1
+            result.returncode = 124
             result.stderr = "Execution timed out"
             result.error_detail = f"Timeout after {pjob.spec.execution.timeout}s"
         except KeyboardInterrupt:
             result.status = ExecutionStatus.CANCELLED
-            result.returncode = -2
+            result.returncode = 130
             result.stderr = "Execution cancelled by user (Ctrl+C)"
             # Attempt to terminate subprocess gracefully
             if self._current_process and self._current_process.poll() is None:
@@ -259,22 +259,29 @@ class PJobExecutor:
             import traceback
 
             result.status = ExecutionStatus.FAILED
-            result.returncode = -3
+            result.returncode = 1
             result.stderr = _friendly_error(e)
             result.error_detail = traceback.format_exc()
         finally:
-            # 11. Execute postExec actions even on timeout/cancel/error
-            try:
-                _pjob = locals().get("pjob")
-                _bundle = locals().get("bundle")
-                _env_vars = locals().get("env_vars")
-                if _pjob is not None and _env_vars is not None and _pjob.spec.actions.post_exec:
-                    action_env = _env_vars.copy()
-                    if _bundle is not None and _bundle.variable:
-                        action_env.update(_bundle.variable.values)
-                    self._run_post_exec_actions(_pjob, result, action_env)
-            except Exception:
-                pass  # Action errors already recorded in result.action_errors
+            # 11. Execute postExec actions even on timeout/cancel/error,
+            # but skip on dry-run (finally runs after return in try block).
+            if not dry_run:
+                try:
+                    _pjob = locals().get("pjob")
+                    _bundle = locals().get("bundle")
+                    _env_vars = locals().get("env_vars")
+                    if _pjob is not None and _env_vars is not None and _pjob.spec.actions.post_exec:
+                        action_env = _env_vars.copy()
+                        if _bundle is not None and _bundle.variable:
+                            action_env.update(_bundle.variable.values)
+                        self._run_post_exec_actions(_pjob, result, action_env)
+                except Exception as e:
+                    import traceback
+
+                    error_msg = f"Post-exec action setup failed: {e}"
+                    result.action_errors.append(error_msg)
+                    print(f"Warning: {error_msg}")
+                    print(traceback.format_exc())
 
             result.finished_at = generate_timestamp()
 
@@ -470,8 +477,14 @@ class PJobExecutor:
         if not pjob.spec.actions.post_exec:
             return
 
+        # Don't parse review XML on timeout or cancellation — agent didn't finish
+        is_timeout_or_cancel = result.status in (
+            ExecutionStatus.TIMEOUT,
+            ExecutionStatus.CANCELLED,
+        )
+
         review_result = None
-        if "<zima-review>" in result.stdout:
+        if not is_timeout_or_cancel and "<zima-review>" in result.stdout:
             review_result = ReviewParser.parse(result.stdout)
 
         # Map review verdict to effective returncode for action conditions
