@@ -177,6 +177,50 @@ spec:
     - idle
 """
 
+REVIEWER_PJOB = """\
+apiVersion: zima.io/v1
+kind: PJob
+metadata:
+  code: reviewer
+  name: PR Reviewer
+  description: Automatically review PRs labeled zima:needs-review
+  labels:
+    - reviewer
+spec:
+  agent: kimi-standard
+  workflow: reviewer-cr
+  variable: reviewer-vars
+  actions:
+    postExec:
+      - condition: success
+        type: github_label
+        addLabels:
+          - zima:needs-fix
+        removeLabels:
+          - zima:needs-review
+        repo: "{{REPO}}"
+        issue: "{{PR_NUMBER}}"
+      - condition: failure
+        type: github_comment
+        body: "Code review execution failed. Please check logs."
+        repo: "{{REPO}}"
+        issue: "{{PR_NUMBER}}"
+"""
+
+REVIEWER_VARIABLES = """\
+apiVersion: zima.io/v1
+kind: Variable
+metadata:
+  code: reviewer-vars
+  name: Reviewer Variables
+spec:
+  values:
+    repo: ""
+    pr_number: ""
+    pr_title: ""
+    pr_diff: ""
+"""
+
 REVIEWER_WORKFLOW = """\
 apiVersion: zima.io/v1
 kind: Workflow
@@ -251,10 +295,10 @@ spec:
 EXAMPLES = {
     "agent": {"my-agent": AGENT_EXAMPLE},
     "workflow": {"my-workflow": WORKFLOW_EXAMPLE, "reviewer-cr": REVIEWER_WORKFLOW},
-    "variable": {"my-variables": VARIABLE_EXAMPLE},
+    "variable": {"my-variables": VARIABLE_EXAMPLE, "reviewer-vars": REVIEWER_VARIABLES},
     "env": {"my-env": ENV_EXAMPLE},
     "pmg": {"my-pmg": PMG_EXAMPLE},
-    "pjob": {"my-job": PJOB_EXAMPLE},
+    "pjob": {"my-job": PJOB_EXAMPLE, "reviewer": REVIEWER_PJOB},
     "schedule": {"daily-32": SCHEDULE_EXAMPLE},
 }
 

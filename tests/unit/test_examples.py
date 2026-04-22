@@ -17,6 +17,8 @@ from zima.templates.examples import (
     EXAMPLES,
     PJOB_EXAMPLE,
     PMG_EXAMPLE,
+    REVIEWER_PJOB,
+    REVIEWER_VARIABLES,
     REVIEWER_WORKFLOW,
     VALID_KINDS,
     VARIABLE_EXAMPLE,
@@ -267,3 +269,61 @@ class TestReviewerWorkflow:
 
     def test_reviewer_workflow_constant_matches_dict(self):
         assert REVIEWER_WORKFLOW == EXAMPLES["workflow"]["reviewer-cr"]
+
+
+class TestReviewerPJob:
+    """Tests for the reviewer PJob template."""
+
+    def test_reviewer_pjob_exists(self):
+        assert "reviewer" in EXAMPLES["pjob"]
+
+    def test_reviewer_pjob_valid(self):
+        data = yaml.safe_load(REVIEWER_PJOB)
+        config = PJobConfig.from_dict(data)
+        assert config.kind == "PJob"
+        assert config.metadata.code == "reviewer"
+        assert config.metadata.name == "PR Reviewer"
+        assert config.spec.agent == "kimi-standard"
+        assert config.spec.workflow == "reviewer-cr"
+        assert config.spec.variable == "reviewer-vars"
+        assert len(config.spec.actions.post_exec) == 2
+        # First action: success -> github_label
+        assert config.spec.actions.post_exec[0].condition == "success"
+        assert config.spec.actions.post_exec[0].type == "github_label"
+        assert "zima:needs-fix" in config.spec.actions.post_exec[0].add_labels
+        assert "zima:needs-review" in config.spec.actions.post_exec[0].remove_labels
+        assert config.spec.actions.post_exec[0].repo == "{{REPO}}"
+        assert config.spec.actions.post_exec[0].issue == "{{PR_NUMBER}}"
+        # Second action: failure -> github_comment
+        assert config.spec.actions.post_exec[1].condition == "failure"
+        assert config.spec.actions.post_exec[1].type == "github_comment"
+        assert config.spec.actions.post_exec[1].body == "Code review execution failed. Please check logs."
+        assert config.spec.actions.post_exec[1].repo == "{{REPO}}"
+        assert config.spec.actions.post_exec[1].issue == "{{PR_NUMBER}}"
+        assert config.is_valid()
+
+    def test_reviewer_pjob_constant_matches_dict(self):
+        assert REVIEWER_PJOB == EXAMPLES["pjob"]["reviewer"]
+
+
+class TestReviewerVariables:
+    """Tests for the reviewer variable template."""
+
+    def test_reviewer_vars_exists(self):
+        assert "reviewer-vars" in EXAMPLES["variable"]
+
+    def test_reviewer_vars_valid(self):
+        data = yaml.safe_load(REVIEWER_VARIABLES)
+        config = VariableConfig.from_dict(data)
+        assert config.kind == "Variable"
+        assert config.metadata.code == "reviewer-vars"
+        assert config.metadata.name == "Reviewer Variables"
+        assert set(config.values.keys()) == {"repo", "pr_number", "pr_title", "pr_diff"}
+        assert config.values["repo"] == ""
+        assert config.values["pr_number"] == ""
+        assert config.values["pr_title"] == ""
+        assert config.values["pr_diff"] == ""
+        assert config.is_valid()
+
+    def test_reviewer_vars_constant_matches_dict(self):
+        assert REVIEWER_VARIABLES == EXAMPLES["variable"]["reviewer-vars"]
