@@ -51,7 +51,7 @@ jobs:
           restore-keys: ${{ runner.os }}-pip-
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: pip install -e "."
 
       - name: Run ruff check
         run: ruff check zima/ tests/
@@ -87,7 +87,7 @@ jobs:
           restore-keys: ${{ runner.os }}-pip-
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: pip install -e "."
 
       - name: Run tests (Ubuntu)
         if: runner.os == 'Linux'
@@ -135,7 +135,7 @@ jobs:
           restore-keys: ${{ runner.os }}-pip-
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: pip install -e "."
 
       - name: Run full test suite
         run: pytest tests/ -v --tb=short
