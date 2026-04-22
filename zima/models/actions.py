@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from zima.models.serialization import YamlSerializable, omit_empty
+
 VALID_ACTION_CONDITIONS = {"success", "failure", "always"}
 VALID_ACTION_TYPES = {"github_label", "github_comment"}
 
 
 @dataclass
-class PostExecAction:
+class PostExecAction(YamlSerializable):
     """Single post-execution action run after agent exits.
 
     Attributes:
@@ -22,6 +24,11 @@ class PostExecAction:
         body: Comment body (for github_comment type).
     """
 
+    FIELD_ALIASES = {
+        "add_labels": "addLabels",
+        "remove_labels": "removeLabels",
+    }
+
     condition: str = "always"
     type: str = "github_label"
     add_labels: list[str] = field(default_factory=list)
@@ -31,35 +38,12 @@ class PostExecAction:
     body: str = ""
 
     def to_dict(self) -> dict:
-        """Convert to dictionary."""
-        result = {
-            "condition": self.condition,
-            "type": self.type,
-        }
-        if self.add_labels:
-            result["addLabels"] = self.add_labels
-        if self.remove_labels:
-            result["removeLabels"] = self.remove_labels
-        if self.repo:
-            result["repo"] = self.repo
-        if self.issue:
-            result["issue"] = self.issue
-        if self.body:
-            result["body"] = self.body
-        return result
+        return omit_empty(super().to_dict())
 
     @classmethod
     def from_dict(cls, data: dict) -> PostExecAction:
         """Create from dictionary and validate."""
-        action = cls(
-            condition=data.get("condition", "always"),
-            type=data.get("type", "github_label"),
-            add_labels=data.get("addLabels", []),
-            remove_labels=data.get("removeLabels", []),
-            repo=data.get("repo", ""),
-            issue=str(data.get("issue", "")),
-            body=data.get("body", ""),
-        )
+        action = super().from_dict(data)
         errors = action.validate()
         if errors:
             raise ValueError("; ".join(errors))
@@ -76,22 +60,20 @@ class PostExecAction:
 
 
 @dataclass
-class ActionsConfig:
+class ActionsConfig(YamlSerializable):
     """Collection of actions for a PJob."""
+
+    FIELD_ALIASES = {"post_exec": "postExec"}
 
     post_exec: list[PostExecAction] = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        """Convert to dictionary."""
-        return {"postExec": [a.to_dict() for a in self.post_exec]}
+        return omit_empty(super().to_dict())
 
     @classmethod
     def from_dict(cls, data: dict) -> ActionsConfig:
         """Create from dictionary and validate."""
-        actions = []
-        for action_data in data.get("postExec", []):
-            actions.append(PostExecAction.from_dict(action_data))
-        config = cls(post_exec=actions)
+        config = super().from_dict(data)
         errors = config.validate()
         if errors:
             raise ValueError("; ".join(errors))
