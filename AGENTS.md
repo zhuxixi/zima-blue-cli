@@ -9,37 +9,36 @@ This file provides guidance to Kimi Code agents when working with code in this r
 ## Development Commands
 
 ```bash
-# Install (editable mode)
-pip install -e "."
-pip install -e ".[dev]"          # includes pytest, black, ruff
+# Install (editable mode) — uv sync installs all deps including dev
+uv sync
 
-# Run CLI
-zima --help
-zima pjob run <pjob-code>
+# Run CLI (inside uv-managed venv)
+uv run zima --help
+uv run zima pjob run <pjob-code>
 
 # Format
-black zima/ tests/ --line-length 100
+uv run black zima/ tests/ --line-length 100
 
 # Lint
-ruff check zima/ tests/
+uv run ruff check zima/ tests/
 
 # Run all tests
-pytest
+uv run pytest
 
 # Run only unit tests
-pytest tests/unit/
+uv run pytest tests/unit/
 
 # Run only integration tests
-pytest tests/integration/
+uv run pytest tests/integration/
 
 # Run a single test file
-pytest tests/unit/test_models_agent.py
+uv run pytest tests/unit/test_models_agent.py
 
 # Run a single test
-pytest tests/unit/test_models_agent.py::TestAgentConfig::test_from_dict -v
+uv run pytest tests/unit/test_models_agent.py::TestAgentConfig::test_from_dict -v
 
 # Cleanup temp files
-python scripts/cleanup.py --auto
+uv run python scripts/cleanup.py --auto
 ```
 
 ## Architecture
@@ -140,8 +139,8 @@ Customizable via `ZIMA_HOME` env var.
 ## CI Pipeline
 
 - **GitHub Actions** on push/PR to `master`
-- **Lint job**: `ruff check` + `black --check`
-- **Test job**: `pytest --cov=zima --cov-fail-under=60` (Python 3.13)
+- **Lint job**: `uv run ruff check` + `uv run black --check`
+- **Test job**: `uv run pytest --cov=zima --cov-fail-under=60` (Python 3.13)
 
 ## Extension Points
 
