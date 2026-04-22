@@ -228,3 +228,90 @@ class TestDeserializeSpec:
 
         assert kwargs["spec_field_one"] == "hello"
         assert kwargs["spec_field_two"] == 0
+
+
+class TestRoundTrip:
+    """Round-trip tests for all model classes."""
+
+    def test_metadata(self):
+        from zima.models.base import Metadata
+
+        original = Metadata(code="test", name="Test", description="desc")
+        assert Metadata.from_dict(original.to_dict()) == original
+
+    def test_agent_config(self):
+        from zima.models.agent import AgentConfig
+
+        original = AgentConfig.create("test", "Test", agent_type="claude")
+        assert AgentConfig.from_dict(original.to_dict()) == original
+
+    def test_env_config(self):
+        from zima.models.env import EnvConfig
+
+        original = EnvConfig.create("test", "Test", for_type="kimi", override_existing=True)
+        assert EnvConfig.from_dict(original.to_dict()) == original
+
+    def test_variable_config(self):
+        from zima.models.variable import VariableConfig
+
+        original = VariableConfig.create("test", "Test", for_workflow="wf1", values={"k": "v"})
+        assert VariableConfig.from_dict(original.to_dict()) == original
+
+    def test_pmg_config(self):
+        from zima.models.pmg import PMGConfig
+
+        original = PMGConfig.create("test", "Test", for_types=["kimi"])
+        assert PMGConfig.from_dict(original.to_dict()) == original
+
+    def test_workflow_config(self):
+        from zima.models.workflow import WorkflowConfig
+
+        original = WorkflowConfig.create("test", "Test", template="Hello")
+        assert WorkflowConfig.from_dict(original.to_dict()) == original
+
+    def test_pjob_config(self):
+        from zima.models.pjob import PJobConfig
+
+        original = PJobConfig.create("test", "Test", agent="a1", workflow="w1")
+        assert PJobConfig.from_dict(original.to_dict()) == original
+
+    def test_pjob_with_nested_objects(self):
+        from zima.models.pjob import PJobConfig
+
+        original = PJobConfig.create(
+            "test",
+            "Test",
+            agent="a1",
+            workflow="w1",
+            overrides={"agentParams": {"model": "sonnet"}},
+            execution={"workDir": "/tmp", "timeout": 60},
+        )
+        assert PJobConfig.from_dict(original.to_dict()) == original
+
+    def test_actions_config(self):
+        from zima.models.actions import ActionsConfig, PostExecAction
+
+        original = ActionsConfig(
+            post_exec=[
+                PostExecAction(
+                    condition="success", type="github_label", repo="o/r", add_labels=["done"]
+                )
+            ]
+        )
+        assert ActionsConfig.from_dict(original.to_dict()) == original
+
+    def test_schedule_config(self):
+        from zima.models.schedule import ScheduleConfig
+
+        original = ScheduleConfig.create("test", "Test")
+        assert ScheduleConfig.from_dict(original.to_dict()) == original
+
+    def test_special_alias_async(self):
+        from zima.models.pjob import ExecutionOptions
+
+        original = ExecutionOptions(work_dir="/tmp", async_=True)
+        data = original.to_dict()
+        assert "async" in data
+        assert "async_" not in data
+        restored = ExecutionOptions.from_dict(data)
+        assert restored.async_ is True
