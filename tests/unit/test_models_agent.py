@@ -329,9 +329,7 @@ class TestAgentConfigCommandBuilding(TestIsolator):
 
     def test_build_kimi_command_explicit_model(self):
         """Test that --model is included when explicitly set."""
-        config = AgentConfig.create(
-            "test", "Test", "kimi", parameters={"model": "kimi-k2"}
-        )
+        config = AgentConfig.create("test", "Test", "kimi", parameters={"model": "kimi-k2"})
         cmd = config.build_command()
 
         assert "--model" in cmd
