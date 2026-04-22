@@ -37,7 +37,7 @@ def create(
     if example:
         from zima.templates.examples import EXAMPLES
 
-        print(list(EXAMPLES["pmg"].values())[0])
+        print(next(iter(EXAMPLES["pmg"].values())))
         raise typer.Exit(0)
 
     if not code:
