@@ -7,7 +7,7 @@ from typing import Optional
 
 from zima.models.actions import ActionsConfig
 from zima.models.base import BaseConfig, Metadata
-from zima.models.serialization import YamlSerializable, omit_empty
+from zima.models.serialization import YamlSerializable
 from zima.utils import generate_timestamp, validate_code
 
 
