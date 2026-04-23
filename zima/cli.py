@@ -17,6 +17,7 @@ from zima.commands import pmg as pmg_cmd
 from zima.commands import schedule as schedule_cmd
 from zima.commands import variable as variable_cmd
 from zima.commands import workflow as workflow_cmd
+from zima.commands.quickstart import quickstart
 
 app = typer.Typer(
     name="zima",
@@ -40,6 +41,8 @@ app.add_typer(pmg_cmd.app, name="pmg")
 app.add_typer(pjob_cmd.app, name="pjob")
 app.add_typer(schedule_cmd.app, name="schedule")
 app.add_typer(daemon_cmd.app, name="daemon")
+
+app.command("quickstart")(quickstart)
 
 
 @app.callback()
