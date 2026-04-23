@@ -100,3 +100,73 @@ class TestScanGithubPRs(TestIsolator):
             mock_run.side_effect = FileNotFoundError("gh not found")
             result = _scan_github_prs("need-review")
             assert result == []
+
+
+class TestCreateAllConfigs(TestIsolator):
+    """Test creating all 5 configs."""
+
+    def test_create_all_configs_code_review(self):
+        """Test creating full config set for code-review scene."""
+        from zima.commands.quickstart import _create_all_configs
+        from zima.config.manager import ConfigManager
+
+        manager = ConfigManager()
+        codes = _create_all_configs(
+            base_name="test",
+            scene_key="code-review",
+            agent_type="kimi",
+            work_dir="/tmp/workspace",
+            env_code="test-env",
+            manager=manager,
+        )
+
+        assert "agent" in codes
+        assert "workflow" in codes
+        assert "variable" in codes
+        assert "pjob" in codes
+        assert codes["env"] == "test-env"
+
+        # Verify configs were saved
+        assert manager.config_exists("agent", codes["agent"])
+        assert manager.config_exists("workflow", codes["workflow"])
+        assert manager.config_exists("variable", codes["variable"])
+        assert manager.config_exists("pjob", codes["pjob"])
+
+        # Verify agent has workDir
+        agent_data = manager.load_config("agent", codes["agent"])
+        assert agent_data["spec"]["parameters"]["workDir"] == "/tmp/workspace"
+
+        # Verify workflow has variables
+        wf_data = manager.load_config("workflow", codes["workflow"])
+        var_names = {v["name"] for v in wf_data["spec"]["variables"]}
+        assert "pr_url" in var_names
+
+        # Verify variable has forWorkflow
+        var_data = manager.load_config("variable", codes["variable"])
+        assert var_data["spec"]["forWorkflow"] == codes["workflow"]
+
+        # Verify pjob refs are correct
+        job_data = manager.load_config("pjob", codes["pjob"])
+        assert job_data["spec"]["agent"] == codes["agent"]
+        assert job_data["spec"]["workflow"] == codes["workflow"]
+        assert job_data["spec"]["variable"] == codes["variable"]
+        assert job_data["spec"]["env"] == "test-env"
+
+    def test_create_all_configs_without_env(self):
+        """Test creating configs when no env is selected."""
+        from zima.commands.quickstart import _create_all_configs
+        from zima.config.manager import ConfigManager
+
+        manager = ConfigManager()
+        codes = _create_all_configs(
+            base_name="test",
+            scene_key="code-review",
+            agent_type="kimi",
+            work_dir="/tmp/workspace",
+            env_code=None,
+            manager=manager,
+        )
+
+        assert codes["env"] == ""
+        job_data = manager.load_config("pjob", codes["pjob"])
+        assert job_data["spec"].get("env", "") == ""
