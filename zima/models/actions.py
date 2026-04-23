@@ -37,6 +37,17 @@ class PostExecAction(YamlSerializable):
     issue: str = ""
     body: str = ""
 
+    def __post_init__(self):
+        if self.issue is None:
+            self.issue = ""
+        elif not isinstance(self.issue, str):
+            if isinstance(self.issue, (int, float)):
+                self.issue = str(self.issue)
+            else:
+                raise TypeError(
+                    f"issue must be a string or number, got {type(self.issue).__name__}"
+                )
+
     def to_dict(self) -> dict:
         return omit_empty(super().to_dict())
 

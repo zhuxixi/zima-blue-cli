@@ -36,6 +36,16 @@ class ExecutionOptions(YamlSerializable):
     retries: int = 0
     async_: bool = False
 
+    def is_default(self) -> bool:
+        """Check if all fields are at default values."""
+        return (
+            self.work_dir == ""
+            and self.timeout == 0
+            and not self.keep_temp
+            and self.retries == 0
+            and not self.async_
+        )
+
 
 @dataclass
 class OutputOptions(YamlSerializable):
@@ -123,10 +133,27 @@ class PJobSpec(YamlSerializable):
     actions: ActionsConfig = field(default_factory=ActionsConfig)
 
     def to_dict(self) -> dict:
-        result = omit_empty(super().to_dict())
-        # ActionsConfig returns {"postExec": []} when empty; omit_empty won't catch it
-        if result.get("actions") == {"postExec": []}:
-            del result["actions"]
+        result = {
+            "agent": self.agent,
+            "workflow": self.workflow,
+        }
+        if self.variable:
+            result["variable"] = self.variable
+        if self.env:
+            result["env"] = self.env
+        if self.pmg:
+            result["pmg"] = self.pmg
+        if not self.overrides.is_empty():
+            result["overrides"] = self.overrides.to_dict()
+        if not self.execution.is_default():
+            result["execution"] = self.execution.to_dict()
+        if self.hooks:
+            result["hooks"] = self.hooks
+        if self.output.save_to or self.output.format != "raw":
+            result["output"] = self.output.to_dict()
+        actions_dict = self.actions.to_dict()
+        if actions_dict:
+            result["actions"] = actions_dict
         return result
 
 

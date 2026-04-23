@@ -84,11 +84,19 @@ class BaseConfig(YamlSerializable):
         """
         Convert configuration to dictionary.
 
+        Kubernetes-style structure: apiVersion, kind, metadata, spec, createdAt, updatedAt.
+        Does NOT call super().to_dict() to avoid double-serializing spec fields.
+
         Returns:
             Dictionary representation
         """
-        result = super().to_dict()
-        result["metadata"] = self.metadata.to_dict()
+        result = {
+            "apiVersion": self.api_version,
+            "kind": self.kind,
+            "metadata": self.metadata.to_dict(),
+            "createdAt": self.created_at,
+            "updatedAt": self.updated_at,
+        }
         result["spec"] = serialize_spec(self, getattr(self, "SPEC_FIELD_ALIASES", None))
         return result
 
