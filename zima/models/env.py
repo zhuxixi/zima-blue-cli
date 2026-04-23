@@ -205,6 +205,10 @@ class EnvConfig(BaseConfig):
     """
 
     kind: str = "Env"
+    SPEC_FIELD_ALIASES = {
+        "for_type": "forType",
+        "override_existing": "overrideExisting",
+    }
     for_type: str = "kimi"
     variables: dict[str, str] = field(default_factory=dict)
     secrets: list[SecretDef] = field(default_factory=list)
@@ -328,47 +332,6 @@ class EnvConfig(BaseConfig):
     def is_valid(self) -> bool:
         """Check if configuration is valid."""
         return len(self.validate()) == 0
-
-    def to_dict(self) -> dict:
-        """Convert to dictionary."""
-        return {
-            "apiVersion": self.api_version,
-            "kind": self.kind,
-            "metadata": self.metadata.to_dict(),
-            "spec": {
-                "forType": self.for_type,
-                "variables": self.variables,
-                "secrets": [s.to_dict() for s in self.secrets],
-                "overrideExisting": self.override_existing,
-            },
-            "createdAt": self.created_at,
-            "updatedAt": self.updated_at,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> EnvConfig:
-        """Create from dictionary."""
-        spec = data.get("spec", {})
-
-        # Parse secret definitions
-        secret_data = spec.get("secrets", [])
-        secrets = []
-        if isinstance(secret_data, list):
-            for s in secret_data:
-                if isinstance(s, dict):
-                    secrets.append(SecretDef.from_dict(s))
-
-        return cls(
-            api_version=data.get("apiVersion", "zima.io/v1"),
-            kind=data.get("kind", "Env"),
-            metadata=Metadata.from_dict(data.get("metadata", {})),
-            for_type=spec.get("forType", "kimi"),
-            variables=spec.get("variables", {}),
-            secrets=secrets,
-            override_existing=spec.get("overrideExisting", False),
-            created_at=data.get("createdAt", ""),
-            updated_at=data.get("updatedAt", ""),
-        )
 
     @classmethod
     def from_yaml_file(cls, path: Path) -> EnvConfig:

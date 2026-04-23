@@ -7,11 +7,12 @@ from pathlib import Path
 
 import yaml
 
+from zima.models.serialization import YamlSerializable, deserialize_spec, serialize_spec
 from zima.utils import generate_timestamp
 
 
 @dataclass
-class Metadata:
+class Metadata(YamlSerializable):
     """
     Common metadata for all configurations.
 
@@ -44,7 +45,7 @@ class Metadata:
 
 
 @dataclass
-class BaseConfig:
+class BaseConfig(YamlSerializable):
     """
     Base configuration class.
 
@@ -58,6 +59,12 @@ class BaseConfig:
         created_at: Creation timestamp (ISO 8601)
         updated_at: Last update timestamp (ISO 8601)
     """
+
+    FIELD_ALIASES = {
+        "api_version": "apiVersion",
+        "created_at": "createdAt",
+        "updated_at": "updatedAt",
+    }
 
     api_version: str = "zima.io/v1"
     kind: str = ""
@@ -77,16 +84,21 @@ class BaseConfig:
         """
         Convert configuration to dictionary.
 
+        Kubernetes-style structure: apiVersion, kind, metadata, spec, createdAt, updatedAt.
+        Does NOT call super().to_dict() to avoid double-serializing spec fields.
+
         Returns:
             Dictionary representation
         """
-        return {
+        result = {
             "apiVersion": self.api_version,
             "kind": self.kind,
             "metadata": self.metadata.to_dict(),
             "createdAt": self.created_at,
             "updatedAt": self.updated_at,
         }
+        result["spec"] = serialize_spec(self, getattr(self, "SPEC_FIELD_ALIASES", None))
+        return result
 
     def to_yaml(self) -> str:
         """
@@ -110,13 +122,16 @@ class BaseConfig:
         Returns:
             Configuration instance
         """
-        return cls(
-            api_version=data.get("apiVersion", "zima.io/v1"),
-            kind=data.get("kind", ""),
-            metadata=Metadata.from_dict(data.get("metadata", {})),
-            created_at=data.get("createdAt", ""),
-            updated_at=data.get("updatedAt", ""),
-        )
+        spec_data = data.get("spec", {}) if isinstance(data, dict) else {}
+        kwargs = {
+            "api_version": data.get("apiVersion", "zima.io/v1"),
+            "kind": data.get("kind", ""),
+            "metadata": Metadata.from_dict(data.get("metadata", {})),
+            "created_at": data.get("createdAt", ""),
+            "updated_at": data.get("updatedAt", ""),
+        }
+        kwargs.update(deserialize_spec(cls, spec_data, getattr(cls, "SPEC_FIELD_ALIASES", None)))
+        return cls(**kwargs)
 
     @classmethod
     def from_yaml(cls, yaml_content: str) -> BaseConfig:
@@ -194,26 +209,3 @@ class BaseConfig:
     def update_timestamp(self) -> None:
         """Update the updated_at timestamp to current time."""
         self.updated_at = generate_timestamp()
-
-
-# Type alias for config data
-def convert_to_camel_case(snake_str: str) -> str:
-    """
-    Convert snake_case to camelCase.
-
-    Used for YAML field name conversion.
-    """
-    components = snake_str.split("_")
-    return components[0] + "".join(x.capitalize() for x in components[1:])
-
-
-def convert_to_snake_case(camel_str: str) -> str:
-    """
-    Convert camelCase to snake_case.
-
-    Used for YAML field name conversion.
-    """
-    import re
-
-    s1 = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", camel_str)
-    return re.sub("([a-z0-9])([A-Z])", r"\1_\2", s1).lower()

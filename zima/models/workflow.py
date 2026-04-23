@@ -105,6 +105,7 @@ class WorkflowConfig(BaseConfig):
     """
 
     kind: str = "Workflow"
+    SPEC_FIELD_ALIASES = {}
     format: str = "jinja2"
     template: str = ""
     variables: list[VariableDef] = field(default_factory=list)
@@ -221,51 +222,6 @@ class WorkflowConfig(BaseConfig):
     def is_valid(self) -> bool:
         """Check if configuration is valid."""
         return len(self.validate()) == 0
-
-    def to_dict(self) -> dict:
-        """Convert to dictionary."""
-        return {
-            "apiVersion": self.api_version,
-            "kind": self.kind,
-            "metadata": self.metadata.to_dict(),
-            "spec": {
-                "format": self.format,
-                "template": self.template,
-                "variables": [v.to_dict() for v in self.variables],
-                "tags": self.tags,
-                "author": self.author,
-                "version": self.version,
-            },
-            "createdAt": self.created_at,
-            "updatedAt": self.updated_at,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> WorkflowConfig:
-        """Create from dictionary."""
-        spec = data.get("spec", {})
-
-        # Parse variable definitions
-        var_data = spec.get("variables", [])
-        variables = []
-        if isinstance(var_data, list):
-            for v in var_data:
-                if isinstance(v, dict):
-                    variables.append(VariableDef.from_dict(v))
-
-        return cls(
-            api_version=data.get("apiVersion", "zima.io/v1"),
-            kind=data.get("kind", "Workflow"),
-            metadata=Metadata.from_dict(data.get("metadata", {})),
-            format=spec.get("format", "jinja2"),
-            template=spec.get("template", ""),
-            variables=variables,
-            tags=spec.get("tags", []),
-            author=spec.get("author", ""),
-            version=spec.get("version", "1.0.0"),
-            created_at=data.get("createdAt", ""),
-            updated_at=data.get("updatedAt", ""),
-        )
 
     @classmethod
     def from_yaml_file(cls, path: Path) -> WorkflowConfig:

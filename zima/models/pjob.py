@@ -7,11 +7,12 @@ from typing import Optional
 
 from zima.models.actions import ActionsConfig
 from zima.models.base import BaseConfig, Metadata
+from zima.models.serialization import YamlSerializable
 from zima.utils import generate_timestamp, validate_code
 
 
 @dataclass
-class ExecutionOptions:
+class ExecutionOptions(YamlSerializable):
     """
     Execution options for PJob.
 
@@ -23,36 +24,31 @@ class ExecutionOptions:
         async_: Whether to execute asynchronously
     """
 
+    FIELD_ALIASES = {
+        "work_dir": "workDir",
+        "keep_temp": "keepTemp",
+        "async_": "async",
+    }
+
     work_dir: str = ""
     timeout: int = 0  # 0 means no timeout
     keep_temp: bool = False
     retries: int = 0
     async_: bool = False
 
-    def to_dict(self) -> dict:
-        """Convert to dictionary."""
-        return {
-            "workDir": self.work_dir,
-            "timeout": self.timeout,
-            "keepTemp": self.keep_temp,
-            "retries": self.retries,
-            "async": self.async_,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> ExecutionOptions:
-        """Create from dictionary."""
-        return cls(
-            work_dir=data.get("workDir", ""),
-            timeout=data.get("timeout", 0),
-            keep_temp=data.get("keepTemp", False),
-            retries=data.get("retries", 0),
-            async_=data.get("async", False),
+    def is_default(self) -> bool:
+        """Check if all fields are at default values."""
+        return (
+            self.work_dir == ""
+            and self.timeout == 0
+            and not self.keep_temp
+            and self.retries == 0
+            and not self.async_
         )
 
 
 @dataclass
-class OutputOptions:
+class OutputOptions(YamlSerializable):
     """
     Output handling options for PJob.
 
@@ -62,31 +58,15 @@ class OutputOptions:
         format: Output format processing (raw, json, extract-code-blocks)
     """
 
+    FIELD_ALIASES = {"save_to": "saveTo"}
+
     save_to: str = ""
     append: bool = False
     format: str = "raw"
 
-    def to_dict(self) -> dict:
-        """Convert to dictionary."""
-        result = {"format": self.format}
-        if self.save_to:
-            result["saveTo"] = self.save_to
-        if self.append:
-            result["append"] = self.append
-        return result
-
-    @classmethod
-    def from_dict(cls, data: dict) -> OutputOptions:
-        """Create from dictionary."""
-        return cls(
-            save_to=data.get("saveTo", ""),
-            append=data.get("append", False),
-            format=data.get("format", "raw"),
-        )
-
 
 @dataclass
-class Overrides:
+class Overrides(YamlSerializable):
     """
     Runtime overrides for PJob execution.
 
@@ -99,33 +79,17 @@ class Overrides:
         pmg_params: Additional PMG parameters
     """
 
+    FIELD_ALIASES = {
+        "agent_params": "agentParams",
+        "variable_values": "variableValues",
+        "env_vars": "envVars",
+        "pmg_params": "pmgParams",
+    }
+
     agent_params: dict = field(default_factory=dict)
     variable_values: dict = field(default_factory=dict)
     env_vars: dict = field(default_factory=dict)
     pmg_params: list[dict] = field(default_factory=list)
-
-    def to_dict(self) -> dict:
-        """Convert to dictionary."""
-        result = {}
-        if self.agent_params:
-            result["agentParams"] = self.agent_params
-        if self.variable_values:
-            result["variableValues"] = self.variable_values
-        if self.env_vars:
-            result["envVars"] = self.env_vars
-        if self.pmg_params:
-            result["pmgParams"] = self.pmg_params
-        return result
-
-    @classmethod
-    def from_dict(cls, data: dict) -> Overrides:
-        """Create from dictionary."""
-        return cls(
-            agent_params=data.get("agentParams", {}),
-            variable_values=data.get("variableValues", {}),
-            env_vars=data.get("envVars", {}),
-            pmg_params=data.get("pmgParams", []),
-        )
 
     def is_empty(self) -> bool:
         """Check if overrides are empty."""
@@ -140,7 +104,7 @@ class Overrides:
 
 
 @dataclass
-class PJobSpec:
+class PJobSpec(YamlSerializable):
     """
     PJob specification containing config references.
 
@@ -169,7 +133,6 @@ class PJobSpec:
     actions: ActionsConfig = field(default_factory=ActionsConfig)
 
     def to_dict(self) -> dict:
-        """Convert to dictionary."""
         result = {
             "agent": self.agent,
             "workflow": self.workflow,
@@ -182,31 +145,16 @@ class PJobSpec:
             result["pmg"] = self.pmg
         if not self.overrides.is_empty():
             result["overrides"] = self.overrides.to_dict()
-        if self.execution.work_dir or self.execution.timeout != 0:
+        if not self.execution.is_default():
             result["execution"] = self.execution.to_dict()
         if self.hooks:
             result["hooks"] = self.hooks
         if self.output.save_to or self.output.format != "raw":
             result["output"] = self.output.to_dict()
-        if self.actions.post_exec:
-            result["actions"] = self.actions.to_dict()
+        actions_dict = self.actions.to_dict()
+        if actions_dict:
+            result["actions"] = actions_dict
         return result
-
-    @classmethod
-    def from_dict(cls, data: dict) -> PJobSpec:
-        """Create from dictionary."""
-        return cls(
-            agent=data.get("agent", ""),
-            workflow=data.get("workflow", ""),
-            variable=data.get("variable", ""),
-            env=data.get("env", ""),
-            pmg=data.get("pmg", ""),
-            overrides=Overrides.from_dict(data.get("overrides", {})),
-            execution=ExecutionOptions.from_dict(data.get("execution", {})),
-            hooks=data.get("hooks", {}),
-            output=OutputOptions.from_dict(data.get("output", {})),
-            actions=ActionsConfig.from_dict(data.get("actions", {})),
-        )
 
 
 @dataclass
@@ -259,6 +207,8 @@ class PJobConfig(BaseConfig):
         metadata: PJob metadata with labels and annotations
         spec: PJob specification with config references
     """
+
+    SPEC_FIELD_ALIASES = {}
 
     kind: str = "PJob"
     metadata: PJobMetadata = field(default_factory=PJobMetadata)

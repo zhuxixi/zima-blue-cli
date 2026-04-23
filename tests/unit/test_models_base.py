@@ -250,23 +250,3 @@ class TestBaseConfigInheritance:
         assert result["kind"] == "Custom"
         assert result["metadata"]["code"] == "test"
         # Note: custom_field won't be in result unless we override to_dict
-
-
-class TestHelperFunctions:
-    """Test helper functions in base module."""
-
-    def test_convert_to_camel_case(self):
-        """Test snake_case to camelCase conversion."""
-        from zima.models.base import convert_to_camel_case
-
-        assert convert_to_camel_case("snake_case") == "snakeCase"
-        assert convert_to_camel_case("my_var_name") == "myVarName"
-        assert convert_to_camel_case("simple") == "simple"
-
-    def test_convert_to_snake_case(self):
-        """Test camelCase to snake_case conversion."""
-        from zima.models.base import convert_to_snake_case
-
-        assert convert_to_snake_case("camelCase") == "camel_case"
-        assert convert_to_snake_case("myVarName") == "my_var_name"
-        assert convert_to_snake_case("simple") == "simple"

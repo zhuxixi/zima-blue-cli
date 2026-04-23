@@ -5,60 +5,34 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from zima.models.base import BaseConfig, Metadata
+from zima.models.serialization import YamlSerializable
 from zima.utils import generate_timestamp, validate_code
 
 
 @dataclass
-class ScheduleStage:
+class ScheduleStage(YamlSerializable):
     """A stage within a cycle (e.g., work, rest, dream)."""
+
+    FIELD_ALIASES = {
+        "offset_minutes": "offsetMinutes",
+        "duration_minutes": "durationMinutes",
+    }
 
     name: str = ""
     offset_minutes: int = 0
     duration_minutes: int = 0
 
-    def to_dict(self) -> dict:
-        return {
-            "name": self.name,
-            "offsetMinutes": self.offset_minutes,
-            "durationMinutes": self.duration_minutes,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> ScheduleStage:
-        return cls(
-            name=data.get("name", ""),
-            offset_minutes=data.get("offsetMinutes", 0),
-            duration_minutes=data.get("durationMinutes", 0),
-        )
-
 
 @dataclass
-class ScheduleCycleType:
+class ScheduleCycleType(YamlSerializable):
     """Mapping of stage names to PJob codes for one cycle type."""
+
+    FIELD_ALIASES = {"type_id": "typeId"}
 
     type_id: str = ""
     work: list[str] = field(default_factory=list)
     rest: list[str] = field(default_factory=list)
     dream: list[str] = field(default_factory=list)
-
-    def to_dict(self) -> dict:
-        result: dict = {"typeId": self.type_id}
-        if self.work:
-            result["work"] = self.work
-        if self.rest:
-            result["rest"] = self.rest
-        if self.dream:
-            result["dream"] = self.dream
-        return result
-
-    @classmethod
-    def from_dict(cls, data: dict) -> ScheduleCycleType:
-        return cls(
-            type_id=data.get("typeId", ""),
-            work=data.get("work", []),
-            rest=data.get("rest", []),
-            dream=data.get("dream", []),
-        )
 
     def get_stage_pjobs(self, stage_name: str) -> list[str]:
         return getattr(self, stage_name, [])
@@ -68,6 +42,13 @@ class ScheduleCycleType:
 class ScheduleConfig(BaseConfig):
     """Schedule configuration for daemon-mode 32-cycle scheduling."""
 
+    SPEC_FIELD_ALIASES = {
+        "cycle_minutes": "cycleMinutes",
+        "daily_cycles": "dailyCycles",
+        "cycle_types": "cycleTypes",
+        "cycle_mapping": "cycleMapping",
+    }
+
     kind: str = "Schedule"
     metadata: Metadata = field(default_factory=Metadata)
     cycle_minutes: int = 45
@@ -75,38 +56,6 @@ class ScheduleConfig(BaseConfig):
     stages: list[ScheduleStage] = field(default_factory=list)
     cycle_types: list[ScheduleCycleType] = field(default_factory=list)
     cycle_mapping: list[str] = field(default_factory=list)
-
-    def to_dict(self) -> dict:
-        return {
-            "apiVersion": self.api_version,
-            "kind": self.kind,
-            "metadata": self.metadata.to_dict(),
-            "spec": {
-                "cycleMinutes": self.cycle_minutes,
-                "dailyCycles": self.daily_cycles,
-                "stages": [s.to_dict() for s in self.stages],
-                "cycleTypes": [ct.to_dict() for ct in self.cycle_types],
-                "cycleMapping": self.cycle_mapping,
-            },
-            "createdAt": self.created_at,
-            "updatedAt": self.updated_at,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict) -> ScheduleConfig:
-        spec = data.get("spec", {})
-        return cls(
-            api_version=data.get("apiVersion", "zima.io/v1"),
-            kind=data.get("kind", "Schedule"),
-            metadata=Metadata.from_dict(data.get("metadata", {})),
-            cycle_minutes=spec.get("cycleMinutes", 45),
-            daily_cycles=spec.get("dailyCycles", 32),
-            stages=[ScheduleStage.from_dict(s) for s in spec.get("stages", [])],
-            cycle_types=[ScheduleCycleType.from_dict(ct) for ct in spec.get("cycleTypes", [])],
-            cycle_mapping=spec.get("cycleMapping", []),
-            created_at=data.get("createdAt", ""),
-            updated_at=data.get("updatedAt", ""),
-        )
 
     @classmethod
     def create(
