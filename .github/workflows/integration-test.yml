@@ -38,26 +38,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
         with:
-          python-version: '3.13'
+          version: "0.6.0"
 
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml') }}
-          restore-keys: ${{ runner.os }}-pip-
-
-      - name: Install dependencies
-        run: pip install -e ".[dev]"
+      - name: Sync dependencies
+        run: uv sync
 
       - name: Run ruff check
-        run: ruff check zima/ tests/
+        run: uv run ruff check zima/ tests/
 
       - name: Run black check
-        run: black --check zima/ tests/ --line-length 100
+        run: uv run black --check zima/ tests/ --line-length 100
 
   # ============ Fast Tests (PR + push) ============
   test-fast:
@@ -68,35 +61,27 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python-version: ['3.13']
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          version: "0.6.0"
 
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml') }}
-          restore-keys: ${{ runner.os }}-pip-
-
-      - name: Install dependencies
-        run: pip install -e ".[dev]"
+      - name: Sync dependencies
+        run: uv sync
 
       - name: Run tests (Ubuntu)
         if: runner.os == 'Linux'
-        run: pytest tests/ -m "not slow" --cov=zima --cov-report=xml --cov-fail-under=60 --tb=short -v
+        run: uv run pytest tests/ -m "not slow" --cov=zima --cov-report=xml --cov-fail-under=60 --tb=short -v
         timeout-minutes: 10
 
       - name: Run tests (Windows)
         if: runner.os == 'Windows'
-        run: pytest tests/ -m "not slow" --tb=short -v
+        run: uv run pytest tests/ -m "not slow" --tb=short -v
         timeout-minutes: 20
 
       - name: Upload coverage data
@@ -116,29 +101,21 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ['3.13']
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          version: "0.6.0"
 
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml') }}
-          restore-keys: ${{ runner.os }}-pip-
-
-      - name: Install dependencies
-        run: pip install -e ".[dev]"
+      - name: Sync dependencies
+        run: uv sync
 
       - name: Run full test suite
-        run: pytest tests/ -v --tb=short
+        run: uv run pytest tests/ -v --tb=short
         timeout-minutes: 20
 
   # ============ Quality Gate ============
