@@ -88,10 +88,13 @@ class YamlSerializable:
 def serialize(obj, aliases=None) -> dict:
     """Serialize a dataclass instance to a dictionary.
 
-    For each field:
-    - Use alias override if present, else auto snake_to_camel.
-    - Recursively serialize nested dataclasses (call their to_dict()).
-    - Recursively serialize lists of dataclasses.
+    Args:
+        obj: Dataclass instance to serialize.
+        aliases: Optional dict mapping field names to YAML keys. Missing fields
+            are auto-converted from snake_case to camelCase.
+
+    Returns:
+        Dictionary with camelCase keys and recursively serialized values.
     """
     if aliases is None:
         aliases = getattr(obj, "FIELD_ALIASES", {}) if hasattr(obj, "FIELD_ALIASES") else {}
@@ -125,11 +128,17 @@ def serialize(obj, aliases=None) -> dict:
 def deserialize(cls, data, aliases=None):
     """Deserialize a dictionary to a dataclass instance.
 
-    For each field:
-    - Match YAML key: aliases override first, else auto camel_to_snake.
-    - Recursively deserialize nested dataclasses.
-    - Recursively deserialize lists of dataclasses.
-    - Use field defaults for missing values.
+    Args:
+        cls: Dataclass type to instantiate.
+        data: Dictionary with camelCase keys.
+        aliases: Optional dict mapping field names to YAML keys. Missing fields
+            are auto-converted from snake_case to camelCase.
+
+    Returns:
+        Instance of ``cls`` with fields populated from ``data``.
+
+    Raises:
+        TypeError: If a nested value or list item has the wrong type.
     """
     if aliases is None:
         aliases = getattr(cls, "FIELD_ALIASES", {}) if hasattr(cls, "FIELD_ALIASES") else {}
@@ -206,8 +215,16 @@ def deserialize(cls, data, aliases=None):
 def serialize_spec(obj, aliases=None) -> dict:
     """Serialize only non-BaseConfig fields into a spec dict.
 
-    Iterates over fields(obj), skips BASE_CONFIG_FIELDS, and uses the same
-    mapping/recursion logic as serialize.
+    Skips ``BASE_CONFIG_FIELDS`` (``apiVersion``, ``kind``, ``metadata``,
+    ``createdAt``, ``updatedAt``) and applies the same mapping/recursion
+    logic as :func:`serialize`.
+
+    Args:
+        obj: Dataclass instance to serialize.
+        aliases: Optional dict mapping field names to YAML keys.
+
+    Returns:
+        Dictionary with spec fields only, using camelCase keys.
     """
     if aliases is None:
         aliases = getattr(obj, "FIELD_ALIASES", {}) if hasattr(obj, "FIELD_ALIASES") else {}
@@ -244,9 +261,19 @@ def serialize_spec(obj, aliases=None) -> dict:
 def deserialize_spec(cls, spec_data, aliases=None) -> dict:
     """Deserialize spec fields from a dict into kwargs dict.
 
-    Iterates over fields(cls), skips BASE_CONFIG_FIELDS, and uses the same
-    mapping/recursion logic as deserialize. Returns a kwargs dict suitable
-    for passing to the class constructor.
+    Skips ``BASE_CONFIG_FIELDS`` and applies the same mapping/recursion
+    logic as :func:`deserialize`.
+
+    Args:
+        cls: Dataclass type to instantiate.
+        spec_data: Dictionary with spec data (camelCase keys).
+        aliases: Optional dict mapping field names to YAML keys.
+
+    Returns:
+        kwargs dict suitable for passing to the class constructor.
+
+    Raises:
+        TypeError: If a nested value or list item has the wrong type.
     """
     if aliases is None:
         aliases = getattr(cls, "FIELD_ALIASES", {}) if hasattr(cls, "FIELD_ALIASES") else {}
@@ -321,5 +348,15 @@ def deserialize_spec(cls, spec_data, aliases=None) -> dict:
 
 
 def omit_empty(data: dict) -> dict:
-    """Remove entries with None, '', [], or {}."""
+    """Remove entries with falsy sentinel values.
+
+    Removes entries where the value is exactly ``None``, ``""``, ``[]``,
+    or ``{}``. Preserves ``0`` and ``False`` since they are meaningful.
+
+    Args:
+        data: Dictionary to filter.
+
+    Returns:
+        Dictionary with sentinel-empty entries removed.
+    """
     return {k: v for k, v in data.items() if v not in (None, "", [], {})}
