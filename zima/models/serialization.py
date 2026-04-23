@@ -195,16 +195,10 @@ def deserialize(cls, data, aliases=None):
                 for v in value:
                     if isinstance(v, item_type):
                         items.append(v)
-                    elif isinstance(v, dict):
-                        if hasattr(item_type, "from_dict"):
-                            items.append(item_type.from_dict(v))
-                        else:
-                            items.append(deserialize(item_type, v))
+                    elif hasattr(item_type, "from_dict"):
+                        items.append(item_type.from_dict(v))
                     else:
-                        raise TypeError(
-                            f"Expected dict or {item_type.__name__} for item in '{f.name}', "
-                            f"got {type(v).__name__}"
-                        )
+                        items.append(deserialize(item_type, v))
                 value = items
 
         kwargs[f.name] = value
@@ -330,16 +324,10 @@ def deserialize_spec(cls, spec_data, aliases=None) -> dict:
                 for v in value:
                     if isinstance(v, item_type):
                         items.append(v)
-                    elif isinstance(v, dict):
-                        if hasattr(item_type, "from_dict"):
-                            items.append(item_type.from_dict(v))
-                        else:
-                            items.append(deserialize(item_type, v))
+                    elif hasattr(item_type, "from_dict"):
+                        items.append(item_type.from_dict(v))
                     else:
-                        raise TypeError(
-                            f"Expected dict or {item_type.__name__} for item in '{f.name}', "
-                            f"got {type(v).__name__}"
-                        )
+                        items.append(deserialize(item_type, v))
                 value = items
 
         kwargs[f.name] = value
