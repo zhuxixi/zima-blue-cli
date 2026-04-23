@@ -2,6 +2,9 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+import typer
+
 from tests.base import TestIsolator
 
 
@@ -13,9 +16,11 @@ class TestDetectGitRepo(TestIsolator):
         from zima.commands.quickstart import _detect_git_repo
 
         with patch("zima.commands.quickstart.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(returncode=0, stdout=".git\n", stderr="")
+            mock_run.return_value = MagicMock(
+                returncode=0, stdout="/home/user/myproject\n", stderr=""
+            )
             result = _detect_git_repo()
-            assert result is not None
+            assert result == "/home/user/myproject"
 
     def test_detect_git_repo_not_in_git_directory(self):
         """Test detection when not in a git repo."""
@@ -170,3 +175,160 @@ class TestCreateAllConfigs(TestIsolator):
         assert codes["env"] == ""
         job_data = manager.load_config("pjob", codes["pjob"])
         assert job_data["spec"].get("env", "") == ""
+
+
+class TestSelectAgentType(TestIsolator):
+    """Test agent type selection."""
+
+    def test_select_agent_type_invalid_choice(self):
+        """Test invalid agent choice exits with code 1."""
+        from zima.commands.quickstart import _select_agent_type
+
+        with patch("zima.commands.quickstart.typer.prompt", return_value="99"):
+            with pytest.raises(typer.Exit) as exc_info:
+                _select_agent_type()
+            assert exc_info.value.exit_code == 1
+
+    def test_select_agent_type_non_numeric(self):
+        """Test non-numeric agent choice exits with code 1."""
+        from zima.commands.quickstart import _select_agent_type
+
+        with patch("zima.commands.quickstart.typer.prompt", return_value="abc"):
+            with pytest.raises(typer.Exit) as exc_info:
+                _select_agent_type()
+            assert exc_info.value.exit_code == 1
+
+
+class TestResolveWorkDir(TestIsolator):
+    """Test working directory resolution."""
+
+    def test_resolve_work_dir_user_declines_git(self):
+        """Test when user declines current git directory."""
+        from zima.commands.quickstart import _resolve_work_dir
+
+        with patch("zima.commands.quickstart._detect_git_repo", return_value="/tmp/repo"):
+            with patch("zima.commands.quickstart.subprocess.run") as mock_remote:
+                mock_remote.return_value = MagicMock(
+                    returncode=0, stdout="https://github.com/user/repo.git"
+                )
+                with patch("zima.commands.quickstart.typer.confirm", return_value=False):
+                    with patch(
+                        "zima.commands.quickstart.typer.prompt", return_value="/custom/path"
+                    ):
+                        result = _resolve_work_dir()
+        assert result == "/custom/path"
+
+    def test_resolve_work_dir_no_git_repo(self):
+        """Test fallback prompt when not in a git repo."""
+        from zima.commands.quickstart import _resolve_work_dir
+
+        with patch("zima.commands.quickstart._detect_git_repo", return_value=None):
+            with patch("zima.commands.quickstart.typer.prompt", return_value="/some/path"):
+                result = _resolve_work_dir()
+        assert result == "/some/path"
+
+
+class TestSelectEnv(TestIsolator):
+    """Test env config selection."""
+
+    def test_select_env_with_matching_configs(self):
+        """Test selecting a matching env config."""
+        from zima.commands.quickstart import _select_env
+        from zima.config.manager import ConfigManager
+        from zima.models.env import EnvConfig
+
+        manager = ConfigManager()
+        env = EnvConfig.create(
+            code="kimi-key",
+            name="Kimi Key",
+            for_type="kimi",
+            secrets=[{"type": "env", "key": "KIMI_API_KEY"}],
+        )
+        manager.save_config("env", "kimi-key", env.to_dict())
+
+        with patch("zima.commands.quickstart.typer.prompt", return_value="1"):
+            result = _select_env("kimi", manager)
+        assert result == "kimi-key"
+
+    def test_select_env_skip(self):
+        """Test skipping env selection."""
+        from zima.commands.quickstart import _select_env
+        from zima.config.manager import ConfigManager
+        from zima.models.env import EnvConfig
+
+        manager = ConfigManager()
+        env = EnvConfig.create(
+            code="kimi-key",
+            name="Kimi Key",
+            for_type="kimi",
+            secrets=[{"type": "env", "key": "KIMI_API_KEY"}],
+        )
+        manager.save_config("env", "kimi-key", env.to_dict())
+
+        # "2" = skip (1 config + 1 skip option)
+        with patch("zima.commands.quickstart.typer.prompt", return_value="2"):
+            result = _select_env("kimi", manager)
+        assert result is None
+
+    def test_select_env_no_matching_configs(self):
+        """Test when no env configs match agent type."""
+        from zima.commands.quickstart import _select_env
+        from zima.config.manager import ConfigManager
+
+        manager = ConfigManager()
+        result = _select_env("kimi", manager)
+        assert result is None
+
+    def test_select_env_invalid_choice(self):
+        """Test invalid env choice returns None."""
+        from zima.commands.quickstart import _select_env
+        from zima.config.manager import ConfigManager
+        from zima.models.env import EnvConfig
+
+        manager = ConfigManager()
+        env = EnvConfig.create(
+            code="kimi-key",
+            name="Kimi Key",
+            for_type="kimi",
+            secrets=[{"type": "env", "key": "KIMI_API_KEY"}],
+        )
+        manager.save_config("env", "kimi-key", env.to_dict())
+
+        with patch("zima.commands.quickstart.typer.prompt", return_value="abc"):
+            result = _select_env("kimi", manager)
+        assert result is None
+
+
+class TestScanGithubPRsExtra(TestIsolator):
+    """Additional PR scanning tests."""
+
+    def test_scan_prs_invalid_json(self):
+        """Test PR scan handles invalid JSON gracefully."""
+        from zima.commands.quickstart import _scan_github_prs
+
+        with patch("zima.commands.quickstart.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="not json", stderr="")
+            result = _scan_github_prs("need-review")
+            assert result == []
+
+
+class TestSelectScene(TestIsolator):
+    """Test scene selection."""
+
+    def test_select_scene_invalid_choice(self):
+        """Test invalid scene choice exits with code 1."""
+        from zima.commands.quickstart import _select_scene
+
+        with patch("zima.commands.quickstart.typer.prompt", return_value="99"):
+            with pytest.raises(typer.Exit) as exc_info:
+                _select_scene()
+            assert exc_info.value.exit_code == 1
+
+    def test_select_scene_non_numeric(self):
+        """Test non-numeric scene choice exits with code 1."""
+        from zima.commands.quickstart import _select_scene
+
+        with patch("zima.commands.quickstart.typer.prompt", return_value="abc"):
+            with pytest.raises(typer.Exit) as exc_info:
+                _select_scene()
+            assert exc_info.value.exit_code == 1

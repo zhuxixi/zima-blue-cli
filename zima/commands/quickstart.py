@@ -22,15 +22,15 @@ AGENT_CHOICES: dict[str, str] = {
 
 
 def _detect_git_repo() -> Optional[str]:
-    """Detect if current directory is a git repo. Returns path or None."""
+    """Detect if current directory is a git repo. Returns repo root path or None."""
     try:
-        subprocess.run(
-            ["git", "rev-parse", "--git-dir"],
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
             capture_output=True,
             text=True,
             check=True,
         )
-        return str(Path.cwd())
+        return result.stdout.strip()
     except Exception:
         return None
 
