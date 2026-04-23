@@ -151,8 +151,8 @@ class ExtendDef:
         return result
 
     @classmethod
-    def from_dict(cls, data: dict) -> ExtendDef:
-        """Create from dictionary."""
+    def from_dict(cls, data: dict | str) -> ExtendDef:
+        """Create from dictionary or string shorthand."""
         if isinstance(data, str):
             return cls(code=data)
         return cls(code=data.get("code", ""), override=data.get("override", False))
