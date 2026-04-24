@@ -280,7 +280,7 @@ class TestSelectEnv(TestIsolator):
         assert result is None
 
     def test_select_env_invalid_choice(self):
-        """Test invalid env choice returns None."""
+        """Test invalid env choice exits with code 1."""
         from zima.commands.quickstart import _select_env
         from zima.config.manager import ConfigManager
         from zima.models.env import EnvConfig
@@ -295,8 +295,9 @@ class TestSelectEnv(TestIsolator):
         manager.save_config("env", "kimi-key", env.to_dict())
 
         with patch("zima.commands.quickstart.typer.prompt", return_value="abc"):
-            result = _select_env("kimi", manager)
-        assert result is None
+            with pytest.raises(typer.Exit) as exc_info:
+                _select_env("kimi", manager)
+            assert exc_info.value.exit_code == 1
 
 
 class TestScanGithubPRsExtra(TestIsolator):
@@ -436,3 +437,21 @@ class TestGenerateUniqueCodeLimits(TestIsolator):
 
         result = _generate_unique_code(long_base, manager, "agent")
         assert len(result) <= CODE_MAX_LENGTH
+
+    def test_generate_code_max_attempts_exceeded(self):
+        """Test RuntimeError when max attempts exceeded."""
+        from zima.commands.quickstart import _generate_unique_code
+        from zima.config.manager import ConfigManager
+        from zima.models.agent import AgentConfig
+
+        manager = ConfigManager()
+        # Create base config + enough configs to exhaust attempts
+        base_agent = AgentConfig.create(code="hello-agent", name="Test", agent_type="kimi")
+        manager.save_config("agent", "hello-agent", base_agent.to_dict())
+        for i in range(2, 1003):
+            code = f"hello-agent-{i}"
+            agent = AgentConfig.create(code=code, name="Test", agent_type="kimi")
+            manager.save_config("agent", code, agent.to_dict())
+
+        with pytest.raises(RuntimeError, match="Could not generate unique code"):
+            _generate_unique_code("hello-agent", manager, "agent")

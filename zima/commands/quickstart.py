@@ -109,6 +109,11 @@ def _generate_unique_code(base: str, manager: ConfigManager, kind: str) -> str:
         if len(code) > CODE_MAX_LENGTH:
             # Truncate base to make room for suffix
             code = base[: CODE_MAX_LENGTH - len(f"-{suffix}")] + f"-{suffix}"
+    if manager.config_exists(kind, code):
+        raise RuntimeError(
+            f"Could not generate unique code for kind={kind} after {max_attempts} attempts. "
+            f"Too many configs with base prefix '{base}'."
+        )
     return code
 
 
@@ -273,11 +278,14 @@ def _select_env(agent_type: str, manager: ConfigManager) -> Optional[str]:
     choice = typer.prompt("Enter choice", default="1")
     try:
         idx = int(choice) - 1
-        if idx < 0 or idx >= len(matching):
+        if idx < 0 or idx > len(matching):
+            raise ValueError
+        if idx == len(matching):
             return None
         return matching[idx]["metadata"]["code"]
     except ValueError:
-        return None
+        console.print("[red]Invalid choice[/red]")
+        raise typer.Exit(1)
 
 
 def quickstart(
