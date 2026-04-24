@@ -30,14 +30,6 @@ class TestAgentConfigCreation(TestIsolator):
         assert "model" not in config.parameters
         assert config.parameters["maxTurns"] == 100
 
-    def test_create_gemini_agent(self):
-        """Test creating Gemini agent."""
-        config = AgentConfig.create(code="gemini-agent", name="Gemini Agent", agent_type="gemini")
-
-        assert config.type == "gemini"
-        assert "model" not in config.parameters
-        assert config.parameters["approvalMode"] == "default"
-
     def test_create_with_custom_params(self):
         """Test creating with custom parameters."""
         config = AgentConfig.create(
@@ -101,12 +93,6 @@ class TestAgentConfigValidation(TestIsolator):
     def test_validate_valid_claude(self):
         """Test valid Claude config."""
         config = AgentConfig.create("test", "Test", "claude")
-        errors = config.validate()
-        assert errors == []
-
-    def test_validate_valid_gemini(self):
-        """Test valid Gemini config."""
-        config = AgentConfig.create("test", "Test", "gemini")
         errors = config.validate()
         assert errors == []
 
@@ -203,9 +189,9 @@ metadata:
   name: YAML Agent
   description: From YAML
 spec:
-  type: gemini
+  type: claude
   parameters:
-    model: gemini-pro
+    model: claude-sonnet
   defaults:
     workflow: wf1
 """
@@ -215,8 +201,8 @@ spec:
         config = AgentConfig.from_yaml_file(yaml_file)
 
         assert config.metadata.code == "yaml-agent"
-        assert config.type == "gemini"
-        assert config.parameters["model"] == "gemini-pro"
+        assert config.type == "claude"
+        assert config.parameters["model"] == "claude-sonnet"
 
     def test_from_yaml_file_not_found(self, tmp_path):
         """Test loading from non-existent file."""
@@ -243,14 +229,6 @@ class TestAgentConfigCommandBuilding(TestIsolator):
 
         assert "claude" in template
         assert "-p" in template
-
-    def test_get_cli_template_gemini(self):
-        """Test getting Gemini command template."""
-        config = AgentConfig.create("test", "Test", "gemini")
-        template = config.get_cli_command_template()
-
-        assert "gemini" in template
-        assert "--yolo" in template
 
     def test_build_kimi_command(self):
         """Test building Kimi command."""
@@ -285,20 +263,6 @@ class TestAgentConfigCommandBuilding(TestIsolator):
         assert "--work-dir" in cmd
         assert "--max-turns" in cmd
         assert "50" in cmd
-
-    def test_build_gemini_command(self):
-        """Test building Gemini command."""
-        config = AgentConfig.create("test", "Test", "gemini", parameters={"model": "gemini-pro"})
-
-        cmd = config.build_command(
-            prompt_file=Path("/tmp/prompt.md"), work_dir=Path("/tmp/workspace")
-        )
-
-        assert "gemini" in cmd
-        assert "-p" in cmd  # Gemini uses -p for prompt file
-        assert "--worktree" in cmd  # Gemini uses --worktree
-        assert "-m" in cmd
-        assert "gemini-pro" in cmd
 
     def test_build_command_with_add_dirs(self):
         """Test building command with additional directories."""
@@ -342,14 +306,6 @@ class TestAgentConfigCommandBuilding(TestIsolator):
 
         assert "--model" not in cmd
 
-    def test_build_gemini_command_no_model_by_default(self):
-        """Test that -m is omitted for gemini when no model is set."""
-        config = AgentConfig.create("test", "Test", "gemini")
-        cmd = config.build_command()
-
-        assert "-m" not in cmd
-
-
 class TestAgentConfigDefaults(TestIsolator):
     """Test default references management."""
 
@@ -391,8 +347,8 @@ class TestValidAgentTypes(TestIsolator):
     """Test valid agent types constant."""
 
     def test_valid_types(self):
-        """Test that only kimi, claude, gemini are valid."""
-        assert VALID_AGENT_TYPES == {"kimi", "claude", "gemini"}
+        """Test that only kimi and claude are valid."""
+        assert VALID_AGENT_TYPES == {"kimi", "claude"}
         assert "openai" not in VALID_AGENT_TYPES
         assert "custom" not in VALID_AGENT_TYPES
 
