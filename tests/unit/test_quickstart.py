@@ -332,3 +332,107 @@ class TestSelectScene(TestIsolator):
             with pytest.raises(typer.Exit) as exc_info:
                 _select_scene()
             assert exc_info.value.exit_code == 1
+
+
+class TestSanitizeBaseName(TestIsolator):
+    """Test base name sanitization."""
+
+    def test_sanitize_lowercase(self):
+        """Test lowercase input passes through."""
+        from zima.commands.quickstart import _sanitize_base_name
+
+        assert _sanitize_base_name("hello-world") == "hello-world"
+
+    def test_sanitize_uppercase(self):
+        """Test uppercase is converted to lowercase."""
+        from zima.commands.quickstart import _sanitize_base_name
+
+        assert _sanitize_base_name("HelloWorld") == "helloworld"
+
+    def test_sanitize_spaces(self):
+        """Test spaces replaced with hyphens."""
+        from zima.commands.quickstart import _sanitize_base_name
+
+        assert _sanitize_base_name("hello world") == "hello-world"
+
+    def test_sanitize_underscores(self):
+        """Test underscores replaced with hyphens."""
+        from zima.commands.quickstart import _sanitize_base_name
+
+        assert _sanitize_base_name("hello_world") == "hello-world"
+
+    def test_sanitize_special_chars(self):
+        """Test special characters removed."""
+        from zima.commands.quickstart import _sanitize_base_name
+
+        assert _sanitize_base_name("hello@world#123") == "helloworld123"
+
+    def test_sanitize_leading_digit(self):
+        """Test leading digit gets prefix."""
+        from zima.commands.quickstart import _sanitize_base_name
+
+        assert _sanitize_base_name("123-project") == "a--project"
+
+    def test_sanitize_empty(self):
+        """Test empty string defaults to zima."""
+        from zima.commands.quickstart import _sanitize_base_name
+
+        assert _sanitize_base_name("") == "zima"
+
+    def test_sanitize_too_long(self):
+        """Test long names are truncated."""
+        from zima.commands.quickstart import _sanitize_base_name
+
+        result = _sanitize_base_name("a" * 100)
+        assert len(result) <= 64 - 13  # max_base limit
+
+
+class TestSanitizeGitUrl(TestIsolator):
+    """Test git URL sanitization."""
+
+    def test_sanitize_url_no_creds(self):
+        """Test URL without credentials passes through."""
+        from zima.commands.quickstart import _sanitize_git_url
+
+        url = "https://github.com/user/repo.git"
+        assert _sanitize_git_url(url) == url
+
+    def test_sanitize_url_with_token(self):
+        """Test token is stripped from URL."""
+        from zima.commands.quickstart import _sanitize_git_url
+
+        result = _sanitize_git_url("https://token@github.com/user/repo.git")
+        assert result == "https://github.com/user/repo.git"
+
+    def test_sanitize_url_with_user_pass(self):
+        """Test user:pass is stripped from URL."""
+        from zima.commands.quickstart import _sanitize_git_url
+
+        result = _sanitize_git_url("https://user:pass@github.com/user/repo.git")
+        assert result == "https://github.com/user/repo.git"
+
+    def test_sanitize_ssh_url(self):
+        """Test SSH URL passes through unchanged."""
+        from zima.commands.quickstart import _sanitize_git_url
+
+        url = "git@github.com:user/repo.git"
+        assert _sanitize_git_url(url) == url
+
+
+class TestGenerateUniqueCodeLimits(TestIsolator):
+    """Test unique code generation limits."""
+
+    def test_generate_code_respects_max_length(self):
+        """Test generated code does not exceed max length."""
+        from zima.commands.quickstart import _generate_unique_code
+        from zima.config.manager import ConfigManager
+        from zima.models.agent import AgentConfig
+        from zima.utils import CODE_MAX_LENGTH
+
+        manager = ConfigManager()
+        long_base = "a" * 60
+        agent = AgentConfig.create(code=long_base, name="Test", agent_type="kimi")
+        manager.save_config("agent", long_base, agent.to_dict())
+
+        result = _generate_unique_code(long_base, manager, "agent")
+        assert len(result) <= CODE_MAX_LENGTH

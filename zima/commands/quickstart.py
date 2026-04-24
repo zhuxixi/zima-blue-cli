@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse, urlunparse
 
 import typer
 from rich.console import Console
 
 from zima.config.manager import ConfigManager
 from zima.scenes import QUICKSTART_SCENES
+from zima.utils import CODE_MAX_LENGTH
 
 console = Console(legacy_windows=False, force_terminal=True)
 
@@ -19,6 +22,9 @@ AGENT_CHOICES: dict[str, str] = {
     "kimi": "kimi-code-cli (月之暗面)",
     "claude": "claude-code (Anthropic)",
 }
+
+
+_SUBPROCESS_TIMEOUT = 10  # seconds
 
 
 def _detect_git_repo() -> Optional[str]:
@@ -29,6 +35,7 @@ def _detect_git_repo() -> Optional[str]:
             capture_output=True,
             text=True,
             check=True,
+            timeout=_SUBPROCESS_TIMEOUT,
         )
         return result.stdout.strip()
     except Exception:
@@ -52,6 +59,7 @@ def _scan_github_prs(label: str = "need-review") -> list[dict]:
             ],
             capture_output=True,
             text=True,
+            timeout=_SUBPROCESS_TIMEOUT,
         )
         if result.returncode != 0:
             return []
@@ -60,13 +68,47 @@ def _scan_github_prs(label: str = "need-review") -> list[dict]:
         return []
 
 
+def _sanitize_git_url(url: str) -> str:
+    """Remove credentials from git URL before displaying."""
+    parsed = urlparse(url.strip())
+    if parsed.username or parsed.password:
+        netloc = parsed.hostname or ""
+        if parsed.port:
+            netloc += f":{parsed.port}"
+        parsed = parsed._replace(netloc=netloc)
+        return urlunparse(parsed)
+    return url
+
+
+def _sanitize_base_name(name: str) -> str:
+    """Convert user input to a valid code-safe base name."""
+    sanitized = re.sub(r"[\s_]+", "-", name.lower())
+    sanitized = re.sub(r"[^a-z0-9-]", "", sanitized)
+    sanitized = re.sub(r"-+", "-", sanitized)
+    sanitized = sanitized.strip("-")
+    if not sanitized:
+        return "zima"
+    if sanitized[0].isdigit():
+        sanitized = "a-" + sanitized.lstrip("0123456789")
+        sanitized = sanitized.strip("-")
+    # Leave room for longest suffix ("-workflow" = 9) + unique suffix ("-999" = 4)
+    max_base = CODE_MAX_LENGTH - 13
+    return sanitized[:max_base] or "zima"
+
+
 def _generate_unique_code(base: str, manager: ConfigManager, kind: str) -> str:
     """Generate a unique config code, appending -N if needed."""
     code = base
     suffix = 2
-    while manager.config_exists(kind, code):
+    max_attempts = 1000
+    attempts = 0
+    while manager.config_exists(kind, code) and attempts < max_attempts:
         code = f"{base}-{suffix}"
         suffix += 1
+        attempts += 1
+        if len(code) > CODE_MAX_LENGTH:
+            # Truncate base to make room for suffix
+            code = base[: CODE_MAX_LENGTH - len(f"-{suffix}")] + f"-{suffix}"
     return code
 
 
@@ -198,9 +240,11 @@ def _resolve_work_dir(preselected: Optional[str] = None) -> str:
                 ["git", "remote", "get-url", "origin"],
                 capture_output=True,
                 text=True,
+                timeout=_SUBPROCESS_TIMEOUT,
             )
             if remote.returncode == 0 and remote.stdout.strip():
-                console.print(f"  Git remote: {remote.stdout.strip()}")
+                safe_url = _sanitize_git_url(remote.stdout.strip())
+                console.print(f"  Git remote: {safe_url}")
         except Exception:
             pass
         use_current = typer.confirm("Use current directory?", default=True)
@@ -251,7 +295,8 @@ def quickstart(
     scene_key = _select_scene(preselected=scene)
 
     # Step 2: Get base name
-    base_name = name or typer.prompt("What would you like to name your setup", default="hello-zima")
+    raw_name = name or typer.prompt("What would you like to name your setup", default="hello-zima")
+    base_name = _sanitize_base_name(raw_name)
 
     # Step 3: Select agent type
     agent_type = _select_agent_type()
@@ -266,7 +311,7 @@ def quickstart(
         if prs:
             console.print(f"  Found {len(prs)} PR(s) (display only, not saved to config):")
             for pr in prs:
-                console.print(f"    PR #{pr['number']}: {pr['title']}")
+                console.print(f"    PR #{pr['number']}: {pr['title']}", markup=False)
         else:
             console.print("  No matching PRs found. You'll provide the URL when running.")
 
