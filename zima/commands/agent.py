@@ -26,7 +26,7 @@ def create(
     code: Optional[str] = typer.Option(
         None, "--code", "-c", help="Unique code (lowercase letters, numbers, hyphens)"
     ),
-    agent_type: str = typer.Option("kimi", "--type", "-t", help="Agent type: kimi/claude/gemini"),
+    agent_type: str = typer.Option("kimi", "--type", "-t", help="Agent type: kimi/claude"),
     description: str = typer.Option("", "--description", "-d", help="Description"),
     from_code: Optional[str] = typer.Option(None, "--from", help="Copy from existing agent"),
     model: Optional[str] = typer.Option(None, "--model", "-m", help="Model name"),
@@ -431,7 +431,6 @@ def types():
     descriptions = {
         "kimi": "Kimi CLI - 月之暗面大模型",
         "claude": "Claude CLI - Anthropic AI",
-        "gemini": "Gemini CLI - Google AI",
     }
 
     for agent_type in sorted(VALID_AGENT_TYPES):
