@@ -52,26 +52,6 @@ class TestAgentCreate(TestIsolator):
         assert "created successfully" in result.output
         assert "claude" in result.output
 
-    def test_create_gemini_agent(self):
-        """Test creating a Gemini agent."""
-        result = runner.invoke(
-            app,
-            [
-                "agent",
-                "create",
-                "--name",
-                "Test Gemini Agent",
-                "--code",
-                "test-gemini",
-                "--type",
-                "gemini",
-            ],
-        )
-
-        assert result.exit_code == 0
-        assert "created successfully" in result.output
-        assert "gemini" in result.output
-
     def test_create_with_description(self):
         """Test creating agent with description."""
         result = runner.invoke(

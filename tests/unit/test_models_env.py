@@ -388,7 +388,7 @@ class TestEnvConfig(TestIsolator):
             env = EnvConfig.create(
                 code="dict-test",
                 name="Dict Test",
-                for_type="gemini",
+                for_type="claude",
                 variables={"VAR1": "val1"},
                 secrets=[{"name": "SEC1", "source": "env", "key": "K"}],
             )
@@ -397,7 +397,7 @@ class TestEnvConfig(TestIsolator):
             assert data["apiVersion"] == "zima.io/v1"
             assert data["kind"] == "Env"
             assert data["metadata"]["code"] == "dict-test"
-            assert data["spec"]["forType"] == "gemini"
+            assert data["spec"]["forType"] == "claude"
             assert data["spec"]["variables"] == {"VAR1": "val1"}
             assert len(data["spec"]["secrets"]) == 1
             assert data["spec"]["overrideExisting"] is False

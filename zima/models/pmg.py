@@ -16,7 +16,7 @@ from zima.utils import generate_timestamp, validate_code
 VALID_PARAM_TYPES = {"long", "short", "flag", "positional", "repeatable", "json", "key-value"}
 
 # Valid agent types for PMG
-VALID_PMG_FOR_TYPES = {"kimi", "claude", "gemini"}
+VALID_PMG_FOR_TYPES = {"kimi", "claude"}
 
 
 @dataclass

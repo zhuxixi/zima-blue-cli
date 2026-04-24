@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Zima Blue CLI** is a Python-based AI Agent orchestration platform. It manages execution of AI agents (Kimi, Claude, Gemini) through composable YAML configurations and Jinja2 prompt templates. Named after the sci-fi story about returning to simplicity.
+**Zima Blue CLI** is a Python-based AI Agent orchestration platform. It manages execution of AI agents (Kimi, Claude) through composable YAML configurations and Jinja2 prompt templates. Named after the sci-fi story about returning to simplicity.
 
 ## Development Commands
 
@@ -49,7 +49,7 @@ The core design is composability through seven YAML-based configuration types:
 
 | Entity | Model | Purpose |
 |--------|-------|---------|
-| Agent | `AgentConfig` | AI executor config (kimi/claude/gemini), builds CLI commands |
+| Agent | `AgentConfig` | AI executor config (kimi/claude), builds CLI commands |
 | Workflow | `WorkflowConfig` | Jinja2 prompt templates with typed variable definitions |
 | Variable | `VariableConfig` | Key-value data for template rendering |
 | Env | `EnvConfig` | Secrets and env vars (env/file/cmd/vault sources) |
@@ -86,7 +86,7 @@ zima pjob run <code>
   → Resolves referenced Agent/Workflow/Variable/Env/PMG
   → Renders Workflow template with Variables
   → Builds CLI command from Agent parameters
-  → Executes subprocess (kimi/claude/gemini)
+  → Executes subprocess (kimi/claude)
   → Runs postExec actions (e.g. GitHub label transition) in finally block
   → Captures output, stores execution history centrally
   → Returns ExecutionResult
