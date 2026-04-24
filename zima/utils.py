@@ -256,7 +256,7 @@ def safe_delete(path: Path) -> bool:
 # =============================================================================
 
 
-VALID_AGENT_TYPES = {"kimi", "claude", "gemini"}
+VALID_AGENT_TYPES = {"kimi", "claude"}
 
 
 def validate_agent_type(agent_type: str) -> bool:

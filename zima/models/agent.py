@@ -31,16 +31,9 @@ AGENT_PARAMETER_TEMPLATES = {
         "workDir": "./workspace",
         "addDirs": [],
     },
-    "gemini": {
-        "approvalMode": "default",
-        "checkpointing": False,
-        "workDir": "./workspace",
-        "addDirs": [],
-        "outputFormat": "text",
-    },
 }
 
-VALID_AGENT_TYPES = {"kimi", "claude", "gemini"}
+VALID_AGENT_TYPES = {"kimi", "claude"}
 
 
 @dataclass
@@ -48,10 +41,10 @@ class AgentConfig(BaseConfig):
     """
     Agent configuration model.
 
-    Supports multiple agent types: kimi, claude, gemini
+    Supports multiple agent types: kimi, claude
 
     Attributes:
-        type: Agent type (kimi/claude/gemini)
+        type: Agent type (kimi/claude)
         parameters: Type-specific parameters
         defaults: Default workflow/variable/env/pmg references
     """
@@ -91,7 +84,7 @@ class AgentConfig(BaseConfig):
         Args:
             code: Unique agent code
             name: Display name
-            agent_type: Agent type (kimi/claude/gemini)
+            agent_type: Agent type (kimi/claude)
             description: Optional description
             parameters: Custom parameters (override defaults)
             defaults: Default workflow/variable/env/pmg references
@@ -180,7 +173,6 @@ class AgentConfig(BaseConfig):
         templates = {
             "kimi": ["kimi", "--print", "--yolo"],
             "claude": ["claude", "-p"],
-            "gemini": ["gemini", "--yolo"],
         }
         return templates.get(self.type, [])
 
@@ -213,25 +205,17 @@ class AgentConfig(BaseConfig):
             cmd = self._build_kimi_command(cmd, params)
         elif self.type == "claude":
             cmd = self._build_claude_command(cmd, params)
-        elif self.type == "gemini":
-            cmd = self._build_gemini_command(cmd, params)
 
         # Add prompt file - agent-type-specific handling
         # Claude Code: prompt passed via stdin pipe, not as CLI argument
         # Kimi: uses --prompt flag
-        # Gemini: uses positional argument
         if prompt_file:
             if self.type == "kimi":
                 cmd.extend(["--prompt", str(prompt_file)])
-            elif self.type == "gemini":
-                cmd.extend(["-p", str(prompt_file)])
             # Claude: prompt_file is passed via stdin pipe by the executor, not added to cmd
 
         if work_dir:
-            if self.type == "gemini":
-                cmd.extend(["--worktree", str(work_dir)])
-            else:
-                cmd.extend(["--work-dir", str(work_dir)])
+            cmd.extend(["--work-dir", str(work_dir)])
 
         return cmd
 
@@ -309,26 +293,6 @@ class AgentConfig(BaseConfig):
 
         if params.get("verbose"):
             cmd.append("--verbose")
-
-        return cmd
-
-    def _build_gemini_command(self, cmd: list[str], params: dict) -> list[str]:
-        """Build Gemini-specific command arguments."""
-        if params.get("model"):
-            cmd.extend(["-m", str(params["model"])])
-
-        if params.get("approvalMode") and params["approvalMode"] != "default":
-            cmd.extend(["--approval-mode", str(params["approvalMode"])])
-
-        if params.get("checkpointing"):
-            cmd.append("--checkpointing")
-
-        # Handle addDirs (for Gemini: --include-directories)
-        for add_dir in params.get("addDirs", []):
-            cmd.extend(["--include-directories", str(add_dir)])
-
-        if params.get("outputFormat"):
-            cmd.extend(["--output-format", str(params["outputFormat"])])
 
         return cmd
 

@@ -133,24 +133,19 @@ class TestKimiAgentConfigLayer:
         """TC-3: Verify different agent types generate different commands."""
         kimi_agent = AgentConfig.create(code="k", name="K", agent_type="kimi")
         claude_agent = AgentConfig.create(code="c", name="C", agent_type="claude")
-        gemini_agent = AgentConfig.create(code="g", name="G", agent_type="gemini")
 
         kimi_cmd = kimi_agent.get_cli_command_template()
         claude_cmd = claude_agent.get_cli_command_template()
-        gemini_cmd = gemini_agent.get_cli_command_template()
 
         # Verify command differences
         assert kimi_cmd == ["kimi", "--print", "--yolo"]
         assert claude_cmd == ["claude", "-p"]
-        assert gemini_cmd == ["gemini", "--yolo"]
 
         # Verify work-dir parameter differences
         work_dir = Path("/tmp/test")
         kimi_full = kimi_agent.build_command(work_dir=work_dir)
-        gemini_full = gemini_agent.build_command(work_dir=work_dir)
 
         assert "--work-dir" in kimi_full
-        assert "--worktree" in gemini_full  # Gemini uses different flag
 
 
 class TestKimiAgentRunnerLayer:
@@ -483,12 +478,6 @@ class TestKimiAgentCLILayer:
         result = runner.invoke(app, ["agent", "test", "c-agent"])
         assert result.exit_code == 0
         assert "claude" in result.output
-
-        # Test Gemini agent
-        self.create_test_agent("g-agent", "gemini")
-        result = runner.invoke(app, ["agent", "test", "g-agent"])
-        assert result.exit_code == 0
-        assert "gemini" in result.output
 
     def test_pjob_run_with_kimi_agent_dry_run(self):
         """TC-11: Verify PJob dry-run with Kimi agent integration."""

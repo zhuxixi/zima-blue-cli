@@ -26,7 +26,7 @@ def create(
     ),
     name: Optional[str] = typer.Option(None, "--name", "-n", help="Display name"),
     for_type: Optional[str] = typer.Option(
-        None, "--for-type", "-t", help="Target agent type: kimi/claude/gemini"
+        None, "--for-type", "-t", help="Target agent type: kimi/claude"
     ),
     description: str = typer.Option("", "--description", "-d", help="Description"),
     from_code: Optional[str] = typer.Option(None, "--from", help="Copy from existing env config"),
