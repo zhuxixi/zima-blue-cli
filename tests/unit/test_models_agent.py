@@ -306,6 +306,7 @@ class TestAgentConfigCommandBuilding(TestIsolator):
 
         assert "--model" not in cmd
 
+
 class TestAgentConfigDefaults(TestIsolator):
     """Test default references management."""
 
