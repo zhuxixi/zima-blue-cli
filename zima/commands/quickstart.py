@@ -152,9 +152,9 @@ def _create_all_configs(
     wf = WorkflowConfig.create(
         code=wf_code,
         name=f"{base_name.title()} Workflow",
-        template=scene["workflow_template"],
+        template=scene.workflow_template,
     )
-    for var_name in scene.get("variables", {}):
+    for var_name in scene.variables:
         wf.add_variable(VariableDef(name=var_name, type="string", required=True))
     manager.save_config("workflow", wf_code, wf.to_dict())
 
@@ -163,7 +163,7 @@ def _create_all_configs(
         code=var_code,
         name=f"{base_name.title()} Variables",
         for_workflow=wf_code,
-        values=scene.get("variables", {}).copy(),
+        values=scene.variables.copy(),
     )
     manager.save_config("variable", var_code, var.to_dict())
 
@@ -199,7 +199,7 @@ def _select_scene(preselected: Optional[str] = None) -> str:
     scenes = list(QUICKSTART_SCENES.items())
     for i, (key, scene_def) in enumerate(scenes, 1):
         marker = " <- default" if i == 1 else ""
-        console.print(f"  [{i}] {scene_def['name']} — {scene_def['description']}{marker}")
+        console.print(f"  [{i}] {scene_def.name} — {scene_def.description}{marker}")
 
     choice = typer.prompt("Enter choice", default="1")
     try:
