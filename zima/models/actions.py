@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from zima.models.serialization import YamlSerializable, omit_empty
 
 VALID_ACTION_CONDITIONS = {"success", "failure", "always"}
-VALID_ACTION_TYPES = {"add_label", "remove_label", "add_comment"}
+VALID_ACTION_TYPES = {"add_label", "add_comment"}
 
 
 @dataclass
@@ -16,9 +16,9 @@ class PostExecAction(YamlSerializable):
 
     Attributes:
         condition: When to run - "success", "failure", or "always".
-        type: Action type - "add_label", "remove_label", or "add_comment".
+        type: Action type - "add_label" or "add_comment".
         add_labels: Labels to add (for add_label type).
-        remove_labels: Labels to remove (for remove_label type).
+        remove_labels: Labels to remove (for add_label type).
         repo: Repository slug in "owner/repo" format.
         issue: Issue or PR number as string.
         body: Comment body (for add_comment type).

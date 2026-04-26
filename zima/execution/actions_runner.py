@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from zima.github.ops import GitHubOps
+from zima.actions.base import ActionProvider
+from zima.actions.exceptions import ProviderNotFoundError
+from zima.actions.registry import ProviderRegistry, get_default_registry
 from zima.models.actions import ActionsConfig, PostExecAction
 
 
@@ -31,11 +33,11 @@ class ActionsRunner:
     """Executes postExec actions after agent process exits.
 
     Handles condition matching, environment variable substitution,
-    and GitHub label/comment operations.
+    and action dispatch to the configured provider.
     """
 
-    def __init__(self, ops: Optional[GitHubOps] = None):
-        self._ops = ops or GitHubOps()
+    def __init__(self, registry: Optional[ProviderRegistry] = None):
+        self._registry = registry or get_default_registry()
 
     def run(
         self,
@@ -50,12 +52,18 @@ class ActionsRunner:
             returncode: Agent process exit code.
             env: Environment variables for {{VAR}} substitution.
         """
+        try:
+            provider = self._registry.get(actions.provider)
+        except ProviderNotFoundError as e:
+            print(f"Warning: {e}")
+            return
+
         for action in actions.post_exec:
             if not _matches_condition(action.condition, returncode):
                 continue
 
             processed = self._substitute_env(action, env)
-            self._execute_action(processed)
+            self._execute_action(processed, provider)
 
     def _substitute_env(self, action: PostExecAction, env: dict[str, str]) -> PostExecAction:
         """Replace {{VAR}} placeholders with env values."""
@@ -75,31 +83,26 @@ class ActionsRunner:
             body=sub(action.body),
         )
 
-    def _execute_action(self, action: PostExecAction) -> None:
+    def _execute_action(self, action: PostExecAction, provider: ActionProvider) -> None:
         """Execute a single action, logging individual failures but continuing."""
         if not action.repo or not action.issue:
             return
 
-        try:
-            issue_num = int(action.issue)
-        except ValueError:
-            return
-
-        if action.type == "github_label":
+        if action.type == "add_label":
             for label in action.add_labels:
                 try:
-                    self._ops.add_label(action.repo, issue_num, label)
+                    provider.add_label(action.repo, action.issue, label)
                 except RuntimeError as e:
                     print(f"Warning: Failed to add label '{label}': {e}")
             for label in action.remove_labels:
                 try:
-                    self._ops.remove_label(action.repo, issue_num, label)
+                    provider.remove_label(action.repo, action.issue, label)
                 except RuntimeError as e:
                     print(f"Warning: Failed to remove label '{label}': {e}")
 
-        elif action.type == "github_comment":
+        elif action.type == "add_comment":
             if action.body:
                 try:
-                    self._ops.post_comment(action.repo, issue_num, action.body)
+                    provider.post_comment(action.repo, action.issue, action.body)
                 except RuntimeError as e:
                     print(f"Warning: Failed to post comment: {e}")
