@@ -287,16 +287,16 @@ class TestReviewerPJob:
         assert config.spec.workflow == "reviewer-cr"
         assert config.spec.variable == "reviewer-vars"
         assert len(config.spec.actions.post_exec) == 2
-        # First action: success -> github_label
+        # First action: success -> add_label
         assert config.spec.actions.post_exec[0].condition == "success"
-        assert config.spec.actions.post_exec[0].type == "github_label"
+        assert config.spec.actions.post_exec[0].type == "add_label"
         assert "zima:review-approved" in config.spec.actions.post_exec[0].add_labels
         assert "zima:needs-review" in config.spec.actions.post_exec[0].remove_labels
         assert config.spec.actions.post_exec[0].repo == "{{repo}}"
         assert config.spec.actions.post_exec[0].issue == "{{pr_number}}"
-        # Second action: failure -> github_label
+        # Second action: failure -> add_label
         assert config.spec.actions.post_exec[1].condition == "failure"
-        assert config.spec.actions.post_exec[1].type == "github_label"
+        assert config.spec.actions.post_exec[1].type == "add_label"
         assert "zima:needs-fix" in config.spec.actions.post_exec[1].add_labels
         assert config.spec.actions.post_exec[1].repo == "{{repo}}"
         assert config.spec.actions.post_exec[1].issue == "{{pr_number}}"

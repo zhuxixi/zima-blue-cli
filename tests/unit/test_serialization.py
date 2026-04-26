@@ -294,7 +294,7 @@ class TestRoundTrip:
         original = ActionsConfig(
             post_exec=[
                 PostExecAction(
-                    condition="success", type="github_label", repo="o/r", add_labels=["done"]
+                    condition="success", type="add_label", repo="o/r", add_labels=["done"]
                 )
             ]
         )
