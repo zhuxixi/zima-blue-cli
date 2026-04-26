@@ -9,19 +9,19 @@ class TestActionProvider:
 
         class TestProvider(ActionProvider):
             @property
-            def name(self):
+            def name(self) -> str:
                 return "test"
 
-            def add_label(self, repo, issue, label):
+            def add_label(self, repo: str, issue: str, label: str) -> None:
                 pass
 
-            def remove_label(self, repo, issue, label):
+            def remove_label(self, repo: str, issue: str, label: str) -> None:
                 pass
 
-            def post_comment(self, repo, issue, body):
+            def post_comment(self, repo: str, issue: str, body: str) -> None:
                 pass
 
-            def fetch_diff(self, repo, issue):
+            def fetch_diff(self, repo: str, issue: str) -> str:
                 return "diff"
 
         provider = TestProvider()

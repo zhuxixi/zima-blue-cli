@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
+__all__ = ["ActionProvider"]
+
 
 class ActionProvider(ABC):
     """Platform-agnostic action provider for post-exec automation."""
