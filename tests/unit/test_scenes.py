@@ -169,3 +169,11 @@ class TestLoadScenes(TestIsolator):
         )
         scenes = load_scenes()
         assert scenes["no-scan"].scan_command is None
+
+    def test_empty_scenes_yaml(self, isolated_zima_home):
+        """Test load_scenes handles empty scenes.yaml gracefully."""
+        scenes_file = isolated_zima_home / "scenes.yaml"
+        scenes_file.write_text("", encoding="utf-8")
+        scenes = load_scenes()
+        assert "code-review" in scenes
+        assert "custom" in scenes

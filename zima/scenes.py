@@ -55,7 +55,7 @@ def load_scenes() -> dict[str, Scene]:
     scenes = BUILTIN_SCENES.copy()
     user_path = get_zima_home() / "scenes.yaml"
     if user_path.exists():
-        data = yaml.safe_load(user_path.read_text(encoding="utf-8"))
+        data = yaml.safe_load(user_path.read_text(encoding="utf-8")) or {}
         for key, spec in data.get("scenes", {}).items():
             scenes[key] = Scene(**spec)
     return scenes
