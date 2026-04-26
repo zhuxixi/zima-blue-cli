@@ -54,7 +54,7 @@ class TestExecutorActions(TestIsolator):
             post_exec=[
                 PostExecAction(
                     condition="success",
-                    type="github_label",
+                    type="add_label",
                     add_labels=["zima:test-passed"],
                     remove_labels=["zima:test-pending"],
                     repo="owner/repo",
@@ -66,12 +66,14 @@ class TestExecutorActions(TestIsolator):
 
         executor = PJobExecutor()
         mock_ops = MagicMock()
-        executor._actions_runner._ops = mock_ops
+        mock_registry = MagicMock()
+        mock_registry.get.return_value = mock_ops
+        executor._actions_runner._registry = mock_registry
         result = executor.execute("test-pjob-actions")
 
         assert result.status.value == "success"
-        mock_ops.add_label.assert_called_once_with("owner/repo", 42, "zima:test-passed")
-        mock_ops.remove_label.assert_called_once_with("owner/repo", 42, "zima:test-pending")
+        mock_ops.add_label.assert_called_once_with("owner/repo", "42", "zima:test-passed")
+        mock_ops.remove_label.assert_called_once_with("owner/repo", "42", "zima:test-pending")
 
     def test_executor_skips_failure_actions_on_success(self, mock_configs, isolated_zima_home):
         """Test failure actions are not run when agent succeeds."""
@@ -89,7 +91,7 @@ class TestExecutorActions(TestIsolator):
             post_exec=[
                 PostExecAction(
                     condition="failure",
-                    type="github_comment",
+                    type="add_comment",
                     body="This should not run",
                     repo="owner/repo",
                     issue="42",
@@ -100,7 +102,9 @@ class TestExecutorActions(TestIsolator):
 
         executor = PJobExecutor()
         mock_ops = MagicMock()
-        executor._actions_runner._ops = mock_ops
+        mock_registry = MagicMock()
+        mock_registry.get.return_value = mock_ops
+        executor._actions_runner._registry = mock_registry
         result = executor.execute("test-pjob-skip")
 
         assert result.status.value == "success"
@@ -173,7 +177,7 @@ class TestReviewerEndToEnd(TestIsolator):
             post_exec=[
                 PostExecAction(
                     condition="success",
-                    type="github_label",
+                    type="add_label",
                     add_labels=["zima:approved"],
                     remove_labels=["zima:needs-review"],
                     repo="owner/repo",
@@ -185,11 +189,13 @@ class TestReviewerEndToEnd(TestIsolator):
 
         executor = PJobExecutor()
         mock_ops = MagicMock()
-        executor._actions_runner._ops = mock_ops
+        mock_registry = MagicMock()
+        mock_registry.get.return_value = mock_ops
+        executor._actions_runner._registry = mock_registry
 
         result = executor.execute("reviewer-e2e")
 
         assert result.status.value == "success"
         assert "approved" in result.stdout
-        mock_ops.add_label.assert_called_once_with("owner/repo", 42, "zima:approved")
-        mock_ops.remove_label.assert_called_once_with("owner/repo", 42, "zima:needs-review")
+        mock_ops.add_label.assert_called_once_with("owner/repo", "42", "zima:approved")
+        mock_ops.remove_label.assert_called_once_with("owner/repo", "42", "zima:needs-review")
