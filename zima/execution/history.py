@@ -189,10 +189,11 @@ class ExecutionHistory:
             +-- <execution_id>.json
     """
 
+    HISTORY_DIR_NAME = "pjobs"
     MAX_HISTORY_PER_PJOB = 100
 
     def __init__(self):
-        self._base_dir = get_zima_home() / "history" / "pjobs"
+        self._base_dir = get_zima_home() / "history" / self.HISTORY_DIR_NAME
         self._legacy_migrated = False
 
     def _ensure_migrated(self) -> None:
