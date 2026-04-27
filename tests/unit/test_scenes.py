@@ -54,7 +54,7 @@ class TestBuiltinScenes:
         scene = BUILTIN_SCENES["code-review"]
         assert scene.name == "Code Review"
         assert scene.description == "Review PRs/MRs with AI agent"
-        assert scene.workflow_template == "CR {{ pr_url }}"
+        assert scene.workflow_template == "review pr {{ pr_url }}"
         assert scene.variables == {"pr_url": ""}
         assert scene.provider == "github"
         assert scene.scan_command == [
