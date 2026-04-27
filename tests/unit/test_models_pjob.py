@@ -340,7 +340,7 @@ class TestPJobSpecActions:
             post_exec=[
                 PostExecAction(
                     condition="success",
-                    type="github_label",
+                    type="add_label",
                     add_labels=["zima:needs-fix"],
                     remove_labels=["zima:needs-review"],
                 )
@@ -356,7 +356,7 @@ class TestPJobSpecActions:
             "agent": "a",
             "workflow": "w",
             "actions": {
-                "postExec": [{"condition": "success", "type": "github_label", "addLabels": ["x"]}]
+                "postExec": [{"condition": "success", "type": "add_label", "addLabels": ["x"]}]
             },
         }
         spec = PJobSpec.from_dict(d)
@@ -371,7 +371,7 @@ class TestPJobSpecActions:
             agent="a",
             workflow="w",
             actions=ActionsConfig(
-                post_exec=[PostExecAction(condition="failure", type="github_comment", body="oops")]
+                post_exec=[PostExecAction(condition="failure", type="add_comment", body="oops")]
             ),
         )
         d = spec.to_dict()

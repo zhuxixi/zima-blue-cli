@@ -52,7 +52,7 @@ class TestIsolator:
         monkeypatch.setenv("ZIMA_HOME", str(self.temp_dir))
 
         # Create config subdirectories
-        for kind in ["agents", "workflows", "variables", "envs", "pmgs"]:
+        for kind in ["agents", "workflows", "variables", "envs", "pmgs", "pjobs"]:
             ensure_dir(self.temp_dir / "configs" / kind)
 
         yield

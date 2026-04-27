@@ -70,6 +70,14 @@ The core design is composability through seven YAML-based configuration types:
 - **`zima/core/kimi_runner.py`** / **`zima/core/claude_runner.py`** — Agent-specific subprocess runners for Kimi and Claude.
 - **`zima/execution/background_runner.py`** — Background PJob execution in detached process.
 - **`zima/execution/history.py`** — Execution history tracking with PID recording.
+- **`zima/execution/actions_runner.py`** — `ActionsRunner`: executes postExec actions through configured provider after agent exit.
+- **`zima/actions/base.py`** — `ActionProvider` ABC — interface all providers implement.
+- **`zima/actions/registry.py`** — `ProviderRegistry`: loads built-in + discovers external providers via `importlib.metadata.entry_points`.
+- **`zima/actions/exceptions.py`** — `ProviderNotFoundError`, `ProviderError`.
+- **`zima/providers/__init__.py`** — `BUILTIN_PROVIDERS` dict.
+- **`zima/providers/github.py`** — `GitHubProvider`: wraps `gh` CLI for label/comment/diff operations.
+- **`zima/models/actions.py`** — `PostExecAction` / `ActionsConfig`: dataclasses for PJob post-execution automation.
+- **`zima/scenes.py`** — `Scene` dataclass, `load_scenes()` merges built-in scenes with user-defined `~/.zima/scenes.yaml`.
 - **`zima/daemon_runner.py`** — Entry point for detached daemon process (`python -m zima.daemon_runner`).
 - **`zima/core/daemon_scheduler.py`** — `DaemonScheduler`: 32-cycle PJob scheduling with stage timers, PJob spawn/kill, JSONL history.
 - **`zima/utils.py`** — Shared utilities (`ensure_dir`, etc.).
@@ -83,6 +91,7 @@ zima pjob run <code>
   → Renders Workflow template with Variables
   → Builds CLI command from Agent parameters
   → Executes subprocess (kimi/claude)
+  → Runs postExec actions through configured provider (label/comment) in finally block
   → Captures output, stores execution history centrally
   → Returns ExecutionResult
 ```
@@ -99,8 +108,9 @@ zima pjob run <code>
 │   └── history/*.jsonl
 ├── temp/                      # Temporary execution artifacts
 │   └── pjobs/                # PJob execution working directories (auto-cleaned)
-└── history/
-    └── pjobs.json           # Execution history (per-PJob records, max 100 each)
+├── history/
+│   └── pjobs.json           # Execution history (per-PJob records, max 100 each)
+└── scenes.yaml                # User-defined quickstart scene overrides
 ```
 
 **Execution artifacts** (ephemeral by default):
