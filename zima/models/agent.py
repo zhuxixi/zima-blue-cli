@@ -214,8 +214,12 @@ class AgentConfig(BaseConfig):
                 cmd.extend(["--prompt", str(prompt_file)])
             # Claude: prompt_file is passed via stdin pipe by the executor, not added to cmd
 
+        # Add working directory flag — agent-type-specific
         if work_dir:
-            cmd.extend(["--work-dir", str(work_dir)])
+            if self.type == "claude":
+                cmd.extend(["--cwd", str(work_dir)])
+            else:
+                cmd.extend(["--work-dir", str(work_dir)])
 
         return cmd
 
