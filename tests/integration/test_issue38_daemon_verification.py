@@ -178,17 +178,17 @@ class TestIssue38MockVerification(TestIsolator):
         assert result.exit_code == 0, f"PJob run failed: {result.output}"
         assert "success" in result.output.lower() or "completed" in result.output.lower()
 
-        # Verify history file exists with success status
+        # Verify history file exists with success status (directory-based)
         zima_home = get_zima_home()
-        history_file = zima_home / "history" / "pjobs.json"
-        assert history_file.exists(), "History file should exist after PJob run"
-        history_data = json.loads(history_file.read_text(encoding="utf-8"))
-        assert pjob_code in history_data, f"PJob {pjob_code} should be in history"
-        records = history_data[pjob_code]
-        assert len(records) >= 1, "Should have at least one execution record"
+        history_dir = zima_home / "history" / "pjobs" / pjob_code
+        assert history_dir.is_dir(), f"History directory should exist after PJob run: {history_dir}"
+        json_files = list(history_dir.glob("*.json"))
+        assert len(json_files) >= 1, "Should have at least one execution JSON file"
+        latest_file = sorted(json_files)[-1]
+        record = json.loads(latest_file.read_text(encoding="utf-8"))
         assert (
-            records[0]["status"] == "success"
-        ), f"First record should have success status, got: {records[0]['status']}"
+            record["status"] == "success"
+        ), f"Record should have success status, got: {record['status']}"
 
     def test_daemon_start_and_state(self):
         """AC #2 + #4: Start daemon with schedule, verify PID and state."""
