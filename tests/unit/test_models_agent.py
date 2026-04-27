@@ -260,7 +260,8 @@ class TestAgentConfigCommandBuilding(TestIsolator):
         assert "-p" in cmd
         # Claude receives prompt via stdin pipe, not --prompt flag
         assert "--prompt" not in cmd
-        assert "--work-dir" in cmd
+        assert "--cwd" in cmd
+        assert str(Path("/tmp/workspace")) in cmd
         assert "--max-turns" in cmd
         assert "50" in cmd
 
