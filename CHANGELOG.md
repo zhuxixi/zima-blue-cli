@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.1] - 2026-04-27
+
+### Features
+- plugin-based Action Provider architecture (#63) (#65)
+
+### Fixes
+- **scenes**: change code-review template to use stable trigger keyword (#67)
+
+### Changes
+- add implementation plan for issue #60 (remove gemini agent type)
+- add spec for issue #60 (remove gemini agent type)
+
+[0.3.1]: https://github.com/zhuxixi/zima-blue-cli/compare/v0.3.0...v0.3.1
+
 ## [0.3.0] - 2026-04-24
 
 ### Features
