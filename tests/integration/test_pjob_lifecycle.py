@@ -599,3 +599,80 @@ class TestPJobLifecycle:
 
         assert result.exit_code == 0
         assert "created from" in result.output
+
+
+class TestBackgroundRunnerState:
+    """Test background runner writes state files correctly."""
+
+    @pytest.fixture(autouse=True)
+    def setup_isolation(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("ZIMA_HOME", str(tmp_path))
+        self.temp_dir = tmp_path
+        self.manager = ConfigManager()
+        for kind in ["agents", "workflows", "variables", "envs", "pmgs", "pjobs"]:
+            (tmp_path / "configs" / kind).mkdir(parents=True, exist_ok=True)
+        from zima.execution.history import ExecutionHistory
+        self.history = ExecutionHistory()
+
+    def create_deps(self):
+        agent = AgentConfig.create(code="test-agent", name="Test Agent", agent_type="kimi")
+        self.manager.save_config("agent", "test-agent", agent.to_dict())
+        wf = WorkflowConfig.create(code="test-workflow", name="Test WF", template="# Test")
+        self.manager.save_config("workflow", "test-workflow", wf.to_dict())
+
+        from typer.testing import CliRunner
+        from zima.cli import app
+        runner = CliRunner()
+        result = runner.invoke(app, [
+            "pjob", "create",
+            "--name", "Test PJob", "--code", "test-pjob",
+            "--agent", "test-agent", "--workflow", "test-workflow",
+        ])
+        assert result.exit_code == 0
+
+    def test_background_runner_state_file_lifecycle(self):
+        """State file is written at start and updated on completion."""
+        self.create_deps()
+        from datetime import datetime, timezone
+
+        execution_id = "test0001"
+        started_at = datetime.now(timezone.utc).astimezone().isoformat()
+
+        # Simulate CLI writing initial state file
+        self.history.write_runtime_state("test-pjob", execution_id, {
+            "execution_id": execution_id,
+            "pjob_code": "test-pjob",
+            "status": "running",
+            "pid": 99999,
+            "command": ["echo", "test"],
+            "started_at": started_at,
+            "finished_at": None,
+            "duration_seconds": None,
+            "returncode": None,
+            "stdout_preview": "",
+            "stderr_preview": "",
+            "error_detail": "",
+            "log_path": str(self.temp_dir / "logs" / "background" / f"test-pjob-{execution_id}.log"),
+            "agent": "kimi",
+            "workflow": "test-workflow",
+        })
+
+        # Verify state file exists with running status
+        state = self.history.get_runtime_state("test-pjob", execution_id)
+        assert state is not None
+        assert state["status"] == "running"
+        assert state["pjob_code"] == "test-pjob"
+
+        # Simulate background_runner completing
+        self.history.update_runtime_state(
+            "test-pjob", execution_id,
+            status="success",
+            returncode=0,
+            duration_seconds=5.0,
+            stdout_preview="test output",
+        )
+
+        updated = self.history.get_runtime_state("test-pjob", execution_id)
+        assert updated["status"] == "success"
+        assert updated["returncode"] == 0
+        assert updated["duration_seconds"] == 5.0
