@@ -72,7 +72,7 @@ The core design is composability through seven YAML-based configuration types:
 - **`zima/execution/history.py`** — Execution history tracking with PID recording.
 - **`zima/execution/actions_runner.py`** — `ActionsRunner`: executes postExec actions (GitHub label/comment) after agent exit.
 - **`zima/review/parser.py`** — `ReviewParser`: parses `<zima-review>` XML blocks from agent stdout into structured review results.
-- **`zima/github/ops.py`** — `GitHubOps`: wraps `gh` CLI for label add/remove, comment post, PR diff fetch.
+- **`zima/providers/github.py`** — `GitHubProvider`: wraps `gh` CLI for label add/remove, comment post, PR diff fetch.
 - **`zima/models/actions.py`** — `PostExecAction` / `ActionsConfig`: dataclasses for PJob post-execution automation.
 - **`zima/daemon_runner.py`** — Entry point for detached daemon process (`python -m zima.daemon_runner`).
 - **`zima/core/daemon_scheduler.py`** — `DaemonScheduler`: 32-cycle PJob scheduling with stage timers, PJob spawn/kill, JSONL history.

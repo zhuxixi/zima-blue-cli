@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from zima.models.serialization import YamlSerializable, omit_empty
 
 VALID_ACTION_CONDITIONS = {"success", "failure", "always"}
-VALID_ACTION_TYPES = {"github_label", "github_comment"}
+VALID_ACTION_TYPES = {"add_label", "add_comment"}
 
 
 @dataclass
@@ -16,12 +16,12 @@ class PostExecAction(YamlSerializable):
 
     Attributes:
         condition: When to run - "success", "failure", or "always".
-        type: Action type - "github_label" or "github_comment".
-        add_labels: Labels to add (for github_label type).
-        remove_labels: Labels to remove (for github_label type).
+        type: Action type - "add_label" or "add_comment".
+        add_labels: Labels to add (for add_label type).
+        remove_labels: Labels to remove (for add_label type).
         repo: Repository slug in "owner/repo" format.
         issue: Issue or PR number as string.
-        body: Comment body (for github_comment type).
+        body: Comment body (for add_comment type).
     """
 
     FIELD_ALIASES = {
@@ -30,7 +30,7 @@ class PostExecAction(YamlSerializable):
     }
 
     condition: str = "always"
-    type: str = "github_label"
+    type: str = "add_label"
     add_labels: list[str] = field(default_factory=list)
     remove_labels: list[str] = field(default_factory=list)
     repo: str = ""
@@ -72,14 +72,25 @@ class PostExecAction(YamlSerializable):
 
 @dataclass
 class ActionsConfig(YamlSerializable):
-    """Collection of actions for a PJob."""
+    """Collection of actions for a PJob.
+
+    Attributes:
+        provider: The action provider to use (default: "github"). Controls which
+            backend executes the postExec actions. Currently only "github" is
+            supported. Omitted from serialized output when set to the default.
+        post_exec: List of PostExecAction instances to run after the agent exits.
+    """
 
     FIELD_ALIASES = {"post_exec": "postExec"}
 
+    provider: str = "github"
     post_exec: list[PostExecAction] = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        return omit_empty(super().to_dict())
+        d = omit_empty(super().to_dict())
+        if self.provider == "github":
+            d.pop("provider", None)
+        return d
 
     @classmethod
     def from_dict(cls, data: dict) -> ActionsConfig:

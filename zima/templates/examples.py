@@ -193,7 +193,7 @@ spec:
   actions:
     postExec:
       - condition: success
-        type: github_label
+        type: add_label
         addLabels:
           - zima:review-approved
         removeLabels:
@@ -201,7 +201,7 @@ spec:
         repo: "{{repo}}"
         issue: "{{pr_number}}"
       - condition: failure
-        type: github_label
+        type: add_label
         addLabels:
           - zima:needs-fix
         removeLabels:

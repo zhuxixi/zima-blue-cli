@@ -13,7 +13,8 @@ import typer
 from rich.console import Console
 
 from zima.config.manager import ConfigManager
-from zima.scenes import QUICKSTART_SCENES
+from zima.models.actions import ActionsConfig
+from zima.scenes import load_scenes
 from zima.utils import CODE_MAX_LENGTH
 
 console = Console(legacy_windows=False, force_terminal=True)
@@ -42,21 +43,11 @@ def _detect_git_repo() -> Optional[str]:
         return None
 
 
-def _scan_github_prs(label: str = "need-review") -> list[dict]:
-    """Scan GitHub for open PRs with given label. Returns display-only results."""
+def _scan_with_command(command: list[str]) -> list[dict]:
+    """Scan for open PRs/MRs using the given CLI command."""
     try:
         result = subprocess.run(
-            [
-                "gh",
-                "pr",
-                "list",
-                "--state",
-                "open",
-                "--label",
-                label,
-                "--json",
-                "number,title,url",
-            ],
+            command,
             capture_output=True,
             text=True,
             timeout=_SUBPROCESS_TIMEOUT,
@@ -124,6 +115,7 @@ def _create_all_configs(
     work_dir: str,
     env_code: Optional[str],
     manager: ConfigManager,
+    provider: str = "github",
 ) -> dict[str, str]:
     """Create all 5 configurations. Returns dict of created codes."""
     from zima.models.agent import AgentConfig
@@ -131,7 +123,8 @@ def _create_all_configs(
     from zima.models.variable import VariableConfig
     from zima.models.workflow import VariableDef, WorkflowConfig
 
-    scene = QUICKSTART_SCENES[scene_key]
+    scenes = load_scenes()
+    scene = scenes[scene_key]
 
     # Generate unique codes
     agent_code = _generate_unique_code(f"{base_name}-agent", manager, "agent")
@@ -152,9 +145,9 @@ def _create_all_configs(
     wf = WorkflowConfig.create(
         code=wf_code,
         name=f"{base_name.title()} Workflow",
-        template=scene["workflow_template"],
+        template=scene.workflow_template,
     )
-    for var_name in scene.get("variables", {}):
+    for var_name in scene.variables:
         wf.add_variable(VariableDef(name=var_name, type="string", required=True))
     manager.save_config("workflow", wf_code, wf.to_dict())
 
@@ -163,7 +156,7 @@ def _create_all_configs(
         code=var_code,
         name=f"{base_name.title()} Variables",
         for_workflow=wf_code,
-        values=scene.get("variables", {}).copy(),
+        values=scene.variables.copy(),
     )
     manager.save_config("variable", var_code, var.to_dict())
 
@@ -176,6 +169,8 @@ def _create_all_configs(
         variable=var_code,
         env=env_code or "",
     )
+    if provider != "github":
+        job.actions = ActionsConfig(provider=provider)
     manager.save_config("pjob", job_code, job.to_dict())
 
     return {
@@ -189,17 +184,18 @@ def _create_all_configs(
 
 def _select_scene(preselected: Optional[str] = None) -> str:
     """Interactive scene selection. Returns scene key."""
+    scenes = load_scenes()
     if preselected:
-        if preselected not in QUICKSTART_SCENES:
+        if preselected not in scenes:
             console.print(f"[red]Invalid scene: {preselected}[/red]")
             raise typer.Exit(1)
         return preselected
 
     console.print("\n[bold]Choose a task template:[/bold]")
-    scenes = list(QUICKSTART_SCENES.items())
+    scenes = list(scenes.items())
     for i, (key, scene_def) in enumerate(scenes, 1):
         marker = " <- default" if i == 1 else ""
-        console.print(f"  [{i}] {scene_def['name']} — {scene_def['description']}{marker}")
+        console.print(f"  [{i}] {scene_def.name} — {scene_def.description}{marker}")
 
     choice = typer.prompt("Enter choice", default="1")
     try:
@@ -299,6 +295,9 @@ def quickstart(
     console.print("\n[bold cyan]Welcome to Zima quickstart![/bold cyan]")
     console.print("This wizard creates a complete PJob configuration from scratch.\n")
 
+    # Load scenes once and reuse
+    scenes = load_scenes()
+
     # Step 1: Select scene
     scene_key = _select_scene(preselected=scene)
 
@@ -313,9 +312,10 @@ def quickstart(
     resolved_work_dir = _resolve_work_dir(preselected=work_dir)
 
     # Step 5: Show PR scan (display only)
-    if scene_key == "code-review":
-        console.print("\n[bold]Scanning GitHub for open PRs with 'need-review' label...[/bold]")
-        prs = _scan_github_prs("need-review")
+    scene = scenes[scene_key]
+    if scene.scan_command:
+        console.print("\n[bold]Scanning for open items...[/bold]")
+        prs = _scan_with_command(scene.scan_command)
         if prs:
             console.print(f"  Found {len(prs)} PR(s) (display only, not saved to config):")
             for pr in prs:
@@ -353,6 +353,7 @@ def quickstart(
         work_dir=resolved_work_dir,
         env_code=env_code,
         manager=manager,
+        provider=scene.provider,
     )
 
     # Step 9: Print results

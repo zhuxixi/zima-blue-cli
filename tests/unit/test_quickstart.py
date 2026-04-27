@@ -74,36 +74,36 @@ class TestGenerateUniqueCode(TestIsolator):
         assert result == "hello-agent-4"
 
 
-class TestScanGithubPRs(TestIsolator):
-    """Test GitHub PR scanning."""
+class TestScanWithCommand(TestIsolator):
+    """Test generic command scanning."""
 
-    def test_scan_prs_success(self):
-        """Test successful PR scan."""
-        from zima.commands.quickstart import _scan_github_prs
+    def test_scan_with_command_success(self):
+        """Test successful scan with command."""
+        from zima.commands.quickstart import _scan_with_command
 
         mock_json = '[{"number": 42, "title": "feat: add auth", "url": "https://github.com/owner/repo/pull/42"}]'
         with patch("zima.commands.quickstart.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout=mock_json, stderr="")
-            result = _scan_github_prs("need-review")
+            result = _scan_with_command(["gh", "pr", "list", "--json", "number,title,url"])
             assert len(result) == 1
             assert result[0]["number"] == 42
 
-    def test_scan_prs_failure(self):
-        """Test PR scan when gh command fails."""
-        from zima.commands.quickstart import _scan_github_prs
+    def test_scan_with_command_failure(self):
+        """Test scan when command fails."""
+        from zima.commands.quickstart import _scan_with_command
 
         with patch("zima.commands.quickstart.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="error")
-            result = _scan_github_prs("need-review")
+            result = _scan_with_command(["gh", "pr", "list", "--json", "number,title,url"])
             assert result == []
 
-    def test_scan_prs_exception(self):
-        """Test PR scan when subprocess raises exception."""
-        from zima.commands.quickstart import _scan_github_prs
+    def test_scan_with_command_exception(self):
+        """Test scan when subprocess raises exception."""
+        from zima.commands.quickstart import _scan_with_command
 
         with patch("zima.commands.quickstart.subprocess.run") as mock_run:
             mock_run.side_effect = FileNotFoundError("gh not found")
-            result = _scan_github_prs("need-review")
+            result = _scan_with_command(["gh", "pr", "list", "--json", "number,title,url"])
             assert result == []
 
 
@@ -300,16 +300,16 @@ class TestSelectEnv(TestIsolator):
             assert exc_info.value.exit_code == 1
 
 
-class TestScanGithubPRsExtra(TestIsolator):
-    """Additional PR scanning tests."""
+class TestScanWithCommandExtra(TestIsolator):
+    """Additional command scanning tests."""
 
-    def test_scan_prs_invalid_json(self):
-        """Test PR scan handles invalid JSON gracefully."""
-        from zima.commands.quickstart import _scan_github_prs
+    def test_scan_with_command_invalid_json(self):
+        """Test scan handles invalid JSON gracefully."""
+        from zima.commands.quickstart import _scan_with_command
 
         with patch("zima.commands.quickstart.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stdout="not json", stderr="")
-            result = _scan_github_prs("need-review")
+            result = _scan_with_command(["gh", "pr", "list", "--json", "number,title,url"])
             assert result == []
 
 
