@@ -130,6 +130,24 @@ class TestExecutionHistoryWriteAndRead:
         assert stats["failed"] == 1
         assert stats["avg_duration"] == 15.0
 
+    def test_dead_pid_auto_detection(self):
+        """Running entries with dead PIDs are auto-marked 'dead' and persisted."""
+        self.history.write_runtime_state(self.pjob_code, self.exec_id, {
+            "execution_id": self.exec_id,
+            "pjob_code": self.pjob_code,
+            "status": "running",
+            "pid": 99999999,  # definitely dead
+            "started_at": "2026-04-28T10:30:00+08:00",
+        })
+        records = self.history.list_executions(self.pjob_code)
+        assert len(records) == 1
+        # Auto-marked in memory
+        assert records[0]["status"] == "dead"
+        # Persisted to disk
+        data = self.history.get_runtime_state(self.pjob_code, self.exec_id)
+        assert data is not None
+        assert data["status"] == "dead"
+
 
 class TestLegacyMigration:
     @pytest.fixture(autouse=True)

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/zhuzh/.zima/logs/background/**)",
+      "Bash(zima pjob:*)",
+      "Bash(gh issue:*)"
+    ]
+  }
+}

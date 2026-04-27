@@ -29,8 +29,9 @@ from zima.utils import get_zima_home
 def _is_pid_alive(pid: Optional[int]) -> bool:
     """Check whether a PID is still alive (cross-platform).
 
-    Uses ``os.kill(pid, 0)`` on Unix and ``ctypes.windll.kernel32.OpenProcess``
-    on Windows.
+    Uses ``ctypes`` with ``GetExitCodeProcess`` on Windows and ``os.kill(pid, 0)``
+    on Unix.  ``PermissionError`` on Unix means the process *is* alive — the
+    caller simply lacks permission to signal it.
     """
     if pid is None:
         return False
@@ -38,15 +39,26 @@ def _is_pid_alive(pid: Optional[int]) -> bool:
         if sys.platform == "win32":
             import ctypes
 
-            SYNCHRONIZE = 0x00100000
-            handle = ctypes.windll.kernel32.OpenProcess(SYNCHRONIZE, False, pid)
-            if handle:
-                ctypes.windll.kernel32.CloseHandle(handle)
-            return bool(handle)
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            STILL_ACTIVE = 259
+            handle = ctypes.windll.kernel32.OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+            )
+            if not handle:
+                return False
+            exit_code = ctypes.c_ulong()
+            ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return exit_code.value == STILL_ACTIVE
         else:
             os.kill(pid, 0)
             return True
-    except (OSError, ValueError, Exception):
+    except PermissionError:
+        # Process exists but caller lacks permission to signal it.
+        return True
+    except ProcessLookupError:
+        return False
+    except (ValueError, Exception):
         return False
 
 
@@ -257,15 +269,16 @@ class ExecutionHistory:
                 pid = data.get("pid")
                 if pid is not None and not _is_pid_alive(pid):
                     data["status"] = "dead"
-                    # Persist the update
+                    # Persist the update (guard against corrupted files)
                     try:
-                        fpath = self._exec_file(
-                            data["pjob_code"], data["execution_id"]
-                        )
-                        fpath.write_text(
-                            json.dumps(data, indent=2, ensure_ascii=False),
-                            encoding="utf-8",
-                        )
+                        pjob = data.get("pjob_code")
+                        eid = data.get("execution_id")
+                        if pjob and eid:
+                            fpath = self._exec_file(pjob, eid)
+                            fpath.write_text(
+                                json.dumps(data, indent=2, ensure_ascii=False),
+                                encoding="utf-8",
+                            )
                     except (IOError, OSError):
                         pass
 
