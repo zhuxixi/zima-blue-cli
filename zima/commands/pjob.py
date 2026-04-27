@@ -468,32 +468,22 @@ def run(
     skip_validation: bool = typer.Option(
         False, "--skip-validation", help="Skip pre-execution validation"
     ),
-    quiet: bool = typer.Option(
-        False, "--quiet", "-q", help="Suppress real-time output, only show result"
-    ),
-    background: bool = typer.Option(
-        False, "--background", "-b", help="Run in background (detached process)"
-    ),
-    follow: bool = typer.Option(
-        False, "--follow", "-f", help="Follow log output (only valid with --background)"
-    ),
 ):
-    """Execute a PJob"""
+    """Execute a PJob (runs in background by default)"""
     manager = ConfigManager()
 
     if not manager.config_exists("pjob", code):
         console.print(f"[red]✗[/red] PJob '{code}' not found")
         raise typer.Exit(1)
 
+    # Load config (needed for validation AND for state file metadata)
+    data = manager.load_config("pjob", code)
+    config = PJobConfig.from_dict(data)
+
     # Pre-execution validation
     if not skip_validation:
         try:
-            data = manager.load_config("pjob", code)
-            config = PJobConfig.from_dict(data)
-
             validation_errors = []
-
-            # Check required refs exist
             if config.spec.agent and not manager.config_exists("agent", config.spec.agent):
                 validation_errors.append(f"Agent '{config.spec.agent}' not found")
             if config.spec.workflow and not manager.config_exists("workflow", config.spec.workflow):
@@ -505,28 +495,20 @@ def run(
             if config.spec.pmg and not manager.config_exists("pmg", config.spec.pmg):
                 validation_errors.append(f"PMG '{config.spec.pmg}' not found")
 
-            # Check work directory
             check_dir = work_dir or config.spec.execution.work_dir
             if check_dir:
-                from pathlib import Path
-
                 wd = Path(check_dir)
                 if not wd.exists():
                     console.print(
                         f"[yellow]⚠[/yellow] Work directory '{wd}' does not exist, creating..."
                     )
                     wd.mkdir(parents=True, exist_ok=True)
-                    console.print(f"[green]✓[/green] Created work directory: {wd}")
 
             if validation_errors:
                 console.print("[red]✗[/red] Validation failed:")
                 for error in validation_errors:
                     console.print(f"   [red]•[/red] {error}")
-                console.print(
-                    "\n[yellow]Hint:[/yellow] Run with --skip-validation to bypass (not recommended)"
-                )
                 raise typer.Exit(1)
-
         except typer.Exit:
             raise
         except Exception as e:
@@ -534,12 +516,10 @@ def run(
 
     # Build overrides
     overrides = Overrides()
-
     if set_var:
         for var in set_var:
             if "=" in var:
                 key, value = var.split("=", 1)
-                # Handle nested keys like task.name
                 keys = key.split(".")
                 target = overrides.variable_values
                 for k in keys[:-1]:
@@ -547,141 +527,30 @@ def run(
                         target[k] = {}
                     target = target[k]
                 target[keys[-1]] = value
-
     if set_env:
         for env in set_env:
             if "=" in env:
                 key, value = env.split("=", 1)
                 overrides.env_vars[key] = value
-
     if set_param:
         for param in set_param:
             if "=" in param:
                 key, value = param.split("=", 1)
                 overrides.agent_params[key] = value
 
-    # Execute
-    executor = PJobExecutor()
-
-    # Respect async config from PJob if background not explicitly set
-    if not background and config.spec.execution.async_ and not dry_run:
-        background = True
-
-    # Background execution: spawn a detached subprocess
-    if background and not dry_run:
-        import json
-        import subprocess
-        import sys
-        import time
-        import uuid
-        from pathlib import Path
-
-        execution_id = str(uuid.uuid4())[:8]
-        log_dir = get_zima_home() / "logs" / "background"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = log_dir / f"{code}-{execution_id}.log"
-
-        overrides_json = json.dumps(overrides.to_dict()) if not overrides.is_empty() else "{}"
-
-        cmd = [
-            sys.executable,
-            "-m",
-            "zima.execution.background_runner",
-            code,
-            "--overrides",
-            overrides_json,
-        ]
-        if keep_temp:
-            cmd.append("--keep-temp")
-
-        kwargs = {}
-        if sys.platform == "win32":
-            # CREATE_NO_WINDOW: 不显示控制台窗口（后台静默运行）
-            # CREATE_NEW_PROCESS_GROUP: 创建新进程组，防止接收父进程的Ctrl+C
-            kwargs["creationflags"] = (
-                subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+    # ==================================================================
+    # Dry-run: render only, no background spawn
+    # ==================================================================
+    if dry_run:
+        executor = PJobExecutor()
+        try:
+            result = executor.execute(
+                pjob_code=code,
+                overrides=overrides,
+                dry_run=True,
+                keep_temp=keep_temp,
             )
-        else:
-            kwargs["start_new_session"] = True
-
-        with open(log_path, "w", encoding="utf-8") as log_file:
-            process = subprocess.Popen(
-                cmd,
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL,
-                close_fds=True,
-                **kwargs,
-            )
-
-        console.print(f"\n[green]✓[/green] PJob '{code}' started in background")
-        console.print(f"   Execution ID: {execution_id}")
-        console.print(f"   Process PID: {process.pid}")
-        console.print(f"   Log file: {log_path}")
-
-        # Follow log output if requested
-        if follow:
-            console.print(
-                "\n[blue]ℹ[/blue] Following log output... (Press Ctrl+C to stop following)"
-            )
-            console.print(
-                "   [yellow]Note:[/yellow] The background process will continue running even after you stop following.\n"
-            )
-            console.print("─" * 60)
-
-            try:
-                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-                    # Go to end of file
-                    f.seek(0, 2)
-
-                    while True:
-                        line = f.readline()
-                        if line:
-                            console.print(line.rstrip(), markup=False)
-                        else:
-                            # Check if process has finished
-                            if process.poll() is not None:
-                                break
-                            time.sleep(0.5)
-            except KeyboardInterrupt:
-                console.print("\n\n[yellow]⚠[/yellow] Stopped following log output.")
-                console.print(
-                    f"   [green]✓[/green] Background process (PID: {process.pid}) is still running."
-                )
-                console.print(
-                    f"   View logs anytime: [bold]Get-Content '{log_path}' -Tail 100[/bold]"
-                )
-                console.print(f"   Check history: [bold]zima pjob history {code}[/bold]")
-                raise typer.Exit(0)
-
-            console.print("─" * 60)
-            console.print("\n[green]✓[/green] Background process completed.")
-            console.print(f"   Check result with: [bold]zima pjob history {code}[/bold]")
-        else:
-            console.print(f"   Check history later with: [bold]zima pjob history {code}[/bold]")
-
-        return
-
-    try:
-        result = executor.execute(
-            pjob_code=code,
-            overrides=overrides,
-            dry_run=dry_run,
-            keep_temp=keep_temp,
-        )
-
-        # Save to history
-        if not dry_run:
-            from zima.execution.history import ExecutionRecord
-
-            history = ExecutionHistory()
-            history.add(ExecutionRecord.from_result(result))
-
-        # Output result
-        if dry_run:
             console.print(Panel("[bold yellow]DRY RUN[/bold yellow]"))
-
-            # Show rendered workflow prompt
             if result.prompt_content:
                 console.print(
                     Panel(
@@ -690,19 +559,18 @@ def run(
                         border_style="blue",
                     )
                 )
-
             console.print("\nCommand that would be executed:")
             console.print(Syntax(" ".join(result.command), "bash"))
             console.print("\nEnvironment variables:")
-            # Sensitive key patterns to mask in dry-run output
             import re
 
             _SENSITIVE_RE = re.compile(
                 r"(TOKEN|SECRET|PASSWORD|CREDENTIAL|PRIVATE_KEY|API_KEY|_PAT\b)",
                 re.IGNORECASE,
             )
-            # Exclude path-like variables that happen to contain sensitive keywords
-            _PATH_RE = re.compile(r"(^PATH$|_PATH$|C_INCLUDE|EXEPATH|POSH_THEMES)", re.IGNORECASE)
+            _PATH_RE = re.compile(
+                r"(^PATH$|_PATH$|C_INCLUDE|EXEPATH|POSH_THEMES)", re.IGNORECASE
+            )
             for key, value in result.env.items():
                 is_sensitive = bool(_SENSITIVE_RE.search(key)) and not _PATH_RE.search(key)
                 if is_sensitive:
@@ -710,52 +578,114 @@ def run(
                     console.print(f"  {key}={masked}")
                 else:
                     console.print(f"  {key}={value}")
-        else:
-            if result.status.value == "success":
-                console.print(
-                    f"\n[green]✓[/green] Execution completed in {result.duration_seconds:.1f}s"
-                )
-            elif result.status.value == "cancelled":
-                console.print(
-                    f"\n[yellow]⚠[/yellow] Execution cancelled in {result.duration_seconds:.1f}s"
-                )
-                if result.stderr:
-                    console.print(
-                        Panel(result.stderr, title="[yellow]Info[/yellow]", border_style="yellow")
-                    )
-            else:
-                console.print(f"\n[red]✗[/red] Execution failed with status: {result.status.value}")
-                if result.returncode != 0:
-                    console.print(f"   Return code: {result.returncode}")
-                if result.stderr:
-                    console.print(
-                        Panel(result.stderr, title="[red]Error[/red]", border_style="red")
-                    )
-                if result.error_detail:
-                    console.print(
-                        Panel(
-                            result.error_detail,
-                            title="[red]Error Detail[/red]",
-                            border_style="red",
-                        )
-                    )
+        except Exception as e:
+            import traceback
 
-    except KeyboardInterrupt:
-        # Handle Ctrl+C at CLI level
-        console.print("\n[yellow]⚠[/yellow] Interrupted by user")
-        raise typer.Exit(130)  # Standard exit code for Ctrl+C
-    except Exception as e:
-        import traceback
-
-        console.print(f"[red]✗[/red] Execution failed: {e}")
-        console.print(
-            Panel(
-                Syntax(traceback.format_exc(), "python"),
-                title="[red]Stack Trace[/red]",
-                border_style="red",
+            console.print(f"[red]✗[/red] Dry-run failed: {e}")
+            console.print(
+                Panel(
+                    Syntax(traceback.format_exc(), "python"),
+                    title="[red]Stack Trace[/red]",
+                    border_style="red",
+                )
             )
+            raise typer.Exit(1)
+        return
+
+    # ==================================================================
+    # Background execution (default)
+    # ==================================================================
+    import json
+    import subprocess
+    import sys
+    import uuid
+    from datetime import datetime, timezone
+
+    from zima.execution.history import ExecutionHistory
+
+    execution_id = str(uuid.uuid4())[:8]
+    log_dir = get_zima_home() / "logs" / "background"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"{code}-{execution_id}.log"
+    started_at = datetime.now(timezone.utc).astimezone().isoformat()
+
+    # Build command for dry-run to capture what would execute
+    executor = PJobExecutor()
+    dry_result = executor.execute(
+        pjob_code=code,
+        overrides=overrides,
+        dry_run=True,
+        keep_temp=keep_temp,
+    )
+
+    # 1. Write initial state file BEFORE spawning
+    history = ExecutionHistory()
+    history.write_runtime_state(
+        code,
+        execution_id,
+        {
+            "execution_id": execution_id,
+            "pjob_code": code,
+            "status": "running",
+            "pid": None,
+            "command": dry_result.command,
+            "started_at": started_at,
+            "finished_at": None,
+            "duration_seconds": None,
+            "returncode": None,
+            "stdout_preview": "",
+            "stderr_preview": "",
+            "error_detail": "",
+            "log_path": str(log_path),
+            "agent": config.spec.agent if "config" in dir() else "",
+            "workflow": config.spec.workflow if "config" in dir() else "",
+        },
+    )
+
+    # 2. Build subprocess command
+    overrides_json = (
+        json.dumps(overrides.to_dict()) if not overrides.is_empty() else "{}"
+    )
+    cmd = [
+        sys.executable,
+        "-m",
+        "zima.execution.background_runner",
+        code,
+        "--execution-id",
+        execution_id,
+        "--overrides",
+        overrides_json,
+    ]
+    if keep_temp:
+        cmd.append("--keep-temp")
+
+    kwargs = {}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = (
+            subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
         )
-        raise typer.Exit(1)
+    else:
+        kwargs["start_new_session"] = True
+
+    with open(log_path, "w", encoding="utf-8") as log_file:
+        process = subprocess.Popen(
+            cmd,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            close_fds=True,
+            **kwargs,
+        )
+
+    # 3. Update state file with actual PID
+    history.update_runtime_state(code, execution_id, pid=process.pid)
+
+    # 4. Print summary
+    console.print(f"\n[green]✓[/green] PJob '{code}' started")
+    console.print(f"   Execution ID: {execution_id}")
+    console.print(f"   PID: {process.pid}")
+    console.print(f"   Log: {log_path}")
+    console.print(f"   Status: [bold]zima pjob status {code}[/bold]")
 
 
 @app.command()

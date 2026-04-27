@@ -173,22 +173,40 @@ class TestIssue38MockVerification(TestIsolator):
         wf_code = self._create_simple_workflow()
         pjob_code = self._create_verify_pjob(agent_code, wf_code)
 
-        # Run the PJob
+        # Run the PJob (background by default)
         result = runner.invoke(app, ["pjob", "run", pjob_code])
         assert result.exit_code == 0, f"PJob run failed: {result.output}"
-        assert "success" in result.output.lower() or "completed" in result.output.lower()
+        assert "started" in result.output.lower()
+        assert "Execution ID" in result.output
+        assert "PID" in result.output
 
-        # Verify history file exists with success status (directory-based)
         zima_home = get_zima_home()
         history_dir = zima_home / "history" / "pjobs" / pjob_code
-        assert history_dir.is_dir(), f"History directory should exist after PJob run: {history_dir}"
-        json_files = list(history_dir.glob("*.json"))
-        assert len(json_files) >= 1, "Should have at least one execution JSON file"
-        latest_file = sorted(json_files)[-1]
-        record = json.loads(latest_file.read_text(encoding="utf-8"))
-        assert (
-            record["status"] == "success"
-        ), f"Record should have success status, got: {record['status']}"
+
+        # Wait for background process to complete (state file should show success)
+        deadline = time.monotonic() + 15.0
+        found_success = False
+        final_state = None
+        while time.monotonic() < deadline:
+            json_files = list(history_dir.glob("*.json"))
+            if json_files:
+                latest_file = sorted(json_files)[-1]
+                try:
+                    state = json.loads(latest_file.read_text(encoding="utf-8"))
+                    if state.get("status") == "success":
+                        found_success = True
+                        final_state = state
+                        break
+                except (json.JSONDecodeError, IOError):
+                    pass
+            time.sleep(0.5)
+
+        assert found_success, (
+            f"PJob should complete with success within 15s. "
+            f"history_dir={history_dir}"
+        )
+        assert final_state["returncode"] == 0
+        assert final_state["pjob_code"] == pjob_code
 
     def test_daemon_start_and_state(self):
         """AC #2 + #4: Start daemon with schedule, verify PID and state."""
@@ -277,11 +295,11 @@ class TestIssue38MockVerification(TestIsolator):
                 f"history_dir={history_dir}, exists={history_dir.exists()}"
             )
 
-            # Verify log content shows successful execution
+            # Verify log content shows the PJob was spawned
             log_content = found_log_files[0].read_text(encoding="utf-8")
             assert (
-                "success" in log_content
-            ), f"PJob log should contain 'success': {log_content[:300]}"
+                "started" in log_content
+            ), f"PJob log should contain 'started': {log_content[:300]}"
         finally:
             runner.invoke(app, ["daemon", "stop"])
 
