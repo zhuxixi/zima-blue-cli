@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Optional
 
@@ -63,10 +64,17 @@ QUICKSTART_SCENES = BUILTIN_SCENES  # backward compat alias
 
 def load_scenes() -> dict[str, Scene]:
     """Load built-in scenes merged with user-defined scenes from ~/.zima/scenes.yaml."""
-    scenes = BUILTIN_SCENES.copy()
+    scenes = {k: copy.deepcopy(v) for k, v in BUILTIN_SCENES.items()}
     user_path = get_zima_home() / "scenes.yaml"
     if user_path.exists():
-        data = yaml.safe_load(user_path.read_text(encoding="utf-8")) or {}
+        try:
+            data = yaml.safe_load(user_path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError as e:
+            print(f"Warning: Failed to parse scenes.yaml: {e}")
+            return scenes
         for key, spec in data.get("scenes", {}).items():
-            scenes[key] = Scene(**spec)
+            try:
+                scenes[key] = Scene(**spec)
+            except TypeError as e:
+                print(f"Warning: Invalid scene config '{key}': {e}")
     return scenes

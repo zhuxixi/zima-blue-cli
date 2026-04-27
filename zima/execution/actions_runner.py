@@ -92,17 +92,17 @@ class ActionsRunner:
             for label in action.add_labels:
                 try:
                     provider.add_label(action.repo, action.issue, label)
-                except RuntimeError as e:
+                except Exception as e:
                     print(f"Warning: Failed to add label '{label}': {e}")
             for label in action.remove_labels:
                 try:
                     provider.remove_label(action.repo, action.issue, label)
-                except RuntimeError as e:
+                except Exception as e:
                     print(f"Warning: Failed to remove label '{label}': {e}")
 
         elif action.type == "add_comment":
             if action.body:
                 try:
                     provider.post_comment(action.repo, action.issue, action.body)
-                except RuntimeError as e:
+                except Exception as e:
                     print(f"Warning: Failed to post comment: {e}")

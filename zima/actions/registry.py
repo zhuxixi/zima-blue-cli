@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.metadata
+import threading
 from typing import Optional
 
 from zima.actions.base import ActionProvider
@@ -75,17 +76,19 @@ class ProviderRegistry:
 
 
 _default_registry: Optional[ProviderRegistry] = None
+_registry_lock = threading.RLock()
 
 
 def get_default_registry() -> ProviderRegistry:
     """Return the singleton ``ProviderRegistry`` instance.
 
-    Creates the registry on first call.
+    Creates the registry on first call. Thread-safe via ``RLock``.
     """
     global _default_registry
-    if _default_registry is None:
-        _default_registry = ProviderRegistry()
-    return _default_registry
+    with _registry_lock:
+        if _default_registry is None:
+            _default_registry = ProviderRegistry()
+        return _default_registry
 
 
 def reset_registry() -> None:
