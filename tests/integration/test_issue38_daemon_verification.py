@@ -266,24 +266,19 @@ class TestIssue38MockVerification(TestIsolator):
         agent_code, wf_code, pjob_code, schedule_code = self._setup_all()
 
         zima_home = get_zima_home()
-        history_dir = zima_home / "daemon" / "history"
+        log_dir = zima_home / "logs" / "background"
 
         # Start daemon
         result = runner.invoke(app, ["daemon", "start", "--schedule", schedule_code])
         assert result.exit_code == 0, f"Daemon start failed: {result.output}"
 
         try:
-            # Poll for history log files containing the pjob code.
-            # The daemon writes PJob output to .log files in daemon/history/.
-            # Note: the daemon creates the log file immediately when spawning
-            # a PJob, but content only appears once the PJob completes (~2-3s).
-            # JSONL records are written when PJobs are killed/timed-out at
-            # stage transitions; successfully completed PJobs only have .log files.
+            # Poll for background log files containing the pjob code.
             deadline = time.monotonic() + 15.0
             found_log_files = []
             while time.monotonic() < deadline:
-                if history_dir.exists():
-                    for log_file in history_dir.glob("*.log"):
+                if log_dir.exists():
+                    for log_file in log_dir.glob("*.log"):
                         if pjob_code in log_file.name and log_file.stat().st_size > 0:
                             found_log_files.append(log_file)
                 if found_log_files:
@@ -291,15 +286,15 @@ class TestIssue38MockVerification(TestIsolator):
                 time.sleep(1.0)
 
             assert len(found_log_files) > 0, (
-                f"Expected daemon history log files for {pjob_code} within 15s, "
-                f"history_dir={history_dir}, exists={history_dir.exists()}"
+                f"Expected background log files for {pjob_code} within 15s, "
+                f"log_dir={log_dir}, exists={log_dir.exists()}"
             )
 
-            # Verify log content shows the PJob was spawned
+            # Verify log content shows the PJob ran (background_runner output)
             log_content = found_log_files[0].read_text(encoding="utf-8")
             assert (
-                "started" in log_content
-            ), f"PJob log should contain 'started': {log_content[:300]}"
+                "success" in log_content or "status" in log_content
+            ), f"PJob log should contain execution output: {log_content[:300]}"
         finally:
             runner.invoke(app, ["daemon", "stop"])
 

@@ -61,18 +61,22 @@ class TestStageTransitions:
         assert record["pjobCode"] == "p1"
         assert record["status"] == "terminated"
 
-    def test_start_pjob_launch_failed(self, tmp_path):
+    def test_start_pjob_launch_failed(self, tmp_path, monkeypatch):
         cfg = ScheduleConfig.create(code="daily", name="Daily")
         sched = DaemonScheduler(cfg, tmp_path)
         sched.current_cycle = 1
         sched.current_stage = "work"
 
+        # Point ZIMA_HOME to tmp_path so execution state files use isolated dir
+        monkeypatch.setenv("ZIMA_HOME", str(tmp_path))
+
         with patch("zima.core.daemon_scheduler.subprocess.Popen", side_effect=OSError("boom")):
             sched._start_pjob("bad-pjob")
 
-        history_file = tmp_path / "history"
-        jsonl_files = list(history_file.glob("*.jsonl"))
-        assert len(jsonl_files) == 1
-        record = json.loads(jsonl_files[0].read_text(encoding="utf-8").strip().split("\n")[0])
-        assert record["pjobCode"] == "bad-pjob"
-        assert record["status"] == "launch_failed"
+        # Check execution state file was written (new directory-based history)
+        state_dir = tmp_path / "history" / "pjobs" / "bad-pjob"
+        json_files = list(state_dir.glob("*.json"))
+        assert len(json_files) == 1, f"Expected state file in {state_dir}, found: {json_files}"
+        record = json.loads(json_files[0].read_text(encoding="utf-8"))
+        assert record["pjob_code"] == "bad-pjob"
+        assert record["status"] == "failed"
