@@ -214,12 +214,12 @@ class AgentConfig(BaseConfig):
                 cmd.extend(["--prompt", str(prompt_file)])
             # Claude: prompt_file is passed via stdin pipe by the executor, not added to cmd
 
-        # Add working directory flag — agent-type-specific
-        if work_dir:
-            if self.type == "claude":
-                cmd.extend(["--cwd", str(work_dir)])
-            else:
-                cmd.extend(["--work-dir", str(work_dir)])
+        # Add working directory flag — only for agents that support it.
+        # Claude Code does not have a --work-dir or --cwd CLI flag; the
+        # working directory is handled by subprocess.Popen(cwd=...) in the
+        # executor. Kimi CLI supports --work-dir.
+        if work_dir and self.type == "kimi":
+            cmd.extend(["--work-dir", str(work_dir)])
 
         return cmd
 
