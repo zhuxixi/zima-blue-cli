@@ -637,8 +637,8 @@ def run(
             "stderr_preview": "",
             "error_detail": "",
             "log_path": str(log_path),
-            "agent": config.spec.agent if "config" in dir() else "",
-            "workflow": config.spec.workflow if "config" in dir() else "",
+            "agent": config.spec.agent,
+            "workflow": config.spec.workflow,
         },
     )
 
