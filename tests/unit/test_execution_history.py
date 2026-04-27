@@ -1,7 +1,7 @@
 """Unit tests for ExecutionHistory directory-based storage."""
+
 import json
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -17,6 +17,7 @@ class TestExecutionHistoryWriteAndRead:
 
     def test_write_runtime_state_creates_file(self):
         import os
+
         state = {
             "execution_id": self.exec_id,
             "pjob_code": self.pjob_code,
@@ -35,16 +36,23 @@ class TestExecutionHistoryWriteAndRead:
         assert data["execution_id"] == self.exec_id
 
     def test_update_runtime_state_modifies_file(self):
-        self.history.write_runtime_state(self.pjob_code, self.exec_id, {
-            "execution_id": self.exec_id,
-            "pjob_code": self.pjob_code,
-            "status": "running",
-            "pid": 12345,
-            "started_at": "2026-04-28T10:30:00+08:00",
-        })
+        self.history.write_runtime_state(
+            self.pjob_code,
+            self.exec_id,
+            {
+                "execution_id": self.exec_id,
+                "pjob_code": self.pjob_code,
+                "status": "running",
+                "pid": 12345,
+                "started_at": "2026-04-28T10:30:00+08:00",
+            },
+        )
         self.history.update_runtime_state(
-            self.pjob_code, self.exec_id,
-            status="success", returncode=0, duration_seconds=10.5,
+            self.pjob_code,
+            self.exec_id,
+            status="success",
+            returncode=0,
+            duration_seconds=10.5,
             finished_at="2026-04-28T10:30:10+08:00",
             stdout_preview="hello world",
             stderr_preview="",
@@ -60,70 +68,110 @@ class TestExecutionHistoryWriteAndRead:
 
     def test_list_executions_returns_all(self):
         for eid, status in [("a1", "success"), ("b2", "running"), ("c3", "failed")]:
-            self.history.write_runtime_state(self.pjob_code, eid, {
-                "execution_id": eid,
-                "pjob_code": self.pjob_code,
-                "status": status,
-                "pid": 10000,
-                "started_at": f"2026-04-28T10:30:0{eid[-1]}+08:00",
-            })
+            self.history.write_runtime_state(
+                self.pjob_code,
+                eid,
+                {
+                    "execution_id": eid,
+                    "pjob_code": self.pjob_code,
+                    "status": status,
+                    "pid": 10000,
+                    "started_at": f"2026-04-28T10:30:0{eid[-1]}+08:00",
+                },
+            )
         records = self.history.list_executions(self.pjob_code)
         assert len(records) == 3
 
     def test_list_executions_filter_by_status(self):
         import os
+
         for eid, status in [("a1", "success"), ("b2", "running"), ("c3", "failed")]:
-            self.history.write_runtime_state(self.pjob_code, eid, {
-                "execution_id": eid,
-                "pjob_code": self.pjob_code,
-                "status": status,
-                "pid": os.getpid() if status == "running" else 99999,
-                "started_at": f"2026-04-28T10:30:0{eid[-1]}+08:00",
-            })
+            self.history.write_runtime_state(
+                self.pjob_code,
+                eid,
+                {
+                    "execution_id": eid,
+                    "pjob_code": self.pjob_code,
+                    "status": status,
+                    "pid": os.getpid() if status == "running" else 99999,
+                    "started_at": f"2026-04-28T10:30:0{eid[-1]}+08:00",
+                },
+            )
         running = self.history.list_executions(self.pjob_code, status="running")
         assert len(running) == 1
         assert running[0]["execution_id"] == "b2"
 
     def test_get_all_running_across_pjobs(self):
         import os
-        self.history.write_runtime_state("foo", "a1", {
-            "execution_id": "a1", "pjob_code": "foo",
-            "status": "running", "pid": os.getpid(),
-            "started_at": "2026-04-28T10:30:00+08:00",
-        })
-        self.history.write_runtime_state("bar", "b2", {
-            "execution_id": "b2", "pjob_code": "bar",
-            "status": "running", "pid": os.getpid(),
-            "started_at": "2026-04-28T10:31:00+08:00",
-        })
-        self.history.write_runtime_state("foo", "c3", {
-            "execution_id": "c3", "pjob_code": "foo",
-            "status": "success", "pid": 99999,
-            "started_at": "2026-04-28T10:30:00+08:00",
-        })
+
+        self.history.write_runtime_state(
+            "foo",
+            "a1",
+            {
+                "execution_id": "a1",
+                "pjob_code": "foo",
+                "status": "running",
+                "pid": os.getpid(),
+                "started_at": "2026-04-28T10:30:00+08:00",
+            },
+        )
+        self.history.write_runtime_state(
+            "bar",
+            "b2",
+            {
+                "execution_id": "b2",
+                "pjob_code": "bar",
+                "status": "running",
+                "pid": os.getpid(),
+                "started_at": "2026-04-28T10:31:00+08:00",
+            },
+        )
+        self.history.write_runtime_state(
+            "foo",
+            "c3",
+            {
+                "execution_id": "c3",
+                "pjob_code": "foo",
+                "status": "success",
+                "pid": 99999,
+                "started_at": "2026-04-28T10:30:00+08:00",
+            },
+        )
         running = self.history.get_all_running()
         assert len(running) == 2
 
     def test_clear_history_removes_directory(self):
-        self.history.write_runtime_state(self.pjob_code, self.exec_id, {
-            "execution_id": self.exec_id, "pjob_code": self.pjob_code,
-            "status": "success", "pid": 1,
-            "started_at": "2026-04-28T10:30:00+08:00",
-        })
+        self.history.write_runtime_state(
+            self.pjob_code,
+            self.exec_id,
+            {
+                "execution_id": self.exec_id,
+                "pjob_code": self.pjob_code,
+                "status": "success",
+                "pid": 1,
+                "started_at": "2026-04-28T10:30:00+08:00",
+            },
+        )
         self.history.clear_history(self.pjob_code)
         records = self.history.list_executions(self.pjob_code)
         assert len(records) == 0
 
     def test_get_stats_computes_correctly(self):
-        for i, (eid, status, dur) in enumerate([
-            ("a1", "success", 10.0), ("b2", "success", 20.0), ("c3", "failed", 5.0)
-        ]):
-            self.history.write_runtime_state(self.pjob_code, eid, {
-                "execution_id": eid, "pjob_code": self.pjob_code,
-                "status": status, "pid": i,
-                "duration_seconds": dur,
-                "started_at": f"2026-04-28T10:30:0{i}+08:00",
-            })
+        for i, (eid, status, dur) in enumerate(
+            [("a1", "success", 10.0), ("b2", "success", 20.0), ("c3", "failed", 5.0)]
+        ):
+            self.history.write_runtime_state(
+                self.pjob_code,
+                eid,
+                {
+                    "execution_id": eid,
+                    "pjob_code": self.pjob_code,
+                    "status": status,
+                    "pid": i,
+                    "duration_seconds": dur,
+                    "started_at": f"2026-04-28T10:30:0{i}+08:00",
+                },
+            )
         stats = self.history.get_stats(self.pjob_code)
         assert stats["total"] == 3
         assert stats["success"] == 2
@@ -132,13 +180,17 @@ class TestExecutionHistoryWriteAndRead:
 
     def test_dead_pid_auto_detection(self):
         """Running entries with dead PIDs are auto-marked 'dead' and persisted."""
-        self.history.write_runtime_state(self.pjob_code, self.exec_id, {
-            "execution_id": self.exec_id,
-            "pjob_code": self.pjob_code,
-            "status": "running",
-            "pid": 99999999,  # definitely dead
-            "started_at": "2026-04-28T10:30:00+08:00",
-        })
+        self.history.write_runtime_state(
+            self.pjob_code,
+            self.exec_id,
+            {
+                "execution_id": self.exec_id,
+                "pjob_code": self.pjob_code,
+                "status": "running",
+                "pid": 99999999,  # definitely dead
+                "started_at": "2026-04-28T10:30:00+08:00",
+            },
+        )
         records = self.history.list_executions(self.pjob_code)
         assert len(records) == 1
         # Auto-marked in memory
@@ -157,6 +209,7 @@ class TestLegacyMigration:
 
     def test_migration_from_pjobs_json(self):
         import json
+
         legacy_file = Path(self.zima_home) / "history" / "pjobs.json"
         legacy_file.parent.mkdir(parents=True, exist_ok=True)
         legacy_data = {
@@ -214,6 +267,7 @@ class TestPidAlive:
 
     def test_is_pid_alive_current_process(self):
         import os
+
         assert _is_pid_alive(os.getpid())
 
     def test_is_pid_alive_dead_pid(self):

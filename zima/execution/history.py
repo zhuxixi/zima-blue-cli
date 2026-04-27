@@ -20,7 +20,6 @@ from typing import Optional
 
 from zima.utils import get_zima_home
 
-
 # =============================================================================
 # PID liveness check (cross-platform)
 # =============================================================================
@@ -138,16 +137,8 @@ class ExecutionRecord:
     def from_result(cls, result) -> ExecutionRecord:
         """Create from ExecutionResult."""
         # Truncate previews
-        stdout_preview = (
-            result.stdout[:500] + "..."
-            if len(result.stdout) > 500
-            else result.stdout
-        )
-        stderr_preview = (
-            result.stderr[:500] + "..."
-            if len(result.stderr) > 500
-            else result.stderr
-        )
+        stdout_preview = result.stdout[:500] + "..." if len(result.stdout) > 500 else result.stdout
+        stderr_preview = result.stderr[:500] + "..." if len(result.stderr) > 500 else result.stderr
         error_detail = result.error_detail
         if len(error_detail) > 2000:
             error_detail = error_detail[:2000] + "...\n[truncated]"
@@ -239,9 +230,7 @@ class ExecutionHistory:
         except (json.JSONDecodeError, IOError):
             return None
 
-    def _iter_state_files(
-        self, pjob_code: str, status: Optional[str] = None
-    ) -> list[dict]:
+    def _iter_state_files(self, pjob_code: str, status: Optional[str] = None) -> list[dict]:
         """Return all state dicts for a PJob, optionally filtered by status.
 
         Files are sorted by ``started_at`` descending.  Running entries whose
@@ -297,9 +286,7 @@ class ExecutionHistory:
     # Runtime-state public API (new directory-based methods)
     # ------------------------------------------------------------------
 
-    def write_runtime_state(
-        self, pjob_code: str, execution_id: str, state: dict
-    ) -> Path:
+    def write_runtime_state(self, pjob_code: str, execution_id: str, state: dict) -> Path:
         """Write a runtime state dict to disk.
 
         The ``state`` dict should contain any of the fields listed in
@@ -339,9 +326,7 @@ class ExecutionHistory:
             encoding="utf-8",
         )
 
-    def get_runtime_state(
-        self, pjob_code: str, execution_id: str
-    ) -> Optional[dict]:
+    def get_runtime_state(self, pjob_code: str, execution_id: str) -> Optional[dict]:
         """Return the runtime state dict, or ``None`` if it doesn't exist."""
         return self._load_state(pjob_code, execution_id)
 
@@ -436,7 +421,14 @@ class ExecutionHistory:
         state = record.to_dict()
         # Ensure all fields that the new format expects are present
         for fld in _STATE_FILE_FIELDS:
-            state.setdefault(fld, None if fld == "pid" else ("" if fld in ("log_path", "agent", "workflow") else None))
+            state.setdefault(
+                fld,
+                (
+                    None
+                    if fld == "pid"
+                    else ("" if fld in ("log_path", "agent", "workflow") else None)
+                ),
+            )
         # Convert None values to null-friendly placeholders for JSON
         self.write_runtime_state(record.pjob_code, record.execution_id, state)
 
@@ -453,9 +445,7 @@ class ExecutionHistory:
         raw = self.list_executions(pjob_code, status=status)
         return [ExecutionRecord.from_dict(r) for r in raw[:limit]]
 
-    def get_record(
-        self, pjob_code: str, execution_id: str
-    ) -> Optional[ExecutionRecord]:
+    def get_record(self, pjob_code: str, execution_id: str) -> Optional[ExecutionRecord]:
         """Get a specific execution record (backward-compatible).
 
         Delegates to :meth:`get_runtime_state`.
@@ -470,9 +460,7 @@ class ExecutionHistory:
         self._ensure_migrated()
         if not self._base_dir.is_dir():
             return []
-        return sorted(
-            p.name for p in self._base_dir.iterdir() if p.is_dir()
-        )
+        return sorted(p.name for p in self._base_dir.iterdir() if p.is_dir())
 
     # ------------------------------------------------------------------
     # Legacy migration

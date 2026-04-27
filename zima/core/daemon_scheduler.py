@@ -11,9 +11,9 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from zima.execution.history import ExecutionHistory
 from zima.models.schedule import ScheduleConfig
 from zima.utils import get_zima_home
-from zima.execution.history import ExecutionHistory
 
 
 class DaemonScheduler:
@@ -138,27 +138,35 @@ class DaemonScheduler:
 
         # Write initial state file
         history = ExecutionHistory()
-        history.write_runtime_state(code, execution_id, {
-            "execution_id": execution_id,
-            "pjob_code": code,
-            "status": "running",
-            "pid": None,
-            "command": [],
-            "started_at": started_at,
-            "finished_at": None,
-            "duration_seconds": None,
-            "returncode": None,
-            "stdout_preview": "",
-            "stderr_preview": "",
-            "error_detail": "",
-            "log_path": str(log_file),
-            "agent": "",
-            "workflow": "",
-        })
+        history.write_runtime_state(
+            code,
+            execution_id,
+            {
+                "execution_id": execution_id,
+                "pjob_code": code,
+                "status": "running",
+                "pid": None,
+                "command": [],
+                "started_at": started_at,
+                "finished_at": None,
+                "duration_seconds": None,
+                "returncode": None,
+                "stdout_preview": "",
+                "stderr_preview": "",
+                "error_detail": "",
+                "log_path": str(log_file),
+                "agent": "",
+                "workflow": "",
+            },
+        )
 
         cmd = [
-            sys.executable, "-m", "zima.execution.background_runner",
-            code, "--execution-id", execution_id,
+            sys.executable,
+            "-m",
+            "zima.execution.background_runner",
+            code,
+            "--execution-id",
+            execution_id,
         ]
 
         kwargs: dict = {
@@ -169,7 +177,8 @@ class DaemonScheduler:
         except OSError as e:
             self._log(f"Failed to open log file {log_file}: {e}")
             history.update_runtime_state(
-                code, execution_id,
+                code,
+                execution_id,
                 status="failed",
                 error_detail=str(e),
                 finished_at=datetime.now(timezone.utc).astimezone().isoformat(),
@@ -199,7 +208,8 @@ class DaemonScheduler:
             log_fh.close()
             self._log(f"Failed to start PJob {code}: {e}")
             history.update_runtime_state(
-                code, execution_id,
+                code,
+                execution_id,
                 status="failed",
                 error_detail=str(e),
                 finished_at=datetime.now(timezone.utc).astimezone().isoformat(),
@@ -238,6 +248,7 @@ class DaemonScheduler:
         eid = self._execution_ids.pop(code, None)
         if eid:
             from datetime import datetime, timezone
+
             history = ExecutionHistory()
             finished_at = datetime.now(timezone.utc).astimezone().isoformat()
             try:
@@ -250,7 +261,8 @@ class DaemonScheduler:
             except Exception:
                 dur = None
             history.update_runtime_state(
-                code, eid,
+                code,
+                eid,
                 status="cancelled",
                 finished_at=finished_at,
                 duration_seconds=dur,

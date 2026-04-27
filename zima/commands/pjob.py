@@ -224,6 +224,7 @@ def list_pjobs(
 
     # Check running status
     from zima.execution.history import ExecutionHistory
+
     history = ExecutionHistory()
     running_codes = set(r["pjob_code"] for r in history.get_all_running())
 
@@ -581,9 +582,7 @@ def run(
                 r"(TOKEN|SECRET|PASSWORD|CREDENTIAL|PRIVATE_KEY|API_KEY|_PAT\b)",
                 re.IGNORECASE,
             )
-            _PATH_RE = re.compile(
-                r"(^PATH$|_PATH$|C_INCLUDE|EXEPATH|POSH_THEMES)", re.IGNORECASE
-            )
+            _PATH_RE = re.compile(r"(^PATH$|_PATH$|C_INCLUDE|EXEPATH|POSH_THEMES)", re.IGNORECASE)
             for key, value in result.env.items():
                 is_sensitive = bool(_SENSITIVE_RE.search(key)) and not _PATH_RE.search(key)
                 if is_sensitive:
@@ -656,9 +655,7 @@ def run(
     )
 
     # 2. Build subprocess command
-    overrides_json = (
-        json.dumps(overrides.to_dict()) if not overrides.is_empty() else "{}"
-    )
+    overrides_json = json.dumps(overrides.to_dict()) if not overrides.is_empty() else "{}"
     cmd = [
         sys.executable,
         "-m",
@@ -674,9 +671,7 @@ def run(
 
     kwargs = {}
     if sys.platform == "win32":
-        kwargs["creationflags"] = (
-            subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
-        )
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         kwargs["start_new_session"] = True
 
@@ -811,7 +806,7 @@ def list_running():
         console.print("[yellow]No running PJobs (all state files point to dead processes)[/yellow]")
         return
 
-    console.print(f"\n[bold]Running PJobs[/bold]")
+    console.print("\n[bold]Running PJobs[/bold]")
 
     table = Table()
     table.add_column("Code", style="cyan")
@@ -901,11 +896,14 @@ def cancel(
 
         if pid is None or not _is_pid_alive(pid):
             history.update_runtime_state(
-                code, eid,
+                code,
+                eid,
                 status="dead",
                 finished_at=datetime.now().astimezone().isoformat(),
             )
-            console.print(f"[yellow]⚠[/yellow] Execution '{eid}' — PID {pid} not found, marked as dead")
+            console.print(
+                f"[yellow]⚠[/yellow] Execution '{eid}' — PID {pid} not found, marked as dead"
+            )
             continue
 
         console.print(f"[yellow]Cancelling '{eid}' (PID: {pid})...[/yellow]")
@@ -915,7 +913,9 @@ def cancel(
                 subprocess.run(["taskkill", "/PID", str(pid)], capture_output=True, check=False)
                 time.sleep(5)
                 if _is_pid_alive(pid):
-                    subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True, check=False)
+                    subprocess.run(
+                        ["taskkill", "/F", "/PID", str(pid)], capture_output=True, check=False
+                    )
             else:
                 os.kill(pid, signal.SIGTERM)
                 waited = 0
@@ -932,7 +932,8 @@ def cancel(
             except Exception:
                 dur = None
             history.update_runtime_state(
-                code, eid,
+                code,
+                eid,
                 status="cancelled",
                 finished_at=now,
                 duration_seconds=dur,

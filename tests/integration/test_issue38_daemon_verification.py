@@ -202,8 +202,7 @@ class TestIssue38MockVerification(TestIsolator):
             time.sleep(0.5)
 
         assert found_success, (
-            f"PJob should complete with success within 15s. "
-            f"history_dir={history_dir}"
+            f"PJob should complete with success within 15s. " f"history_dir={history_dir}"
         )
         assert final_state["returncode"] == 0
         assert final_state["pjob_code"] == pjob_code
