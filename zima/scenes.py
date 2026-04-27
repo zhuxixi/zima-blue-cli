@@ -12,6 +12,17 @@ from zima.utils import get_zima_home
 
 @dataclass
 class Scene:
+    """A quickstart scene template with rendering variables and provider config.
+
+    Attributes:
+        name: Display name for the scene.
+        description: Short description shown in the quickstart wizard.
+        workflow_template: Jinja2 template string rendered into the agent prompt.
+        variables: Default variable values for the template.
+        provider: Action provider name (default ``"github"``).
+        scan_command: Optional CLI command to scan for items (e.g. PRs/MRs).
+    """
+
     name: str
     description: str
     workflow_template: str
