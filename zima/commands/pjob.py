@@ -222,10 +222,21 @@ def list_pjobs(
         console.print("[yellow]No PJobs match the specified filters[/yellow]")
         return
 
+    # Check running status
+    from zima.execution.history import ExecutionHistory
+    history = ExecutionHistory()
+    running_codes = set(r["pjob_code"] for r in history.get_all_running())
+
     if output_format == "json":
         import json
 
-        console.print(json.dumps(configs, indent=2, ensure_ascii=False))
+        output = []
+        for c in configs:
+            code = c.get("metadata", {}).get("code", "-")
+            entry = dict(c)
+            entry["_running"] = code in running_codes
+            output.append(entry)
+        console.print(json.dumps(output, indent=2, ensure_ascii=False))
     else:
         # Table format
         table = Table(title="PJobs")
@@ -234,6 +245,7 @@ def list_pjobs(
         table.add_column("Agent", style="yellow")
         table.add_column("Workflow", style="blue")
         table.add_column("Labels", style="dim")
+        table.add_column("Running")
 
         for config in configs:
             metadata = config.get("metadata", {})
@@ -249,7 +261,8 @@ def list_pjobs(
 
             labels_str = ", ".join(labels) if labels else "-"
 
-            table.add_row(code, name, agent_code, workflow_code, labels_str)
+            running_indicator = "[green]●[/green]" if code in running_codes else "-"
+            table.add_row(code, name, agent_code, workflow_code, labels_str, running_indicator)
 
         console.print(table)
 
@@ -689,6 +702,248 @@ def run(
 
 
 @app.command()
+def status(
+    code: str = typer.Argument(..., help="PJob code"),
+):
+    """Show execution status for a PJob (running + recent history)"""
+    from datetime import datetime
+
+    from zima.execution.history import ExecutionHistory
+
+    history = ExecutionHistory()
+    all_records = history.list_executions(code)
+
+    if not all_records:
+        console.print(f"[yellow]No execution history for '{code}'[/yellow]")
+        return
+
+    running = [r for r in all_records if r.get("status") == "running"]
+    completed = [r for r in all_records if r.get("status") != "running"]
+
+    console.print(f"\n[bold]{code} — {len(all_records)} executions[/bold]")
+
+    table = Table()
+    table.add_column("ID", style="cyan")
+    table.add_column("Status")
+    table.add_column("PID", style="magenta")
+    table.add_column("Started", style="dim")
+    table.add_column("Duration")
+    table.add_column("Log")
+
+    status_styles = {
+        "running": ("● running", "yellow"),
+        "success": ("✓ success", "green"),
+        "failed": ("✗ failed", "red"),
+        "timeout": ("⏱ timeout", "yellow"),
+        "cancelled": ("⊘ cancelled", "dim"),
+        "dead": ("☠ dead", "red"),
+    }
+
+    def _fmt_duration(rec):
+        if rec.get("status") == "running":
+            try:
+                start = datetime.fromisoformat(rec["started_at"])
+                elapsed = (datetime.now().astimezone() - start).total_seconds()
+                mins, secs = divmod(int(elapsed), 60)
+                return f"{mins}m {secs}s"
+            except Exception:
+                return "-"
+        dur = rec.get("duration_seconds")
+        if dur is None:
+            return "-"
+        mins, secs = divmod(int(dur), 60)
+        return f"{mins}m {secs}s"
+
+    def _log_name(rec):
+        path = rec.get("log_path", "")
+        if path:
+            return Path(path).name
+        return "-"
+
+    for rec in running:
+        label, color = status_styles.get(rec.get("status", ""), (rec.get("status", "?"), "white"))
+        table.add_row(
+            rec.get("execution_id", "-"),
+            f"[{color}]{label}[/{color}]",
+            str(rec.get("pid", "-")),
+            rec.get("started_at", "-")[:19],
+            _fmt_duration(rec),
+            _log_name(rec),
+        )
+
+    for rec in completed[:5]:
+        label, color = status_styles.get(rec.get("status", ""), (rec.get("status", "?"), "white"))
+        table.add_row(
+            rec.get("execution_id", "-"),
+            f"[{color}]{label}[/{color}]",
+            str(rec.get("pid", "-")),
+            rec.get("started_at", "-")[:19],
+            _fmt_duration(rec),
+            _log_name(rec),
+        )
+
+    console.print(table)
+    parts = []
+    if running:
+        parts.append(f"{len(running)} running")
+    if completed:
+        parts.append(f"{len(completed)} completed")
+    console.print(f"   {', '.join(parts)}")
+
+
+@app.command(name="ps")
+def list_running():
+    """List all currently running PJobs"""
+    from datetime import datetime
+
+    from zima.execution.history import ExecutionHistory, _is_pid_alive
+
+    history = ExecutionHistory()
+    running = history.get_all_running()
+
+    if not running:
+        console.print("[yellow]No running PJobs[/yellow]")
+        return
+
+    alive = [r for r in running if _is_pid_alive(r.get("pid"))]
+
+    if not alive:
+        console.print("[yellow]No running PJobs (all state files point to dead processes)[/yellow]")
+        return
+
+    console.print(f"\n[bold]Running PJobs[/bold]")
+
+    table = Table()
+    table.add_column("Code", style="cyan")
+    table.add_column("ID", style="cyan")
+    table.add_column("PID", style="magenta")
+    table.add_column("Started", style="dim")
+    table.add_column("Duration")
+    table.add_column("Agent", style="yellow")
+    table.add_column("Log")
+    table.add_column("Status")
+
+    for rec in alive:
+        started = rec.get("started_at", "-")
+        if len(started) > 19:
+            started = started[:19]
+
+        duration = "-"
+        try:
+            start_dt = datetime.fromisoformat(rec["started_at"])
+            elapsed = (datetime.now().astimezone() - start_dt).total_seconds()
+            mins, secs = divmod(int(elapsed), 60)
+            duration = f"{mins}m {secs}s"
+        except Exception:
+            pass
+
+        log_name = "-"
+        log_path = rec.get("log_path", "")
+        if log_path:
+            log_name = Path(log_path).name
+
+        table.add_row(
+            rec.get("pjob_code", "-"),
+            rec.get("execution_id", "-"),
+            str(rec.get("pid", "-")),
+            started,
+            duration,
+            rec.get("agent", "-"),
+            log_name,
+            "[yellow]● running[/yellow]",
+        )
+
+    console.print(table)
+    console.print(f"   {len(alive)} running")
+
+
+@app.command()
+def cancel(
+    code: str = typer.Argument(..., help="PJob code"),
+    execution_id: Optional[str] = typer.Option(
+        None, "--id", help="Cancel specific execution (default: cancel all running)"
+    ),
+):
+    """Cancel running PJob(s)"""
+    import os
+    import signal
+    import subprocess
+    import sys
+    import time
+    from datetime import datetime
+
+    from zima.execution.history import ExecutionHistory, _is_pid_alive
+
+    history = ExecutionHistory()
+
+    if execution_id:
+        state = history.get_runtime_state(code, execution_id)
+        if state is None:
+            console.print(f"[red]✗[/red] Execution '{execution_id}' not found for '{code}'")
+            raise typer.Exit(1)
+        if state.get("status") != "running":
+            console.print(
+                f"[yellow]⚠[/yellow] Execution '{execution_id}' is not running "
+                f"(status: {state.get('status')})"
+            )
+            raise typer.Exit(0)
+        targets = [state]
+    else:
+        targets = history.list_executions(code, status="running")
+
+    if not targets:
+        console.print(f"[yellow]No running executions for '{code}'[/yellow]")
+        return
+
+    for state in targets:
+        pid = state.get("pid")
+        eid = state.get("execution_id")
+
+        if pid is None or not _is_pid_alive(pid):
+            history.update_runtime_state(
+                code, eid,
+                status="dead",
+                finished_at=datetime.now().astimezone().isoformat(),
+            )
+            console.print(f"[yellow]⚠[/yellow] Execution '{eid}' — PID {pid} not found, marked as dead")
+            continue
+
+        console.print(f"[yellow]Cancelling '{eid}' (PID: {pid})...[/yellow]")
+
+        try:
+            if sys.platform == "win32":
+                subprocess.run(["taskkill", "/PID", str(pid)], capture_output=True, check=False)
+                time.sleep(5)
+                if _is_pid_alive(pid):
+                    subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True, check=False)
+            else:
+                os.kill(pid, signal.SIGTERM)
+                waited = 0
+                while _is_pid_alive(pid) and waited < 5:
+                    time.sleep(0.5)
+                    waited += 0.5
+                if _is_pid_alive(pid):
+                    os.kill(pid, signal.SIGKILL)
+
+            now = datetime.now().astimezone().isoformat()
+            try:
+                start = datetime.fromisoformat(state["started_at"])
+                dur = (datetime.now().astimezone() - start).total_seconds()
+            except Exception:
+                dur = None
+            history.update_runtime_state(
+                code, eid,
+                status="cancelled",
+                finished_at=now,
+                duration_seconds=dur,
+            )
+            console.print(f"[green]✓[/green] Cancelled execution '{eid}'")
+
+        except Exception as e:
+            console.print(f"[red]✗[/red] Failed to cancel '{eid}': {e}")
+
+
+@app.command()
 def render(
     code: str = typer.Argument(..., help="PJob code"),
     output: Optional[str] = typer.Option(
@@ -952,14 +1207,20 @@ def show_history(
             "failed": "red",
             "timeout": "yellow",
             "cancelled": "dim",
+            "running": "yellow",
+            "dead": "red",
         }.get(record.status, "white")
+
+        status_label = record.status
+        if record.status == "running":
+            status_label = "(running)"
 
         table.add_row(
             record.execution_id,
-            f"[{status_color}]{record.status}[/{status_color}]",
-            str(record.returncode),
+            f"[{status_color}]{status_label}[/{status_color}]",
+            str(record.returncode) if record.status not in ("running", "dead") else "-",
             str(record.pid) if record.pid else "-",
-            f"{record.duration_seconds:.1f}s",
+            f"{record.duration_seconds:.1f}s" if record.duration_seconds else "-",
             record.started_at[:19] if record.started_at else "-",
         )
 
