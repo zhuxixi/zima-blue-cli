@@ -7,10 +7,13 @@ import subprocess
 import sys
 import threading
 import time
-from datetime import datetime, timedelta
+import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from zima.execution.history import ExecutionHistory
 from zima.models.schedule import ScheduleConfig
+from zima.utils import get_zima_home
 
 
 class DaemonScheduler:
@@ -25,6 +28,7 @@ class DaemonScheduler:
         self.current_stage: str | None = None
         self.active_pjobs: dict[str, subprocess.Popen] = {}
         self._pjob_log_handles: dict[str, object] = {}
+        self._execution_ids: dict[str, str] = {}
         self._timers: list[threading.Timer] = []
         self._lock = threading.RLock()
 
@@ -125,19 +129,65 @@ class DaemonScheduler:
         self._save_state()
 
     def _start_pjob(self, code: str) -> None:
-        """Start a PJob asynchronously."""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = self.log_dir / f"{code}_{timestamp}_{self.current_cycle}.log"
+        """Start a PJob asynchronously, tracked via ExecutionHistory."""
+        execution_id = str(uuid.uuid4())[:8]
+        log_dir = get_zima_home() / "logs" / "background"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / f"{code}-{execution_id}.log"
+        started_at = datetime.now(timezone.utc).astimezone().isoformat()
 
-        cmd = [sys.executable, "-m", "zima.cli", "pjob", "run", code]
+        # Write initial state file
+        history = ExecutionHistory()
+        history.write_runtime_state(
+            code,
+            execution_id,
+            {
+                "execution_id": execution_id,
+                "pjob_code": code,
+                "status": "running",
+                "pid": None,
+                "command": [],
+                "started_at": started_at,
+                "finished_at": None,
+                "duration_seconds": None,
+                "returncode": None,
+                "stdout_preview": "",
+                "stderr_preview": "",
+                "error_detail": "",
+                "log_path": str(log_file),
+                "agent": "",
+                "workflow": "",
+            },
+        )
 
-        # Build platform-specific subprocess kwargs
-        log_fh = open(log_file, "w", encoding="utf-8")
+        cmd = [
+            sys.executable,
+            "-m",
+            "zima.execution.background_runner",
+            code,
+            "--execution-id",
+            execution_id,
+        ]
+
         kwargs: dict = {
             "stdin": subprocess.DEVNULL,
-            "stdout": log_fh,
-            "stderr": subprocess.STDOUT,
         }
+        try:
+            log_fh = open(log_file, "w", encoding="utf-8")
+        except OSError as e:
+            self._log(f"Failed to open log file {log_file}: {e}")
+            history.update_runtime_state(
+                code,
+                execution_id,
+                status="failed",
+                error_detail=str(e),
+                finished_at=datetime.now(timezone.utc).astimezone().isoformat(),
+            )
+            return
+
+        kwargs["stdout"] = log_fh
+        kwargs["stderr"] = subprocess.STDOUT
+
         if sys.platform == "win32":
             kwargs["creationflags"] = (
                 subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
@@ -148,14 +198,22 @@ class DaemonScheduler:
 
         try:
             proc = subprocess.Popen(cmd, **kwargs)
+            history.update_runtime_state(code, execution_id, pid=proc.pid)
             with self._lock:
                 self.active_pjobs[code] = proc
                 self._pjob_log_handles[code] = log_fh
-            self._log(f"Started PJob {code} (PID {proc.pid}), log: {log_file}")
+                self._execution_ids[code] = execution_id
+            self._log(f"Started PJob {code} (exec {execution_id}, PID {proc.pid}), log: {log_file}")
         except Exception as e:
             log_fh.close()
             self._log(f"Failed to start PJob {code}: {e}")
-            self._record_history(code, "launch_failed", str(e))
+            history.update_runtime_state(
+                code,
+                execution_id,
+                status="failed",
+                error_detail=str(e),
+                finished_at=datetime.now(timezone.utc).astimezone().isoformat(),
+            )
 
     def _kill_all_pjobs(self, stage_name: str) -> None:
         """Kill all active PJobs and record timeouts."""
@@ -165,30 +223,52 @@ class DaemonScheduler:
             if log_fh:
                 log_fh.close()
         self.active_pjobs.clear()
+        self._execution_ids.clear()
 
     def _kill_pjob(self, code: str, proc: subprocess.Popen, stage_name: str) -> None:
-        """Kill a single PJob process."""
+        """Kill a single PJob process and update its history state."""
         if proc.poll() is not None:
-            # Already finished — close log handle
             log_fh = self._pjob_log_handles.pop(code, None)
             if log_fh:
                 log_fh.close()
             return
 
         self._log(f"Killing PJob {code} (PID {proc.pid}) at stage transition '{stage_name}'")
-        status = "killed_timeout"
         try:
             proc.terminate()
             try:
                 proc.wait(timeout=5)
-                status = "terminated"
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait(timeout=5)
         except Exception as e:
             self._log(f"Error killing PJob {code}: {e}")
 
-        self._record_history(code, status, stage_name)
+        # Update history state file
+        eid = self._execution_ids.pop(code, None)
+        if eid:
+            from datetime import datetime, timezone
+
+            history = ExecutionHistory()
+            finished_at = datetime.now(timezone.utc).astimezone().isoformat()
+            try:
+                state = history.get_runtime_state(code, eid)
+                if state and state.get("started_at"):
+                    start = datetime.fromisoformat(state["started_at"])
+                    dur = (datetime.now(timezone.utc).astimezone() - start).total_seconds()
+                else:
+                    dur = None
+            except Exception:
+                dur = None
+            history.update_runtime_state(
+                code,
+                eid,
+                status="cancelled",
+                finished_at=finished_at,
+                duration_seconds=dur,
+            )
+
+        self._record_history(code, "terminated", stage_name)
 
     def _record_history(self, code: str, status: str, detail: str) -> None:
         """Append a history record."""

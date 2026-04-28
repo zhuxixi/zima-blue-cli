@@ -222,10 +222,22 @@ def list_pjobs(
         console.print("[yellow]No PJobs match the specified filters[/yellow]")
         return
 
+    # Check running status
+    from zima.execution.history import ExecutionHistory
+
+    history = ExecutionHistory()
+    running_codes = set(r["pjob_code"] for r in history.get_all_running())
+
     if output_format == "json":
         import json
 
-        console.print(json.dumps(configs, indent=2, ensure_ascii=False))
+        output = []
+        for c in configs:
+            code = c.get("metadata", {}).get("code", "-")
+            entry = dict(c)
+            entry["_running"] = code in running_codes
+            output.append(entry)
+        console.print(json.dumps(output, indent=2, ensure_ascii=False))
     else:
         # Table format
         table = Table(title="PJobs")
@@ -234,6 +246,7 @@ def list_pjobs(
         table.add_column("Agent", style="yellow")
         table.add_column("Workflow", style="blue")
         table.add_column("Labels", style="dim")
+        table.add_column("Running")
 
         for config in configs:
             metadata = config.get("metadata", {})
@@ -249,7 +262,8 @@ def list_pjobs(
 
             labels_str = ", ".join(labels) if labels else "-"
 
-            table.add_row(code, name, agent_code, workflow_code, labels_str)
+            running_indicator = "[green]●[/green]" if code in running_codes else "-"
+            table.add_row(code, name, agent_code, workflow_code, labels_str, running_indicator)
 
         console.print(table)
 
@@ -468,32 +482,22 @@ def run(
     skip_validation: bool = typer.Option(
         False, "--skip-validation", help="Skip pre-execution validation"
     ),
-    quiet: bool = typer.Option(
-        False, "--quiet", "-q", help="Suppress real-time output, only show result"
-    ),
-    background: bool = typer.Option(
-        False, "--background", "-b", help="Run in background (detached process)"
-    ),
-    follow: bool = typer.Option(
-        False, "--follow", "-f", help="Follow log output (only valid with --background)"
-    ),
 ):
-    """Execute a PJob"""
+    """Execute a PJob (runs in background by default)"""
     manager = ConfigManager()
 
     if not manager.config_exists("pjob", code):
         console.print(f"[red]✗[/red] PJob '{code}' not found")
         raise typer.Exit(1)
 
+    # Load config (needed for validation AND for state file metadata)
+    data = manager.load_config("pjob", code)
+    config = PJobConfig.from_dict(data)
+
     # Pre-execution validation
     if not skip_validation:
         try:
-            data = manager.load_config("pjob", code)
-            config = PJobConfig.from_dict(data)
-
             validation_errors = []
-
-            # Check required refs exist
             if config.spec.agent and not manager.config_exists("agent", config.spec.agent):
                 validation_errors.append(f"Agent '{config.spec.agent}' not found")
             if config.spec.workflow and not manager.config_exists("workflow", config.spec.workflow):
@@ -505,28 +509,20 @@ def run(
             if config.spec.pmg and not manager.config_exists("pmg", config.spec.pmg):
                 validation_errors.append(f"PMG '{config.spec.pmg}' not found")
 
-            # Check work directory
             check_dir = work_dir or config.spec.execution.work_dir
             if check_dir:
-                from pathlib import Path
-
                 wd = Path(check_dir)
                 if not wd.exists():
                     console.print(
                         f"[yellow]⚠[/yellow] Work directory '{wd}' does not exist, creating..."
                     )
                     wd.mkdir(parents=True, exist_ok=True)
-                    console.print(f"[green]✓[/green] Created work directory: {wd}")
 
             if validation_errors:
                 console.print("[red]✗[/red] Validation failed:")
                 for error in validation_errors:
                     console.print(f"   [red]•[/red] {error}")
-                console.print(
-                    "\n[yellow]Hint:[/yellow] Run with --skip-validation to bypass (not recommended)"
-                )
                 raise typer.Exit(1)
-
         except typer.Exit:
             raise
         except Exception as e:
@@ -534,12 +530,10 @@ def run(
 
     # Build overrides
     overrides = Overrides()
-
     if set_var:
         for var in set_var:
             if "=" in var:
                 key, value = var.split("=", 1)
-                # Handle nested keys like task.name
                 keys = key.split(".")
                 target = overrides.variable_values
                 for k in keys[:-1]:
@@ -547,141 +541,30 @@ def run(
                         target[k] = {}
                     target = target[k]
                 target[keys[-1]] = value
-
     if set_env:
         for env in set_env:
             if "=" in env:
                 key, value = env.split("=", 1)
                 overrides.env_vars[key] = value
-
     if set_param:
         for param in set_param:
             if "=" in param:
                 key, value = param.split("=", 1)
                 overrides.agent_params[key] = value
 
-    # Execute
-    executor = PJobExecutor()
-
-    # Respect async config from PJob if background not explicitly set
-    if not background and config.spec.execution.async_ and not dry_run:
-        background = True
-
-    # Background execution: spawn a detached subprocess
-    if background and not dry_run:
-        import json
-        import subprocess
-        import sys
-        import time
-        import uuid
-        from pathlib import Path
-
-        execution_id = str(uuid.uuid4())[:8]
-        log_dir = get_zima_home() / "logs" / "background"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = log_dir / f"{code}-{execution_id}.log"
-
-        overrides_json = json.dumps(overrides.to_dict()) if not overrides.is_empty() else "{}"
-
-        cmd = [
-            sys.executable,
-            "-m",
-            "zima.execution.background_runner",
-            code,
-            "--overrides",
-            overrides_json,
-        ]
-        if keep_temp:
-            cmd.append("--keep-temp")
-
-        kwargs = {}
-        if sys.platform == "win32":
-            # CREATE_NO_WINDOW: 不显示控制台窗口（后台静默运行）
-            # CREATE_NEW_PROCESS_GROUP: 创建新进程组，防止接收父进程的Ctrl+C
-            kwargs["creationflags"] = (
-                subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+    # ==================================================================
+    # Dry-run: render only, no background spawn
+    # ==================================================================
+    if dry_run:
+        executor = PJobExecutor()
+        try:
+            result = executor.execute(
+                pjob_code=code,
+                overrides=overrides,
+                dry_run=True,
+                keep_temp=keep_temp,
             )
-        else:
-            kwargs["start_new_session"] = True
-
-        with open(log_path, "w", encoding="utf-8") as log_file:
-            process = subprocess.Popen(
-                cmd,
-                stdout=log_file,
-                stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL,
-                close_fds=True,
-                **kwargs,
-            )
-
-        console.print(f"\n[green]✓[/green] PJob '{code}' started in background")
-        console.print(f"   Execution ID: {execution_id}")
-        console.print(f"   Process PID: {process.pid}")
-        console.print(f"   Log file: {log_path}")
-
-        # Follow log output if requested
-        if follow:
-            console.print(
-                "\n[blue]ℹ[/blue] Following log output... (Press Ctrl+C to stop following)"
-            )
-            console.print(
-                "   [yellow]Note:[/yellow] The background process will continue running even after you stop following.\n"
-            )
-            console.print("─" * 60)
-
-            try:
-                with open(log_path, "r", encoding="utf-8", errors="replace") as f:
-                    # Go to end of file
-                    f.seek(0, 2)
-
-                    while True:
-                        line = f.readline()
-                        if line:
-                            console.print(line.rstrip(), markup=False)
-                        else:
-                            # Check if process has finished
-                            if process.poll() is not None:
-                                break
-                            time.sleep(0.5)
-            except KeyboardInterrupt:
-                console.print("\n\n[yellow]⚠[/yellow] Stopped following log output.")
-                console.print(
-                    f"   [green]✓[/green] Background process (PID: {process.pid}) is still running."
-                )
-                console.print(
-                    f"   View logs anytime: [bold]Get-Content '{log_path}' -Tail 100[/bold]"
-                )
-                console.print(f"   Check history: [bold]zima pjob history {code}[/bold]")
-                raise typer.Exit(0)
-
-            console.print("─" * 60)
-            console.print("\n[green]✓[/green] Background process completed.")
-            console.print(f"   Check result with: [bold]zima pjob history {code}[/bold]")
-        else:
-            console.print(f"   Check history later with: [bold]zima pjob history {code}[/bold]")
-
-        return
-
-    try:
-        result = executor.execute(
-            pjob_code=code,
-            overrides=overrides,
-            dry_run=dry_run,
-            keep_temp=keep_temp,
-        )
-
-        # Save to history
-        if not dry_run:
-            from zima.execution.history import ExecutionRecord
-
-            history = ExecutionHistory()
-            history.add(ExecutionRecord.from_result(result))
-
-        # Output result
-        if dry_run:
             console.print(Panel("[bold yellow]DRY RUN[/bold yellow]"))
-
-            # Show rendered workflow prompt
             if result.prompt_content:
                 console.print(
                     Panel(
@@ -690,18 +573,15 @@ def run(
                         border_style="blue",
                     )
                 )
-
             console.print("\nCommand that would be executed:")
             console.print(Syntax(" ".join(result.command), "bash"))
             console.print("\nEnvironment variables:")
-            # Sensitive key patterns to mask in dry-run output
             import re
 
             _SENSITIVE_RE = re.compile(
                 r"(TOKEN|SECRET|PASSWORD|CREDENTIAL|PRIVATE_KEY|API_KEY|_PAT\b)",
                 re.IGNORECASE,
             )
-            # Exclude path-like variables that happen to contain sensitive keywords
             _PATH_RE = re.compile(r"(^PATH$|_PATH$|C_INCLUDE|EXEPATH|POSH_THEMES)", re.IGNORECASE)
             for key, value in result.env.items():
                 is_sensitive = bool(_SENSITIVE_RE.search(key)) and not _PATH_RE.search(key)
@@ -710,52 +590,366 @@ def run(
                     console.print(f"  {key}={masked}")
                 else:
                     console.print(f"  {key}={value}")
-        else:
-            if result.status.value == "success":
-                console.print(
-                    f"\n[green]✓[/green] Execution completed in {result.duration_seconds:.1f}s"
+        except Exception as e:
+            import traceback
+
+            console.print(f"[red]✗[/red] Dry-run failed: {e}")
+            console.print(
+                Panel(
+                    Syntax(traceback.format_exc(), "python"),
+                    title="[red]Stack Trace[/red]",
+                    border_style="red",
                 )
-            elif result.status.value == "cancelled":
-                console.print(
-                    f"\n[yellow]⚠[/yellow] Execution cancelled in {result.duration_seconds:.1f}s"
+            )
+            raise typer.Exit(1)
+        return
+
+    # ==================================================================
+    # Background execution (default)
+    # ==================================================================
+    import json
+    import subprocess
+    import sys
+    import uuid
+    from datetime import datetime, timezone
+
+    from zima.execution.history import ExecutionHistory
+
+    execution_id = str(uuid.uuid4())[:8]
+    log_dir = get_zima_home() / "logs" / "background"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"{code}-{execution_id}.log"
+    started_at = datetime.now(timezone.utc).astimezone().isoformat()
+
+    # Build command via dry-run to capture what would execute
+    executor = PJobExecutor()
+    try:
+        dry_result = executor.execute(
+            pjob_code=code,
+            overrides=overrides,
+            dry_run=True,
+            keep_temp=keep_temp,
+        )
+    except Exception as e:
+        console.print(f"[red]✗[/red] Failed to prepare execution: {e}")
+        raise typer.Exit(1)
+
+    # 1. Write initial state file BEFORE spawning
+    history = ExecutionHistory()
+    history.write_runtime_state(
+        code,
+        execution_id,
+        {
+            "execution_id": execution_id,
+            "pjob_code": code,
+            "status": "running",
+            "pid": None,
+            "command": dry_result.command,
+            "started_at": started_at,
+            "finished_at": None,
+            "duration_seconds": None,
+            "returncode": None,
+            "stdout_preview": "",
+            "stderr_preview": "",
+            "error_detail": "",
+            "log_path": str(log_path),
+            "agent": config.spec.agent,
+            "workflow": config.spec.workflow,
+        },
+    )
+
+    # 2. Build subprocess command
+    overrides_json = json.dumps(overrides.to_dict()) if not overrides.is_empty() else "{}"
+    cmd = [
+        sys.executable,
+        "-m",
+        "zima.execution.background_runner",
+        code,
+        "--execution-id",
+        execution_id,
+        "--overrides",
+        overrides_json,
+    ]
+    if keep_temp:
+        cmd.append("--keep-temp")
+
+    kwargs = {}
+    if sys.platform == "win32":
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        kwargs["start_new_session"] = True
+
+    with open(log_path, "w", encoding="utf-8") as log_file:
+        process = subprocess.Popen(
+            cmd,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            close_fds=True,
+            **kwargs,
+        )
+
+    # 3. Update state file with actual PID
+    history.update_runtime_state(code, execution_id, pid=process.pid)
+
+    # 4. Print summary
+    console.print(f"\n[green]✓[/green] PJob '{code}' started")
+    console.print(f"   Execution ID: {execution_id}")
+    console.print(f"   PID: {process.pid}")
+    console.print(f"   Log: {log_path}")
+    console.print(f"   Status: [bold]zima pjob status {code}[/bold]")
+
+
+@app.command()
+def status(
+    code: str = typer.Argument(..., help="PJob code"),
+):
+    """Show execution status for a PJob (running + recent history)"""
+    from datetime import datetime
+
+    from zima.execution.history import ExecutionHistory
+
+    history = ExecutionHistory()
+    all_records = history.list_executions(code)
+
+    if not all_records:
+        console.print(f"[yellow]No execution history for '{code}'[/yellow]")
+        return
+
+    running = [r for r in all_records if r.get("status") == "running"]
+    completed = [r for r in all_records if r.get("status") != "running"]
+
+    console.print(f"\n[bold]{code} — {len(all_records)} executions[/bold]")
+
+    table = Table()
+    table.add_column("ID", style="cyan")
+    table.add_column("Status")
+    table.add_column("PID", style="magenta")
+    table.add_column("Started", style="dim")
+    table.add_column("Duration")
+    table.add_column("Log")
+
+    status_styles = {
+        "running": ("● running", "yellow"),
+        "success": ("✓ success", "green"),
+        "failed": ("✗ failed", "red"),
+        "timeout": ("⏱ timeout", "yellow"),
+        "cancelled": ("⊘ cancelled", "dim"),
+        "dead": ("☠ dead", "red"),
+    }
+
+    def _fmt_duration(rec):
+        if rec.get("status") == "running":
+            try:
+                start = datetime.fromisoformat(rec["started_at"])
+                elapsed = (datetime.now().astimezone() - start).total_seconds()
+                mins, secs = divmod(int(elapsed), 60)
+                return f"{mins}m {secs}s"
+            except Exception:
+                return "-"
+        dur = rec.get("duration_seconds")
+        if dur is None:
+            return "-"
+        mins, secs = divmod(int(dur), 60)
+        return f"{mins}m {secs}s"
+
+    def _log_name(rec):
+        path = rec.get("log_path", "")
+        if path:
+            return Path(path).name
+        return "-"
+
+    for rec in running:
+        label, color = status_styles.get(rec.get("status", ""), (rec.get("status", "?"), "white"))
+        table.add_row(
+            rec.get("execution_id", "-"),
+            f"[{color}]{label}[/{color}]",
+            str(rec.get("pid", "-")),
+            rec.get("started_at", "-")[:19],
+            _fmt_duration(rec),
+            _log_name(rec),
+        )
+
+    for rec in completed[:5]:
+        label, color = status_styles.get(rec.get("status", ""), (rec.get("status", "?"), "white"))
+        table.add_row(
+            rec.get("execution_id", "-"),
+            f"[{color}]{label}[/{color}]",
+            str(rec.get("pid", "-")),
+            rec.get("started_at", "-")[:19],
+            _fmt_duration(rec),
+            _log_name(rec),
+        )
+
+    console.print(table)
+    parts = []
+    if running:
+        parts.append(f"{len(running)} running")
+    if completed:
+        parts.append(f"{len(completed)} completed")
+    console.print(f"   {', '.join(parts)}")
+
+
+@app.command(name="ps")
+def list_running():
+    """List all currently running PJobs"""
+    from datetime import datetime
+
+    from zima.execution.history import ExecutionHistory, _is_pid_alive
+
+    history = ExecutionHistory()
+    running = history.get_all_running()
+
+    if not running:
+        console.print("[yellow]No running PJobs[/yellow]")
+        return
+
+    alive = [r for r in running if _is_pid_alive(r.get("pid"))]
+
+    if not alive:
+        console.print("[yellow]No running PJobs (all state files point to dead processes)[/yellow]")
+        return
+
+    console.print("\n[bold]Running PJobs[/bold]")
+
+    table = Table()
+    table.add_column("Code", style="cyan")
+    table.add_column("ID", style="cyan")
+    table.add_column("PID", style="magenta")
+    table.add_column("Started", style="dim")
+    table.add_column("Duration")
+    table.add_column("Agent", style="yellow")
+    table.add_column("Log")
+    table.add_column("Status")
+
+    for rec in alive:
+        started = rec.get("started_at", "-")
+        if len(started) > 19:
+            started = started[:19]
+
+        duration = "-"
+        try:
+            start_dt = datetime.fromisoformat(rec["started_at"])
+            elapsed = (datetime.now().astimezone() - start_dt).total_seconds()
+            mins, secs = divmod(int(elapsed), 60)
+            duration = f"{mins}m {secs}s"
+        except Exception:
+            pass
+
+        log_name = "-"
+        log_path = rec.get("log_path", "")
+        if log_path:
+            log_name = Path(log_path).name
+
+        table.add_row(
+            rec.get("pjob_code", "-"),
+            rec.get("execution_id", "-"),
+            str(rec.get("pid", "-")),
+            started,
+            duration,
+            rec.get("agent", "-"),
+            log_name,
+            "[yellow]● running[/yellow]",
+        )
+
+    console.print(table)
+    console.print(f"   {len(alive)} running")
+
+
+@app.command()
+def cancel(
+    code: str = typer.Argument(..., help="PJob code"),
+    execution_id: Optional[str] = typer.Option(
+        None, "--id", help="Cancel specific execution (default: cancel all running)"
+    ),
+):
+    """Cancel running PJob(s)"""
+    import os
+    import signal
+    import subprocess
+    import sys
+    import time
+    from datetime import datetime
+
+    from zima.execution.history import ExecutionHistory, _is_pid_alive
+
+    history = ExecutionHistory()
+
+    if execution_id:
+        state = history.get_runtime_state(code, execution_id)
+        if state is None:
+            console.print(f"[red]✗[/red] Execution '{execution_id}' not found for '{code}'")
+            raise typer.Exit(1)
+        if state.get("status") != "running":
+            console.print(
+                f"[yellow]⚠[/yellow] Execution '{execution_id}' is not running "
+                f"(status: {state.get('status')})"
+            )
+            raise typer.Exit(0)
+        targets = [state]
+    else:
+        targets = history.list_executions(code, status="running")
+
+    if not targets:
+        console.print(f"[yellow]No running executions for '{code}'[/yellow]")
+        return
+
+    for state in targets:
+        pid = state.get("pid")
+        eid = state.get("execution_id")
+
+        if pid is None or not _is_pid_alive(pid):
+            history.update_runtime_state(
+                code,
+                eid,
+                status="dead",
+                finished_at=datetime.now().astimezone().isoformat(),
+            )
+            console.print(
+                f"[yellow]⚠[/yellow] Execution '{eid}' — PID {pid} not found, marked as dead"
+            )
+            continue
+
+        console.print(f"[yellow]Cancelling '{eid}' (PID: {pid})...[/yellow]")
+
+        try:
+            if sys.platform == "win32":
+                subprocess.run(
+                    ["taskkill", "/T", "/PID", str(pid)], capture_output=True, check=False
                 )
-                if result.stderr:
-                    console.print(
-                        Panel(result.stderr, title="[yellow]Info[/yellow]", border_style="yellow")
+                time.sleep(5)
+                if _is_pid_alive(pid):
+                    subprocess.run(
+                        ["taskkill", "/F", "/T", "/PID", str(pid)],
+                        capture_output=True,
+                        check=False,
                     )
             else:
-                console.print(f"\n[red]✗[/red] Execution failed with status: {result.status.value}")
-                if result.returncode != 0:
-                    console.print(f"   Return code: {result.returncode}")
-                if result.stderr:
-                    console.print(
-                        Panel(result.stderr, title="[red]Error[/red]", border_style="red")
-                    )
-                if result.error_detail:
-                    console.print(
-                        Panel(
-                            result.error_detail,
-                            title="[red]Error Detail[/red]",
-                            border_style="red",
-                        )
-                    )
+                os.kill(pid, signal.SIGTERM)
+                waited = 0
+                while _is_pid_alive(pid) and waited < 5:
+                    time.sleep(0.5)
+                    waited += 0.5
+                if _is_pid_alive(pid):
+                    os.kill(pid, signal.SIGKILL)
 
-    except KeyboardInterrupt:
-        # Handle Ctrl+C at CLI level
-        console.print("\n[yellow]⚠[/yellow] Interrupted by user")
-        raise typer.Exit(130)  # Standard exit code for Ctrl+C
-    except Exception as e:
-        import traceback
-
-        console.print(f"[red]✗[/red] Execution failed: {e}")
-        console.print(
-            Panel(
-                Syntax(traceback.format_exc(), "python"),
-                title="[red]Stack Trace[/red]",
-                border_style="red",
+            now = datetime.now().astimezone().isoformat()
+            try:
+                start = datetime.fromisoformat(state["started_at"])
+                dur = (datetime.now().astimezone() - start).total_seconds()
+            except Exception:
+                dur = None
+            history.update_runtime_state(
+                code,
+                eid,
+                status="cancelled",
+                finished_at=now,
+                duration_seconds=dur,
             )
-        )
-        raise typer.Exit(1)
+            console.print(f"[green]✓[/green] Cancelled execution '{eid}'")
+
+        except Exception as e:
+            console.print(f"[red]✗[/red] Failed to cancel '{eid}': {e}")
 
 
 @app.command()
@@ -1022,14 +1216,20 @@ def show_history(
             "failed": "red",
             "timeout": "yellow",
             "cancelled": "dim",
+            "running": "yellow",
+            "dead": "red",
         }.get(record.status, "white")
+
+        status_label = record.status
+        if record.status == "running":
+            status_label = "(running)"
 
         table.add_row(
             record.execution_id,
-            f"[{status_color}]{record.status}[/{status_color}]",
-            str(record.returncode),
+            f"[{status_color}]{status_label}[/{status_color}]",
+            str(record.returncode) if record.status not in ("running", "dead") else "-",
             str(record.pid) if record.pid else "-",
-            f"{record.duration_seconds:.1f}s",
+            f"{record.duration_seconds:.1f}s" if record.duration_seconds else "-",
             record.started_at[:19] if record.started_at else "-",
         )
 
