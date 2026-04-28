@@ -299,3 +299,4 @@ class TestActionsRunnerPreExec:
             assert env["pr_number"] == "7"
             assert env["pr_diff"] == "diff data"
 
+
