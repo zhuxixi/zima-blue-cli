@@ -8,7 +8,7 @@ from zima.models.serialization import YamlSerializable, omit_empty
 
 VALID_ACTION_CONDITIONS = {"success", "failure", "always"}
 VALID_POST_ACTION_TYPES = {"add_label", "add_comment"}
-VALID_PRE_ACTION_TYPES = {"scan_pr", "run_command"}
+VALID_PRE_ACTION_TYPES = {"scan_pr"}
 
 
 @dataclass

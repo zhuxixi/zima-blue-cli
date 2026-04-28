@@ -270,3 +270,28 @@ class TestActionsRunnerPreExec:
             assert "Warning" in captured.out
             assert "nonexistent" in captured.out
             assert env == {"existing": "value"}
+
+    def test_run_pre_exec_env_substitution(self):
+        """Test env variable substitution in run_pre before calling scan_prs."""
+        from zima.models.actions import PreExecAction
+
+        runner = ActionsRunner()
+        actions = ActionsConfig(
+            pre_exec=[
+                PreExecAction(
+                    type="scan_pr",
+                    repo="{{repo}}",
+                    label="{{label}}",
+                )
+            ]
+        )
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = [
+            {"number": "7", "title": "Test", "url": "https://github.com/o/r/pull/7"}
+        ]
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            env = {"repo": "my-org/my-repo", "label": "needs-review"}
+            runner.run_pre(actions, env)
+            mock_provider.scan_prs.assert_called_once_with("my-org/my-repo", "needs-review")
+            assert env["repo"] == "my-org/my-repo"
+            assert env["pr_number"] == "7"

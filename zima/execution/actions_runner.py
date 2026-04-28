@@ -113,6 +113,12 @@ class ActionsRunner:
                 except Exception as e:
                     print(f"Warning: Failed to post comment: {e}")
 
+    def _substitute_env_str(self, value: str, env: dict[str, str]) -> str:
+        """Replace {{VAR}} placeholders with env values."""
+        for key, val in env.items():
+            value = value.replace(f"{{{{{key}}}}}", str(val))
+        return value
+
     def run_pre(self, actions: ActionsConfig, env: dict[str, str]) -> None:
         """Execute all preExec actions, mutating env with scan results.
 
@@ -131,17 +137,17 @@ class ActionsRunner:
 
         for action in actions.pre_exec:
             if action.type == "scan_pr":
+                repo = self._substitute_env_str(action.repo, env)
+                label = self._substitute_env_str(action.label, env)
                 try:
-                    prs = provider.scan_prs(action.repo, action.label)
+                    prs = provider.scan_prs(repo, label)
                 except Exception as e:
-                    raise SkipAction(
-                        f"Failed to scan PRs with label '{action.label}' in {action.repo}: {e}"
-                    )
+                    raise SkipAction(f"Failed to scan PRs with label '{label}' in {repo}: {e}")
                 if not prs:
-                    raise SkipAction(f"No PRs found with label '{action.label}' in {action.repo}")
+                    raise SkipAction(f"No PRs found with label '{label}' in {repo}")
                 # Take the first PR and inject into env
                 pr = prs[0]
-                env["repo"] = action.repo
+                env["repo"] = repo
                 env["pr_number"] = str(pr.get("number", ""))
                 env["pr_title"] = pr.get("title", "")
                 env["pr_url"] = pr.get("url", "")
