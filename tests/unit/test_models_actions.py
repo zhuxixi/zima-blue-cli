@@ -1,4 +1,4 @@
-from zima.models.actions import ActionsConfig, PostExecAction
+from zima.models.actions import ActionsConfig, PostExecAction, PreExecAction
 
 
 class TestPostExecAction:
@@ -171,3 +171,55 @@ class TestActionsConfig:
         errors = config.validate()
         assert len(errors) == 2
         assert "Action[1]" in errors[0]
+
+
+class TestPreExecAction:
+    def test_default_action(self):
+        """Test creating a PreExecAction with default values."""
+        action = PreExecAction()
+        assert action.type == "scan_pr"
+        assert action.condition == "always"
+        assert action.repo == ""
+        assert action.label == ""
+
+    def test_full_action(self):
+        """Test creating a fully configured PreExecAction."""
+        action = PreExecAction(
+            type="scan_pr",
+            repo="owner/repo",
+            label="zima:needs-review",
+        )
+        assert action.type == "scan_pr"
+        assert action.repo == "owner/repo"
+        assert action.label == "zima:needs-review"
+
+    def test_to_dict(self):
+        """Test converting PreExecAction to dictionary."""
+        action = PreExecAction(type="scan_pr", repo="o/r", label="x")
+        d = action.to_dict()
+        assert d["type"] == "scan_pr"
+        assert d["repo"] == "o/r"
+        assert d["label"] == "x"
+
+
+class TestActionsConfigPreExec:
+    def test_pre_exec_field(self):
+        """Test ActionsConfig with pre_exec field."""
+        pre = PreExecAction(type="scan_pr", repo="o/r", label="x")
+        config = ActionsConfig(pre_exec=[pre])
+        assert len(config.pre_exec) == 1
+        assert config.pre_exec[0].type == "scan_pr"
+
+    def test_to_dict_includes_pre_exec(self):
+        """Test that to_dict includes preExec when non-empty."""
+        config = ActionsConfig(pre_exec=[PreExecAction(type="scan_pr", repo="o/r")])
+        d = config.to_dict()
+        assert "preExec" in d
+        assert len(d["preExec"]) == 1
+
+    def test_from_dict_reads_pre_exec(self):
+        """Test that from_dict reads preExec field."""
+        d = {"preExec": [{"type": "scan_pr", "repo": "o/r", "label": "x"}]}
+        config = ActionsConfig.from_dict(d)
+        assert len(config.pre_exec) == 1
+        assert config.pre_exec[0].type == "scan_pr"
