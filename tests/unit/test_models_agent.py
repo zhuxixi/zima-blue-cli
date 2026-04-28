@@ -260,8 +260,9 @@ class TestAgentConfigCommandBuilding(TestIsolator):
         assert "-p" in cmd
         # Claude receives prompt via stdin pipe, not --prompt flag
         assert "--prompt" not in cmd
-        assert "--cwd" in cmd
-        assert str(Path("/tmp/workspace")) in cmd
+        # Claude CLI has no --work-dir or --cwd flag; cwd is set via subprocess
+        assert "--work-dir" not in cmd
+        assert "--cwd" not in cmd
         assert "--max-turns" in cmd
         assert "50" in cmd
 

@@ -59,8 +59,9 @@ class TestClaudeAgentConfig:
         assert "plan" in cmd
         assert "--output-format" in cmd
         assert "stream-json" in cmd
-        assert "--cwd" in cmd
-        assert str(Path("/tmp/workspace")) in cmd
+        # Claude CLI has no --work-dir or --cwd flag; cwd is set via subprocess
+        assert "--work-dir" not in cmd
+        assert "--cwd" not in cmd
 
     def test_claude_build_command_no_prompt_flag(self):
         """Test Claude command does NOT include --prompt flag."""
@@ -102,8 +103,9 @@ class TestClaudeAgentConfig:
         assert "Write" in cmd
         assert "--append-system-prompt" in cmd
         assert "Always use TypeScript" in cmd
-        assert "--cwd" in cmd
-        assert str(Path("/tmp/workspace")) in cmd
+        # Claude CLI has no --work-dir or --cwd flag; cwd is set via subprocess
+        assert "--work-dir" not in cmd
+        assert "--cwd" not in cmd
 
     def test_claude_build_command_add_dirs(self):
         """Test Claude command with additional directories."""
