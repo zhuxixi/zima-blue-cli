@@ -54,9 +54,11 @@ class ReviewParser:
             stdout: Raw agent output string to parse.
 
         Returns:
-            ReviewResult with parsed verdict, summary, and issues. Returns
-            ReviewResult(verdict="needs_discussion") if no block is found
-            or the XML is invalid.
+            ReviewResult with parsed verdict, summary, and issues. If no
+            <zima-review> block is found or the XML is invalid, falls back
+            to parsing skill output patterns (e.g. "Found N issues" or
+            "No issues found"). If fallback parsing also fails, returns
+            ReviewResult(verdict="needs_discussion").
         """
         # Security: limit input size to prevent billion laughs / XML bomb
         if len(stdout) > _MAX_REVIEW_XML_SIZE:
@@ -74,24 +76,15 @@ class ReviewParser:
                 try:
                     root = ET.fromstring(xml_content)
                 except ET.ParseError:
-                    return ReviewResult(
-                        verdict="needs_discussion",
-                        summary="Invalid review XML format",
-                    )
+                    return ReviewParser._fallback_parse(stdout)
             else:
-                return ReviewResult(
-                    verdict="needs_discussion",
-                    summary="No review block found in agent output",
-                )
+                return ReviewParser._fallback_parse(stdout)
         else:
             xml_content = f"<zima-review>{match.group(1)}</zima-review>"
             try:
                 root = ET.fromstring(xml_content)
             except ET.ParseError:
-                return ReviewResult(
-                    verdict="needs_discussion",
-                    summary="Invalid review XML format",
-                )
+                return ReviewParser._fallback_parse(stdout)
         verdict = root.findtext("verdict", default="needs_discussion").strip()
         summary = root.findtext("summary", default="").strip()
 
@@ -114,3 +107,19 @@ class ReviewParser:
                 )
 
         return ReviewResult(verdict=verdict, summary=summary, issues=issues)
+
+    @staticmethod
+    def _fallback_parse(stdout: str) -> ReviewResult:
+        """Parse review result from skill output patterns when XML is absent."""
+        if "No issues found" in stdout:
+            return ReviewResult(verdict="approved", summary="No issues found")
+        match = re.search(r"\bFound\s+(\d+)\s+issues?\b", stdout, re.IGNORECASE)
+        if match:
+            count = int(match.group(1))
+            if count == 0:
+                return ReviewResult(verdict="approved", summary="Found 0 issues")
+            return ReviewResult(verdict="needs_fix", summary=f"Found {count} issues")
+        return ReviewResult(
+            verdict="needs_discussion",
+            summary="No review block found in agent output",
+        )
