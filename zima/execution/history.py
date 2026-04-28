@@ -46,8 +46,10 @@ def _is_pid_alive(pid: Optional[int]) -> bool:
             if not handle:
                 return False
             exit_code = ctypes.c_ulong()
-            ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
-            ctypes.windll.kernel32.CloseHandle(handle)
+            try:
+                ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+            finally:
+                ctypes.windll.kernel32.CloseHandle(handle)
             return exit_code.value == STILL_ACTIVE
         else:
             os.kill(pid, 0)
@@ -300,7 +302,23 @@ class ExecutionHistory:
             json.dumps(state, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
+        self._trim_history(pjob_code)
         return path
+
+    def _trim_history(self, pjob_code: str) -> None:
+        """Delete oldest state files if per-PJob count exceeds the limit."""
+        pdir = self._base_dir / pjob_code
+        if not pdir.is_dir():
+            return
+        files = sorted(
+            [f for f in pdir.iterdir() if f.suffix == ".json"],
+            key=lambda f: f.stat().st_mtime,
+        )
+        while len(files) > self.MAX_HISTORY_PER_PJOB:
+            try:
+                files.pop(0).unlink()
+            except OSError:
+                pass
 
     def update_runtime_state(
         self,
