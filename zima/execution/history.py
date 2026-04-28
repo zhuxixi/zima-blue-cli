@@ -501,6 +501,9 @@ class ExecutionHistory:
                 migrated += 1
 
         if migrated > 0:
-            # Rename legacy file to .bak
+            # Replace legacy file with .bak (use replace() to handle existing .bak)
             bak = legacy_file.with_suffix(".json.bak")
-            legacy_file.rename(bak)
+            try:
+                legacy_file.replace(bak)
+            except OSError:
+                pass

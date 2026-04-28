@@ -621,14 +621,18 @@ def run(
     log_path = log_dir / f"{code}-{execution_id}.log"
     started_at = datetime.now(timezone.utc).astimezone().isoformat()
 
-    # Build command for dry-run to capture what would execute
+    # Build command via dry-run to capture what would execute
     executor = PJobExecutor()
-    dry_result = executor.execute(
-        pjob_code=code,
-        overrides=overrides,
-        dry_run=True,
-        keep_temp=keep_temp,
-    )
+    try:
+        dry_result = executor.execute(
+            pjob_code=code,
+            overrides=overrides,
+            dry_run=True,
+            keep_temp=keep_temp,
+        )
+    except Exception as e:
+        console.print(f"[red]✗[/red] Failed to prepare execution: {e}")
+        raise typer.Exit(1)
 
     # 1. Write initial state file BEFORE spawning
     history = ExecutionHistory()
@@ -910,11 +914,15 @@ def cancel(
 
         try:
             if sys.platform == "win32":
-                subprocess.run(["taskkill", "/PID", str(pid)], capture_output=True, check=False)
+                subprocess.run(
+                    ["taskkill", "/T", "/PID", str(pid)], capture_output=True, check=False
+                )
                 time.sleep(5)
                 if _is_pid_alive(pid):
                     subprocess.run(
-                        ["taskkill", "/F", "/PID", str(pid)], capture_output=True, check=False
+                        ["taskkill", "/F", "/T", "/PID", str(pid)],
+                        capture_output=True,
+                        check=False,
                     )
             else:
                 os.kill(pid, signal.SIGTERM)
