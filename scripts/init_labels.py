@@ -33,16 +33,25 @@ def run_gh(args: list[str]) -> subprocess.CompletedProcess:
         capture_output=True,
         text=True,
         check=False,
+        stdin=subprocess.DEVNULL,
     )
     return result
 
 
-def label_exists(repo: str, name: str) -> bool:
-    """Check if a label already exists in the repo."""
+def list_labels(repo: str) -> list[dict]:
+    """List all labels in the repo. Returns empty list on error."""
     result = run_gh(["label", "list", "--repo", repo, "--json", "name"])
     if result.returncode != 0:
-        return False
-    existing = json.loads(result.stdout)
+        return []
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return []
+
+
+def label_exists(repo: str, name: str) -> bool:
+    """Check if a label already exists in the repo."""
+    existing = list_labels(repo)
     return any(item["name"] == name for item in existing)
 
 
@@ -103,9 +112,14 @@ def main():
     skipped = 0
     failed = 0
 
+    # In dry-run, list labels once to avoid repeated API calls
+    existing_labels = set()
+    if args.dry_run:
+        existing_labels = {item["name"] for item in list_labels(args.repo)}
+
     for label in LABELS:
         if args.dry_run:
-            exists = label_exists(args.repo, label["name"])
+            exists = label["name"] in existing_labels
             if exists and not args.force:
                 print(f"  [DRY-RUN] Would skip: {label['name']} (exists)")
                 skipped += 1

@@ -280,8 +280,8 @@ class PJobExecutor:
             result.error_detail = traceback.format_exc()
         finally:
             # 13. Execute postExec actions even on timeout/cancel/error,
-            # but skip on dry-run (finally runs after return in try block).
-            if not dry_run:
+            # but skip on dry-run and skipped preExec.
+            if not dry_run and result.status != ExecutionStatus.SKIPPED:
                 try:
                     _pjob = locals().get("pjob")
                     _bundle = locals().get("bundle")

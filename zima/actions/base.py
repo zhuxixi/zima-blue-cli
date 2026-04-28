@@ -29,6 +29,7 @@ class ActionProvider(ABC):
     def fetch_diff(self, repo: str, issue: str) -> str:
         """Fetch PR/MR diff content. Returns empty string on failure."""
 
+    @abstractmethod
     def scan_prs(self, repo: str, label: str) -> list[dict]:
         """Scan PRs by label.
 

@@ -111,7 +111,7 @@ class ReviewParser:
     @staticmethod
     def _fallback_parse(stdout: str) -> ReviewResult:
         """Parse review result from skill output patterns when XML is absent."""
-        if "No issues found" in stdout:
+        if re.search(r"\bNo issues found\b", stdout, re.IGNORECASE):
             return ReviewResult(verdict="approved", summary="No issues found")
         match = re.search(r"\bFound\s+(\d+)\s+issues?\b", stdout, re.IGNORECASE)
         if match:

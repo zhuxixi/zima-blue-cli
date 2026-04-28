@@ -148,6 +148,8 @@ class ActionsRunner:
                 # Take the first PR and inject into env
                 pr = prs[0]
                 env["repo"] = repo
-                env["pr_number"] = str(pr.get("number", ""))
-                env["pr_title"] = pr.get("title", "")
-                env["pr_url"] = pr.get("url", "")
+                env["pr_number"] = str(pr.get("number") or "")
+                env["pr_title"] = pr.get("title") or ""
+                env["pr_url"] = pr.get("url") or ""
+            else:
+                print(f"Warning: Unknown preExec action type '{action.type}', skipping")
