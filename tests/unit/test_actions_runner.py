@@ -289,9 +289,13 @@ class TestActionsRunnerPreExec:
         mock_provider.scan_prs.return_value = [
             {"number": "7", "title": "Test", "url": "https://github.com/o/r/pull/7"}
         ]
+        mock_provider.fetch_diff.return_value = "diff data"
         with patch.object(runner._registry, "get", return_value=mock_provider):
             env = {"repo": "my-org/my-repo", "label": "needs-review"}
             runner.run_pre(actions, env)
             mock_provider.scan_prs.assert_called_once_with("my-org/my-repo", "needs-review")
+            mock_provider.fetch_diff.assert_called_once_with("my-org/my-repo", "7")
             assert env["repo"] == "my-org/my-repo"
             assert env["pr_number"] == "7"
+            assert env["pr_diff"] == "diff data"
+

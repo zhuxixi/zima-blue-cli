@@ -148,5 +148,6 @@ class ActionsRunner:
                 env["pr_number"] = str(pr.get("number") or "")
                 env["pr_title"] = pr.get("title") or ""
                 env["pr_url"] = pr.get("url") or ""
+                env["pr_diff"] = provider.fetch_diff(repo, env["pr_number"])
             else:
                 print(f"Warning: Unknown preExec action type '{action.type}', skipping")
