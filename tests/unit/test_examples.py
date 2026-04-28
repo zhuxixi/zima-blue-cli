@@ -286,11 +286,16 @@ class TestReviewerPJob:
         assert config.spec.agent == "kimi-standard"
         assert config.spec.workflow == "reviewer-cr"
         assert config.spec.variable == "reviewer-vars"
+        assert len(config.spec.actions.pre_exec) == 1
+        # Pre action: scan_pr
+        assert config.spec.actions.pre_exec[0].type == "scan_pr"
+        assert config.spec.actions.pre_exec[0].repo == "{{repo}}"
+        assert config.spec.actions.pre_exec[0].label == "zima:needs-review"
         assert len(config.spec.actions.post_exec) == 2
         # First action: success -> add_label
         assert config.spec.actions.post_exec[0].condition == "success"
         assert config.spec.actions.post_exec[0].type == "add_label"
-        assert "zima:review-approved" in config.spec.actions.post_exec[0].add_labels
+        assert config.spec.actions.post_exec[0].add_labels == []
         assert "zima:needs-review" in config.spec.actions.post_exec[0].remove_labels
         assert config.spec.actions.post_exec[0].repo == "{{repo}}"
         assert config.spec.actions.post_exec[0].issue == "{{pr_number}}"
