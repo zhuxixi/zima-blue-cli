@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from zima.config.manager import ConfigManager
-from zima.execution.actions_runner import ActionsRunner
+from zima.execution.actions_runner import ActionsRunner, SkipAction
 from zima.models.config_bundle import ConfigBundle
 from zima.models.pjob import Overrides, PJobConfig
 from zima.review.parser import ReviewParser
@@ -29,6 +29,7 @@ class ExecutionStatus(Enum):
     FAILED = "failed"
     TIMEOUT = "timeout"
     CANCELLED = "cancelled"
+    SKIPPED = "skipped"
 
 
 @dataclass
@@ -132,14 +133,18 @@ class PJobExecutor:
 
     Handles the complete execution flow:
     1. Load PJob configuration
-    2. Resolve and combine all referenced configs
-    3. Render workflow template with variables
-    4. Resolve environment variables and secrets
-    5. Build agent command with parameters
-    6. Execute pre-hooks
-    7. Run agent command
-    8. Execute post-hooks
-    9. Handle output and cleanup
+    2. Resolve config bundle
+    3. Create temp directory
+    4. Render workflow template
+    5. Resolve environment variables
+    6. Build agent command
+    7. Dry run check
+    8. Execute pre-hooks
+    9. Execute preExec actions
+    10. Run main command
+    11. Execute post-hooks
+    12. Handle output and cleanup
+    13. Execute postExec actions
     """
 
     def __init__(self):
@@ -211,7 +216,18 @@ class PJobExecutor:
             # 8. Execute pre-hooks
             self._run_hooks(pjob.spec.hooks.get("preExec", []), env_vars, bundle.work_dir)
 
-            # 9. Run main command
+            # 9. Execute preExec actions
+            if pjob.spec.actions and pjob.spec.actions.pre_exec:
+                try:
+                    self._actions_runner.run_pre(pjob.spec.actions, env_vars)
+                except SkipAction as e:
+                    result.status = ExecutionStatus.SKIPPED
+                    result.returncode = 0
+                    result.stderr = str(e)
+                    result.finished_at = generate_timestamp()
+                    return result
+
+            # 10. Run main command
             result.status = ExecutionStatus.RUNNING
             self._current_process = None
 
@@ -232,7 +248,7 @@ class PJobExecutor:
             result.pid = process_pid
             result.status = ExecutionStatus.SUCCESS if returncode == 0 else ExecutionStatus.FAILED
 
-            # 10. Execute post-hooks
+            # 11. Execute post-hooks
             self._run_hooks(pjob.spec.hooks.get("postExec", []), env_vars, bundle.work_dir)
 
             # 12. Handle output
@@ -263,9 +279,9 @@ class PJobExecutor:
             result.stderr = _friendly_error(e)
             result.error_detail = traceback.format_exc()
         finally:
-            # 11. Execute postExec actions even on timeout/cancel/error,
-            # but skip on dry-run (finally runs after return in try block).
-            if not dry_run:
+            # 13. Execute postExec actions even on timeout/cancel/error,
+            # but skip on dry-run and skipped preExec.
+            if not dry_run and result.status != ExecutionStatus.SKIPPED:
                 try:
                     _pjob = locals().get("pjob")
                     _bundle = locals().get("bundle")

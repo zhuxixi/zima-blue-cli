@@ -1,4 +1,4 @@
-"""Actions runner for executing postExec actions after agent process exits."""
+"""Actions runner for executing preExec and postExec actions around agent execution."""
 
 from __future__ import annotations
 
@@ -8,6 +8,12 @@ from zima.actions.base import ActionProvider
 from zima.actions.exceptions import ProviderNotFoundError
 from zima.actions.registry import ProviderRegistry, get_default_registry
 from zima.models.actions import ActionsConfig, PostExecAction
+
+
+class SkipAction(Exception):
+    """Raised when a preExec action indicates the PJob should be skipped."""
+
+    pass
 
 
 def _matches_condition(condition: str, returncode: int) -> bool:
@@ -30,7 +36,7 @@ def _matches_condition(condition: str, returncode: int) -> bool:
 
 
 class ActionsRunner:
-    """Executes postExec actions after agent process exits.
+    """Executes preExec and postExec actions around agent execution.
 
     Handles condition matching, environment variable substitution,
     and action dispatch to the configured provider.
@@ -106,3 +112,41 @@ class ActionsRunner:
                     provider.post_comment(action.repo, action.issue, action.body)
                 except Exception as e:
                     print(f"Warning: Failed to post comment: {e}")
+
+    def _substitute_env_str(self, value: str, env: dict[str, str]) -> str:
+        """Replace {{VAR}} placeholders with env values."""
+        for key, val in env.items():
+            value = value.replace(f"{{{{{key}}}}}", str(val))
+        return value
+
+    def run_pre(self, actions: ActionsConfig, env: dict[str, str]) -> None:
+        """Execute all preExec actions, mutating env with scan results.
+
+        Args:
+            actions: Actions configuration from PJob.
+            env: Mutable environment dict for variable substitution.
+
+        Raises:
+            SkipAction: If a preExec action indicates no work to do.
+        """
+        try:
+            provider = self._registry.get(actions.provider)
+        except ProviderNotFoundError as e:
+            print(f"Warning: {e}")
+            return
+
+        for action in actions.pre_exec:
+            if action.type == "scan_pr":
+                repo = self._substitute_env_str(action.repo, env)
+                label = self._substitute_env_str(action.label, env)
+                prs = provider.scan_prs(repo, label)
+                if not prs:
+                    raise SkipAction(f"No PRs found with label '{label}' in {repo}")
+                # Take the first PR and inject into env
+                pr = prs[0]
+                env["repo"] = repo
+                env["pr_number"] = str(pr.get("number") or "")
+                env["pr_title"] = pr.get("title") or ""
+                env["pr_url"] = pr.get("url") or ""
+            else:
+                print(f"Warning: Unknown preExec action type '{action.type}', skipping")

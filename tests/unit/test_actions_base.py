@@ -24,12 +24,16 @@ class TestActionProvider:
             def fetch_diff(self, repo: str, issue: str) -> str:
                 return "diff"
 
+            def scan_prs(self, repo: str, label: str) -> list[dict]:
+                return []
+
         provider = TestProvider()
         assert provider.name == "test"
         provider.add_label("o/r", "1", "bug")
         provider.remove_label("o/r", "1", "bug")
         provider.post_comment("o/r", "1", "ok")
         assert provider.fetch_diff("o/r", "1") == "diff"
+        assert provider.scan_prs("o/r", "bug") == []
 
     def test_abstract_methods_must_be_implemented(self):
         """Test that missing abstract methods prevent instantiation."""

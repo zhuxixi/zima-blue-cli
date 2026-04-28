@@ -191,11 +191,13 @@ spec:
   workflow: reviewer-cr
   variable: reviewer-vars
   actions:
+    preExec:
+      - type: scan_pr
+        repo: "{{repo}}"
+        label: "zima:needs-review"
     postExec:
       - condition: success
         type: add_label
-        addLabels:
-          - zima:review-approved
         removeLabels:
           - zima:needs-review
         repo: "{{repo}}"

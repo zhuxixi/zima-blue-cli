@@ -28,3 +28,16 @@ class ActionProvider(ABC):
     @abstractmethod
     def fetch_diff(self, repo: str, issue: str) -> str:
         """Fetch PR/MR diff content. Returns empty string on failure."""
+
+    @abstractmethod
+    def scan_prs(self, repo: str, label: str) -> list[dict]:
+        """Scan PRs by label.
+
+        Args:
+            repo: Repository in "owner/repo" format.
+            label: Label to filter by.
+
+        Returns:
+            List of PR dictionaries with at least 'number', 'title', 'url'.
+        """
+        raise NotImplementedError

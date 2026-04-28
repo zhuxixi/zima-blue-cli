@@ -1,4 +1,4 @@
-"""Post-execution action models for PJob automation."""
+"""Action models for PJob automation."""
 
 from __future__ import annotations
 
@@ -7,7 +7,8 @@ from dataclasses import dataclass, field
 from zima.models.serialization import YamlSerializable, omit_empty
 
 VALID_ACTION_CONDITIONS = {"success", "failure", "always"}
-VALID_ACTION_TYPES = {"add_label", "add_comment"}
+VALID_POST_ACTION_TYPES = {"add_label", "add_comment"}
+VALID_PRE_ACTION_TYPES = {"scan_pr"}
 
 
 @dataclass
@@ -65,8 +66,48 @@ class PostExecAction(YamlSerializable):
         errors = []
         if self.condition not in VALID_ACTION_CONDITIONS:
             errors.append(f"Invalid condition '{self.condition}'. Valid: {VALID_ACTION_CONDITIONS}")
-        if self.type not in VALID_ACTION_TYPES:
-            errors.append(f"Invalid type '{self.type}'. Valid: {VALID_ACTION_TYPES}")
+        if self.type not in VALID_POST_ACTION_TYPES:
+            errors.append(f"Invalid type '{self.type}'. Valid: {VALID_POST_ACTION_TYPES}")
+        return errors
+
+
+@dataclass
+class PreExecAction(YamlSerializable):
+    """Single pre-execution action run before agent starts.
+
+    Attributes:
+        condition: When to run — "always", "success", or "failure".
+        type: Action type — "scan_pr".
+        repo: Repository slug in "owner/repo" format (for scan_pr).
+        label: Label to scan for (for scan_pr).
+        command: Reserved for future use.
+    """
+
+    condition: str = "always"
+    type: str = "scan_pr"
+    repo: str = ""
+    label: str = ""
+    command: str = ""
+
+    def to_dict(self) -> dict:
+        return omit_empty(super().to_dict())
+
+    @classmethod
+    def from_dict(cls, data: dict) -> PreExecAction:
+        """Create from dictionary and validate."""
+        action = super().from_dict(data)
+        errors = action.validate()
+        if errors:
+            raise ValueError("; ".join(errors))
+        return action
+
+    def validate(self) -> list[str]:
+        """Validate pre-execution action configuration."""
+        errors = []
+        if self.condition not in VALID_ACTION_CONDITIONS:
+            errors.append(f"Invalid condition '{self.condition}'. Valid: {VALID_ACTION_CONDITIONS}")
+        if self.type not in VALID_PRE_ACTION_TYPES:
+            errors.append(f"Invalid type '{self.type}'. Valid: {VALID_PRE_ACTION_TYPES}")
         return errors
 
 
@@ -75,15 +116,15 @@ class ActionsConfig(YamlSerializable):
     """Collection of actions for a PJob.
 
     Attributes:
-        provider: The action provider to use (default: "github"). Controls which
-            backend executes the postExec actions. Currently only "github" is
-            supported. Omitted from serialized output when set to the default.
-        post_exec: List of PostExecAction instances to run after the agent exits.
+        provider: The action provider to use (default: "github").
+        pre_exec: List of PreExecAction instances to run before the agent starts.
+        post_exec: List of PostExecAction instances to run after agent exits.
     """
 
-    FIELD_ALIASES = {"post_exec": "postExec"}
+    FIELD_ALIASES = {"pre_exec": "preExec", "post_exec": "postExec"}
 
     provider: str = "github"
+    pre_exec: list[PreExecAction] = field(default_factory=list)
     post_exec: list[PostExecAction] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -104,6 +145,9 @@ class ActionsConfig(YamlSerializable):
     def validate(self) -> list[str]:
         """Validate all actions."""
         errors = []
+        for i, action in enumerate(self.pre_exec):
+            action_errors = action.validate()
+            errors.extend([f"PreAction[{i}]: {e}" for e in action_errors])
         for i, action in enumerate(self.post_exec):
             action_errors = action.validate()
             errors.extend([f"Action[{i}]: {e}" for e in action_errors])

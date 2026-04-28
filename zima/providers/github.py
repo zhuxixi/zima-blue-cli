@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 
 from zima.actions.base import ActionProvider
@@ -88,3 +89,38 @@ class GitHubProvider(ActionProvider):
             check=False,
         )
         return result.stdout if result.returncode == 0 else ""
+
+    def scan_prs(self, repo: str, label: str) -> list[dict]:
+        """Scan PRs by label using gh CLI.
+
+        Args:
+            repo: Repository in "owner/repo" format.
+            label: Label to filter by.
+
+        Returns:
+            List of PR dictionaries with number, title, url fields.
+
+        Raises:
+            RuntimeError: If the gh CLI command fails.
+        """
+        result = self._run(
+            [
+                "pr",
+                "list",
+                "--repo",
+                repo,
+                "--label",
+                label,
+                "--state",
+                "open",
+                "--json",
+                "number,title,url,headRefName",
+            ]
+        )
+        try:
+            return json.loads(result.stdout)
+        except json.JSONDecodeError as e:
+            stdout_preview = result.stdout[:200] if result.stdout else "<empty>"
+            raise RuntimeError(
+                f"Failed to parse gh pr list output: {e}\nstdout preview: {stdout_preview}"
+            ) from e

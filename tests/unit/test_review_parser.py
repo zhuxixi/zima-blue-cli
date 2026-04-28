@@ -84,7 +84,7 @@ class TestReviewParser:
         """Test parsing invalid XML returns fallback result."""
         result = ReviewParser.parse("<zima-review><unclosed>")
         assert result.verdict == "needs_discussion"
-        assert "Invalid" in result.summary
+        assert "No review block" in result.summary
 
     def test_parse_empty_issues(self):
         """Test parsing a review with explicit empty issues list."""
@@ -111,3 +111,23 @@ class TestReviewParser:
         stdout = '<zima-review><verdict>needs_fix</verdict><summary>x</summary><issues><issue severity="error" file="a.py" line="abc">msg</issue></issues></zima-review>'
         result = ReviewParser.parse(stdout)
         assert result.issues[0].line == 0
+
+    def test_parse_skill_no_issues_found(self):
+        """Test fallback when agent outputs 'No issues found' (skill pattern)."""
+        stdout = "Some review output...\n### Code Review\n\nNo issues found. Checked for bugs, CLAUDE.md and AGENTS.md compliance.\n🤖 Generated with Kimi Code CLI"
+        result = ReviewParser.parse(stdout)
+        assert result.verdict == "approved"
+        assert "No issues found" in result.summary
+
+    def test_parse_skill_found_n_issues(self):
+        """Test fallback when agent outputs 'Found N issues' (skill pattern)."""
+        stdout = "Some review output...\n### Code Review\n\nFound 3 issues:\n\n1. Missing error handling (bug)\n\nhttps://github.com/o/r/blob/abc/src/auth.ts#L67-L72\n\n🤖 Generated with Kimi Code CLI"
+        result = ReviewParser.parse(stdout)
+        assert result.verdict == "needs_fix"
+        assert "Found 3 issues" in result.summary
+
+    def test_parse_skill_found_zero_issues(self):
+        """Edge case: 'Found 0 issues' should map to approved."""
+        stdout = "Found 0 issues"
+        result = ReviewParser.parse(stdout)
+        assert result.verdict == "approved"
