@@ -599,3 +599,320 @@ class TestPJobLifecycle:
 
         assert result.exit_code == 0
         assert "created from" in result.output
+
+
+class TestBackgroundRunnerState:
+    """Test background runner writes state files correctly."""
+
+    @pytest.fixture(autouse=True)
+    def setup_isolation(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("ZIMA_HOME", str(tmp_path))
+        self.temp_dir = tmp_path
+        self.manager = ConfigManager()
+        for kind in ["agents", "workflows", "variables", "envs", "pmgs", "pjobs"]:
+            (tmp_path / "configs" / kind).mkdir(parents=True, exist_ok=True)
+        from zima.execution.history import ExecutionHistory
+
+        self.history = ExecutionHistory()
+
+    def create_deps(self):
+        agent = AgentConfig.create(code="test-agent", name="Test Agent", agent_type="kimi")
+        self.manager.save_config("agent", "test-agent", agent.to_dict())
+        wf = WorkflowConfig.create(code="test-workflow", name="Test WF", template="# Test")
+        self.manager.save_config("workflow", "test-workflow", wf.to_dict())
+
+        from typer.testing import CliRunner
+
+        from zima.cli import app
+
+        runner = CliRunner()
+        result = runner.invoke(
+            app,
+            [
+                "pjob",
+                "create",
+                "--name",
+                "Test PJob",
+                "--code",
+                "test-pjob",
+                "--agent",
+                "test-agent",
+                "--workflow",
+                "test-workflow",
+            ],
+        )
+        assert result.exit_code == 0
+
+    def test_background_runner_state_file_lifecycle(self):
+        """State file is written at start and updated on completion."""
+        self.create_deps()
+        from datetime import datetime, timezone
+
+        execution_id = "test0001"
+        started_at = datetime.now(timezone.utc).astimezone().isoformat()
+
+        # Simulate CLI writing initial state file
+        self.history.write_runtime_state(
+            "test-pjob",
+            execution_id,
+            {
+                "execution_id": execution_id,
+                "pjob_code": "test-pjob",
+                "status": "running",
+                "pid": 99999,
+                "command": ["echo", "test"],
+                "started_at": started_at,
+                "finished_at": None,
+                "duration_seconds": None,
+                "returncode": None,
+                "stdout_preview": "",
+                "stderr_preview": "",
+                "error_detail": "",
+                "log_path": str(
+                    self.temp_dir / "logs" / "background" / f"test-pjob-{execution_id}.log"
+                ),
+                "agent": "kimi",
+                "workflow": "test-workflow",
+            },
+        )
+
+        # Verify state file exists with running status
+        state = self.history.get_runtime_state("test-pjob", execution_id)
+        assert state is not None
+        assert state["status"] == "running"
+        assert state["pjob_code"] == "test-pjob"
+
+        # Simulate background_runner completing
+        self.history.update_runtime_state(
+            "test-pjob",
+            execution_id,
+            status="success",
+            returncode=0,
+            duration_seconds=5.0,
+            stdout_preview="test output",
+        )
+
+        updated = self.history.get_runtime_state("test-pjob", execution_id)
+        assert updated["status"] == "success"
+        assert updated["returncode"] == 0
+        assert updated["duration_seconds"] == 5.0
+
+
+class TestPJobRuntimeCommands:
+    """Integration tests for status, ps, cancel, and list runtime indicators."""
+
+    @pytest.fixture(autouse=True)
+    def setup_isolation(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("ZIMA_HOME", str(tmp_path))
+        self.temp_dir = tmp_path
+        self.manager = ConfigManager()
+        for kind in ["agents", "workflows", "variables", "envs", "pmgs", "pjobs"]:
+            (tmp_path / "configs" / kind).mkdir(parents=True, exist_ok=True)
+        from zima.execution.history import ExecutionHistory
+
+        self.history = ExecutionHistory()
+
+    def create_deps(self):
+        from zima.models.agent import AgentConfig
+        from zima.models.workflow import WorkflowConfig
+
+        agent = AgentConfig.create(code="test-agent", name="Test Agent", agent_type="kimi")
+        self.manager.save_config("agent", "test-agent", agent.to_dict())
+        wf = WorkflowConfig.create(code="test-workflow", name="Test WF", template="# Test")
+        self.manager.save_config("workflow", "test-workflow", wf.to_dict())
+        from typer.testing import CliRunner
+
+        from zima.cli import app
+
+        runner = CliRunner()
+        result = runner.invoke(
+            app,
+            [
+                "pjob",
+                "create",
+                "--name",
+                "Test PJob",
+                "--code",
+                "test-pjob",
+                "--agent",
+                "test-agent",
+                "--workflow",
+                "test-workflow",
+            ],
+        )
+        assert result.exit_code == 0
+
+    def test_status_no_history(self):
+        """status shows message when no history exists."""
+        self.create_deps()
+        from typer.testing import CliRunner
+
+        from zima.cli import app
+
+        result = CliRunner().invoke(app, ["pjob", "status", "test-pjob"])
+        assert result.exit_code == 0
+        assert "No execution history" in result.output
+
+    def test_status_shows_running(self):
+        """status command shows running execution."""
+        self.create_deps()
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).astimezone().isoformat()
+        self.history.write_runtime_state(
+            "test-pjob",
+            "run001",
+            {
+                "execution_id": "run001",
+                "pjob_code": "test-pjob",
+                "status": "running",
+                "pid": 99999,
+                "started_at": now,
+                "log_path": str(self.temp_dir / "logs" / "background" / "test-pjob-run001.log"),
+                "agent": "kimi",
+                "workflow": "test-workflow",
+            },
+        )
+        from typer.testing import CliRunner
+
+        from zima.cli import app
+
+        result = CliRunner().invoke(app, ["pjob", "status", "test-pjob"])
+        assert result.exit_code == 0
+        assert "run001" in result.output
+
+    def test_status_shows_mixed(self):
+        """status shows both running and completed executions."""
+        self.create_deps()
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).astimezone().isoformat()
+        self.history.write_runtime_state(
+            "test-pjob",
+            "run001",
+            {
+                "execution_id": "run001",
+                "pjob_code": "test-pjob",
+                "status": "running",
+                "pid": 99999,
+                "started_at": now,
+            },
+        )
+        self.history.write_runtime_state(
+            "test-pjob",
+            "run002",
+            {
+                "execution_id": "run002",
+                "pjob_code": "test-pjob",
+                "status": "success",
+                "pid": 10000,
+                "started_at": now,
+                "duration_seconds": 10.0,
+                "returncode": 0,
+            },
+        )
+        from typer.testing import CliRunner
+
+        from zima.cli import app
+
+        result = CliRunner().invoke(app, ["pjob", "status", "test-pjob"])
+        assert result.exit_code == 0
+        assert "run001" in result.output
+        assert "run002" in result.output
+
+    def test_ps_empty(self):
+        """ps command shows message when nothing is running."""
+        self.create_deps()
+        from typer.testing import CliRunner
+
+        from zima.cli import app
+
+        result = CliRunner().invoke(app, ["pjob", "ps"])
+        assert result.exit_code == 0
+        assert "No running" in result.output
+
+    def test_cancel_not_found(self):
+        """cancel with non-existent execution ID."""
+        self.create_deps()
+        from typer.testing import CliRunner
+
+        from zima.cli import app
+
+        result = CliRunner().invoke(app, ["pjob", "cancel", "test-pjob", "--id", "nonexistent"])
+        assert result.exit_code == 1
+
+    def test_cancel_marks_dead_pid(self):
+        """cancel marks dead PID as dead status."""
+        self.create_deps()
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).astimezone().isoformat()
+        self.history.write_runtime_state(
+            "test-pjob",
+            "run001",
+            {
+                "execution_id": "run001",
+                "pjob_code": "test-pjob",
+                "status": "running",
+                "pid": 99999999,
+                "started_at": now,
+            },
+        )
+        from typer.testing import CliRunner
+
+        from zima.cli import app
+
+        result = CliRunner().invoke(app, ["pjob", "cancel", "test-pjob", "--id", "run001"])
+        assert result.exit_code == 0
+        state = self.history.get_runtime_state("test-pjob", "run001")
+        assert state["status"] in ("cancelled", "dead")
+
+    def test_list_shows_running_indicator(self):
+        """pjob list shows running indicator for pjobs with active executions."""
+        self.create_deps()
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).astimezone().isoformat()
+        self.history.write_runtime_state(
+            "test-pjob",
+            "run001",
+            {
+                "execution_id": "run001",
+                "pjob_code": "test-pjob",
+                "status": "running",
+                "pid": 99999,
+                "started_at": now,
+            },
+        )
+        from typer.testing import CliRunner
+
+        from zima.cli import app
+
+        result = CliRunner().invoke(app, ["pjob", "list"])
+        assert result.exit_code == 0
+        assert "test-pjob" in result.output
+
+    def test_history_shows_running_status(self):
+        """history command shows running records with appropriate status."""
+        self.create_deps()
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc).astimezone().isoformat()
+        self.history.write_runtime_state(
+            "test-pjob",
+            "run001",
+            {
+                "execution_id": "run001",
+                "pjob_code": "test-pjob",
+                "status": "running",
+                "pid": 99999,
+                "started_at": now,
+            },
+        )
+        from typer.testing import CliRunner
+
+        from zima.cli import app
+
+        result = CliRunner().invoke(app, ["pjob", "history", "test-pjob"])
+        assert result.exit_code == 0
+        assert "run001" in result.output
