@@ -139,10 +139,7 @@ class ActionsRunner:
             if action.type == "scan_pr":
                 repo = self._substitute_env_str(action.repo, env)
                 label = self._substitute_env_str(action.label, env)
-                try:
-                    prs = provider.scan_prs(repo, label)
-                except Exception as e:
-                    raise SkipAction(f"Failed to scan PRs with label '{label}' in {repo}: {e}")
+                prs = provider.scan_prs(repo, label)
                 if not prs:
                     raise SkipAction(f"No PRs found with label '{label}' in {repo}")
                 # Take the first PR and inject into env
