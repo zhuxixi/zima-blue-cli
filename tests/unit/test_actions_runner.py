@@ -1,7 +1,9 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from zima.actions.exceptions import ProviderNotFoundError
-from zima.execution.actions_runner import ActionsRunner, _matches_condition
+from zima.execution.actions_runner import ActionsRunner, SkipAction, _matches_condition
 from zima.models.actions import ActionsConfig, PostExecAction
 
 
@@ -204,3 +206,67 @@ class TestActionsRunner:
             captured = capsys.readouterr()
             assert "Warning" in captured.out
             assert "nonexistent" in captured.out
+
+
+class TestActionsRunnerPreExec:
+    def test_run_pre_exec_scan_pr(self):
+        """Test running preExec scan_pr action."""
+        from zima.models.actions import PreExecAction
+
+        runner = ActionsRunner()
+        actions = ActionsConfig(
+            pre_exec=[
+                PreExecAction(
+                    type="scan_pr",
+                    repo="owner/repo",
+                    label="zima:needs-review",
+                )
+            ]
+        )
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = [
+            {"number": "42", "title": "Fix", "url": "https://github.com/o/r/pull/42"}
+        ]
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            env = {}
+            runner.run_pre(actions, env)
+            mock_provider.scan_prs.assert_called_once_with("owner/repo", "zima:needs-review")
+            assert env["pr_number"] == "42"
+            assert env["pr_title"] == "Fix"
+            assert env["pr_url"] == "https://github.com/o/r/pull/42"
+
+    def test_run_pre_exec_empty_result(self):
+        """Test preExec scan_pr with no results raises SkipAction."""
+        from zima.models.actions import PreExecAction
+
+        runner = ActionsRunner()
+        actions = ActionsConfig(
+            pre_exec=[PreExecAction(type="scan_pr", repo="owner/repo", label="x")]
+        )
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = []
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with pytest.raises(SkipAction) as exc_info:
+                runner.run_pre(actions, {})
+            assert "no prs found" in str(exc_info.value).lower()
+
+    def test_run_pre_provider_not_found(self, capsys):
+        """Test run_pre warns and returns when provider is not found."""
+        from zima.models.actions import PreExecAction
+
+        runner = ActionsRunner()
+        actions = ActionsConfig(
+            provider="nonexistent",
+            pre_exec=[PreExecAction(type="scan_pr", repo="owner/repo", label="x")],
+        )
+        with patch.object(
+            runner._registry,
+            "get",
+            side_effect=ProviderNotFoundError("Provider 'nonexistent' not found"),
+        ):
+            env = {"existing": "value"}
+            runner.run_pre(actions, env)
+            captured = capsys.readouterr()
+            assert "Warning" in captured.out
+            assert "nonexistent" in captured.out
+            assert env == {"existing": "value"}
