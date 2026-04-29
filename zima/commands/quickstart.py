@@ -13,7 +13,6 @@ import typer
 from rich.console import Console
 
 from zima.config.manager import ConfigManager
-from zima.models.actions import ActionsConfig
 from zima.scenes import load_scenes
 from zima.utils import CODE_MAX_LENGTH
 
@@ -115,7 +114,6 @@ def _create_all_configs(
     work_dir: str,
     env_code: Optional[str],
     manager: ConfigManager,
-    provider: str = "github",
 ) -> dict[str, str]:
     """Create all 5 configurations. Returns dict of created codes."""
     from zima.models.agent import AgentConfig
@@ -168,9 +166,8 @@ def _create_all_configs(
         workflow=wf_code,
         variable=var_code,
         env=env_code or "",
+        actions=scene.default_actions,
     )
-    if provider != "github":
-        job.actions = ActionsConfig(provider=provider)
     manager.save_config("pjob", job_code, job.to_dict())
 
     return {
@@ -353,7 +350,6 @@ def quickstart(
         work_dir=resolved_work_dir,
         env_code=env_code,
         manager=manager,
-        provider=scene.provider,
     )
 
     # Step 9: Print results

@@ -157,6 +157,50 @@ class TestCreateAllConfigs(TestIsolator):
         assert job_data["spec"]["variable"] == codes["variable"]
         assert job_data["spec"]["env"] == "test-env"
 
+    def test_create_all_configs_code_review_has_actions(self):
+        """Test code-review PJob gets postExec actions from scene defaults."""
+        from zima.commands.quickstart import _create_all_configs
+        from zima.config.manager import ConfigManager
+
+        manager = ConfigManager()
+        codes = _create_all_configs(
+            base_name="test",
+            scene_key="code-review",
+            agent_type="kimi",
+            work_dir="/tmp/workspace",
+            env_code=None,
+            manager=manager,
+        )
+
+        job_data = manager.load_config("pjob", codes["pjob"])
+        actions = job_data["spec"].get("actions", {})
+        post_exec = actions.get("postExec", [])
+
+        assert len(post_exec) == 2
+        assert post_exec[0]["condition"] == "success"
+        assert post_exec[0]["removeLabels"] == ["zima:needs-review"]
+        assert post_exec[1]["condition"] == "failure"
+        assert post_exec[1]["addLabels"] == ["zima:needs-fix"]
+
+    def test_create_all_configs_custom_has_no_actions(self):
+        """Test custom PJob gets no postExec actions."""
+        from zima.commands.quickstart import _create_all_configs
+        from zima.config.manager import ConfigManager
+
+        manager = ConfigManager()
+        codes = _create_all_configs(
+            base_name="test",
+            scene_key="custom",
+            agent_type="kimi",
+            work_dir="/tmp/workspace",
+            env_code=None,
+            manager=manager,
+        )
+
+        job_data = manager.load_config("pjob", codes["pjob"])
+        # actions should be absent or empty (ActionsConfig().to_dict() returns {})
+        assert job_data["spec"].get("actions") in (None, {}, {"postExec": [], "preExec": []})
+
     def test_create_all_configs_without_env(self):
         """Test creating configs when no env is selected."""
         from zima.commands.quickstart import _create_all_configs
