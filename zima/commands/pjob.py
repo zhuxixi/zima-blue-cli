@@ -377,6 +377,24 @@ def show(
             exec_branch.add(f"Timeout: {config.spec.execution.timeout}s")
             exec_branch.add(f"Retries: {config.spec.execution.retries}")
 
+            # Actions
+            if config.spec.actions.post_exec:
+                actions_branch = tree.add("[bold]Actions[/bold]")
+                post_branch = actions_branch.add("[bold]PostExec[/bold]")
+                for i, action in enumerate(config.spec.actions.post_exec):
+                    if action.type == "add_label":
+                        parts = []
+                        if action.add_labels:
+                            parts.append("+" + ", +".join(action.add_labels))
+                        if action.remove_labels:
+                            parts.append("-" + ", -".join(action.remove_labels))
+                        detail = " ".join(parts) if parts else "(no labels)"
+                    elif action.type == "add_comment":
+                        detail = f'"{action.body[:50]}"' if action.body else "(no body)"
+                    else:
+                        detail = action.type
+                    post_branch.add(f"[{i}] {action.condition} / {action.type}: {detail}")
+
             console.print(tree)
             console.print(f"\n[dim]File: {manager.get_config_path('pjob', code)}[/dim]")
 
