@@ -301,5 +301,3 @@ class TestActionsRunnerPreExec:
             assert env["repo"] == "my-org/my-repo"
             assert env["pr_number"] == "7"
             assert env["pr_diff"] == "diff data"
-
-
