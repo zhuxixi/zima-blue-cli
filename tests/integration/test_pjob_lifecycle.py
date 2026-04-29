@@ -600,6 +600,72 @@ class TestPJobLifecycle:
         assert result.exit_code == 0
         assert "created from" in result.output
 
+    def test_show_with_actions(self):
+        """Test show displays actions branch when configured."""
+        self.create_test_agent()
+        self.create_test_workflow()
+        runner.invoke(
+            app,
+            [
+                "pjob",
+                "create",
+                "--name",
+                "T",
+                "--code",
+                "test-pjob",
+                "--agent",
+                "test-agent",
+                "--workflow",
+                "test-workflow",
+            ],
+        )
+        runner.invoke(
+            app,
+            [
+                "pjob",
+                "actions",
+                "test-pjob",
+                "add",
+                "--condition",
+                "success",
+                "--type",
+                "add_label",
+                "--add-label",
+                "reviewed",
+                "--repo",
+                "owner/repo",
+                "--issue",
+                "{{pr_number}}",
+            ],
+        )
+        result = runner.invoke(app, ["pjob", "show", "test-pjob"])
+        assert result.exit_code == 0
+        assert "Actions" in result.output
+        assert "add_label" in result.output
+
+    def test_show_without_actions(self):
+        """Test show omits actions branch when none configured."""
+        self.create_test_agent()
+        self.create_test_workflow()
+        runner.invoke(
+            app,
+            [
+                "pjob",
+                "create",
+                "--name",
+                "T",
+                "--code",
+                "test-pjob",
+                "--agent",
+                "test-agent",
+                "--workflow",
+                "test-workflow",
+            ],
+        )
+        result = runner.invoke(app, ["pjob", "show", "test-pjob"])
+        assert result.exit_code == 0
+        assert "Actions" not in result.output
+
 
 class TestBackgroundRunnerState:
     """Test background runner writes state files correctly."""

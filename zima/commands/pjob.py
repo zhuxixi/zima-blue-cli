@@ -15,11 +15,29 @@ from rich.tree import Tree
 from zima.config.manager import ConfigManager
 from zima.execution.executor import PJobExecutor
 from zima.execution.history import ExecutionHistory
+from zima.models.actions import VALID_ACTION_CONDITIONS, VALID_POST_ACTION_TYPES, PostExecAction
 from zima.models.pjob import Overrides, PJobConfig
 from zima.utils import get_zima_home, validate_code_with_error
 
 app = typer.Typer(name="pjob", help="PJob management - execute Agent tasks")
 console = Console(legacy_windows=False, force_terminal=True)
+
+actions_app = typer.Typer(
+    name="actions",
+    help="Manage PJob postExec actions and provider",
+    invoke_without_command=True,
+)
+app.add_typer(actions_app, name="actions")
+
+
+@actions_app.callback()
+def actions_callback(
+    ctx: typer.Context,
+    code: str = typer.Argument(..., help="PJob code"),
+):
+    """Manage PJob postExec actions and provider."""
+    ctx.ensure_object(dict)
+    ctx.obj["pjob_code"] = code
 
 
 @app.command()
@@ -358,6 +376,14 @@ def show(
             exec_branch.add(f"Work Dir: {config.spec.execution.work_dir or 'default'}")
             exec_branch.add(f"Timeout: {config.spec.execution.timeout}s")
             exec_branch.add(f"Retries: {config.spec.execution.retries}")
+
+            # Actions
+            if config.spec.actions.post_exec:
+                actions_branch = tree.add("[bold]Actions[/bold]")
+                post_branch = actions_branch.add("[bold]PostExec[/bold]")
+                for i, action in enumerate(config.spec.actions.post_exec):
+                    detail = _format_action_detail(action)
+                    post_branch.add(f"[{i}] {action.condition} / {action.type}: {detail}")
 
             console.print(tree)
             console.print(f"\n[dim]File: {manager.get_config_path('pjob', code)}[/dim]")
@@ -1243,3 +1269,156 @@ def show_history(
         f"avg {stats['avg_duration']:.1f}s"
     )
     console.print(f"\nUse [dim]zima pjob history {code} --detail <ID>[/dim] to see error details")
+
+
+# =============================================================================
+# Actions subcommands
+# =============================================================================
+
+
+def _format_action_detail(action) -> str:
+    """Format a postExec action into a human-readable detail string."""
+    if action.type == "add_label":
+        parts = []
+        if action.add_labels:
+            parts.append("+" + ", +".join(action.add_labels))
+        if action.remove_labels:
+            parts.append("-" + ", -".join(action.remove_labels))
+        return " ".join(parts) if parts else "(no labels)"
+    if action.type == "add_comment":
+        return f'"{action.body[:50]}"' if action.body else "(no body)"
+    return action.type
+
+
+@actions_app.command("provider")
+def actions_provider(
+    ctx: typer.Context,
+    name: Optional[str] = typer.Argument(None, help="Provider name (omit to view current)"),
+):
+    """Get or set the action provider for a PJob."""
+    code = ctx.obj["pjob_code"]
+    manager = ConfigManager()
+    if not manager.config_exists("pjob", code):
+        console.print(f"[red]✗[/red] PJob '{code}' not found")
+        raise typer.Exit(1)
+    data = manager.load_config("pjob", code)
+    config = PJobConfig.from_dict(data)
+    if name is None:
+        console.print(f"Provider: {config.spec.actions.provider}")
+    else:
+        config.spec.actions.provider = name
+        manager.save_config("pjob", code, config.to_dict())
+        console.print(f"[green]✓[/green] Provider set to '{name}'")
+
+
+@actions_app.command("list")
+def actions_list(
+    ctx: typer.Context,
+):
+    """List all postExec actions for a PJob."""
+    code = ctx.obj["pjob_code"]
+    manager = ConfigManager()
+    if not manager.config_exists("pjob", code):
+        console.print(f"[red]✗[/red] PJob '{code}' not found")
+        raise typer.Exit(1)
+    data = manager.load_config("pjob", code)
+    config = PJobConfig.from_dict(data)
+    actions = config.spec.actions.post_exec
+    if not actions:
+        console.print(f"[yellow]No postExec actions configured for '{code}'[/yellow]")
+        return
+    table = Table(title=f"PostExec Actions: {code}")
+    table.add_column("Index", style="cyan", width=5)
+    table.add_column("Condition", style="green")
+    table.add_column("Type", style="yellow")
+    table.add_column("Details")
+    for i, action in enumerate(actions):
+        detail = _format_action_detail(action)
+        if action.repo:
+            detail += f" ({action.repo}"
+            if action.issue:
+                detail += f" #{action.issue}"
+            detail += ")"
+        table.add_row(str(i), action.condition, action.type, detail)
+    console.print(table)
+
+
+@actions_app.command("add")
+def actions_add(
+    ctx: typer.Context,
+    condition: str = typer.Option(..., "--condition", help="When to run: success, failure, always"),
+    action_type: str = typer.Option(..., "--type", help="Action type: add_label, add_comment"),
+    add_label: Optional[List[str]] = typer.Option(
+        None, "--add-label", help="Labels to add (repeatable)"
+    ),
+    remove_label: Optional[List[str]] = typer.Option(
+        None, "--remove-label", help="Labels to remove (repeatable)"
+    ),
+    repo: str = typer.Option("", "--repo", help="Repository (owner/repo)"),
+    issue: str = typer.Option("", "--issue", help="Issue/PR number (supports {{VAR}})"),
+    body: str = typer.Option("", "--body", help="Comment body (for add_comment)"),
+):
+    """Add a postExec action to a PJob."""
+    code = ctx.obj["pjob_code"]
+    manager = ConfigManager()
+    if not manager.config_exists("pjob", code):
+        console.print(f"[red]✗[/red] PJob '{code}' not found")
+        raise typer.Exit(1)
+    if condition not in VALID_ACTION_CONDITIONS:
+        console.print(
+            f"[red]✗[/red] Invalid condition '{condition}'. "
+            f"Valid: {', '.join(sorted(VALID_ACTION_CONDITIONS))}"
+        )
+        raise typer.Exit(1)
+    if action_type not in VALID_POST_ACTION_TYPES:
+        console.print(
+            f"[red]✗[/red] Invalid type '{action_type}'. "
+            f"Valid: {', '.join(sorted(VALID_POST_ACTION_TYPES))}"
+        )
+        raise typer.Exit(1)
+    if action_type == "add_label" and not add_label and not remove_label:
+        console.print("[yellow]⚠[/yellow] Warning: No labels specified for add_label action")
+    if action_type == "add_comment" and not body:
+        console.print("[yellow]⚠[/yellow] Warning: No body specified for add_comment action")
+    data = manager.load_config("pjob", code)
+    config = PJobConfig.from_dict(data)
+    action = PostExecAction(
+        condition=condition,
+        type=action_type,
+        add_labels=list(add_label) if add_label else [],
+        remove_labels=list(remove_label) if remove_label else [],
+        repo=repo,
+        issue=issue,
+        body=body,
+    )
+    config.spec.actions.post_exec.append(action)
+    manager.save_config("pjob", code, config.to_dict())
+    console.print(
+        f"[green]✓[/green] Action added to '{code}' (index {len(config.spec.actions.post_exec) - 1})"
+    )
+
+
+@actions_app.command("remove")
+def actions_remove(
+    ctx: typer.Context,
+    index: int = typer.Option(..., "--index", help="0-based index of action to remove"),
+):
+    """Remove a postExec action by index."""
+    code = ctx.obj["pjob_code"]
+    manager = ConfigManager()
+    if not manager.config_exists("pjob", code):
+        console.print(f"[red]✗[/red] PJob '{code}' not found")
+        raise typer.Exit(1)
+    data = manager.load_config("pjob", code)
+    config = PJobConfig.from_dict(data)
+    actions = config.spec.actions.post_exec
+    if index < 0 or index >= len(actions):
+        upper = len(actions) - 1 if actions else 0
+        console.print(
+            f"[red]✗[/red] Invalid index {index}. "
+            f"PJob '{code}' has {len(actions)} action(s) (indices 0-{upper})"
+        )
+        raise typer.Exit(1)
+    removed = actions.pop(index)
+    manager.save_config("pjob", code, config.to_dict())
+    console.print(f"[green]✓[/green] Removed action at index {index} ({removed.type})")
