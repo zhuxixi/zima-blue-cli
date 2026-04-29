@@ -255,7 +255,7 @@ class TestPJobActionsAdd:
 
     def test_add_multiple_actions(self):
         _create_deps(self.tmp_path)
-        runner.invoke(
+        result1 = runner.invoke(
             app,
             [
                 "pjob",
@@ -270,7 +270,8 @@ class TestPJobActionsAdd:
                 "a",
             ],
         )
-        runner.invoke(
+        assert result1.exit_code == 0
+        result2 = runner.invoke(
             app,
             [
                 "pjob",
@@ -285,9 +286,29 @@ class TestPJobActionsAdd:
                 "fail",
             ],
         )
+        assert result2.exit_code == 0
         list_result = runner.invoke(app, ["pjob", "actions", "test-pjob", "list"])
         assert "add_label" in list_result.output
         assert "add_comment" in list_result.output
+
+    def test_add_comment_warns_no_body(self):
+        _create_deps(self.tmp_path)
+        result = runner.invoke(
+            app,
+            [
+                "pjob",
+                "actions",
+                "test-pjob",
+                "add",
+                "--condition",
+                "failure",
+                "--type",
+                "add_comment",
+            ],
+        )
+        assert result.exit_code == 0
+        output_lower = result.output.lower()
+        assert "warn" in output_lower
 
 
 class TestPJobActionsRemove:

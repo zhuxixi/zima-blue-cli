@@ -382,17 +382,7 @@ def show(
                 actions_branch = tree.add("[bold]Actions[/bold]")
                 post_branch = actions_branch.add("[bold]PostExec[/bold]")
                 for i, action in enumerate(config.spec.actions.post_exec):
-                    if action.type == "add_label":
-                        parts = []
-                        if action.add_labels:
-                            parts.append("+" + ", +".join(action.add_labels))
-                        if action.remove_labels:
-                            parts.append("-" + ", -".join(action.remove_labels))
-                        detail = " ".join(parts) if parts else "(no labels)"
-                    elif action.type == "add_comment":
-                        detail = f'"{action.body[:50]}"' if action.body else "(no body)"
-                    else:
-                        detail = action.type
+                    detail = _format_action_detail(action)
                     post_branch.add(f"[{i}] {action.condition} / {action.type}: {detail}")
 
             console.print(tree)
@@ -1286,6 +1276,20 @@ def show_history(
 # =============================================================================
 
 
+def _format_action_detail(action) -> str:
+    """Format a postExec action into a human-readable detail string."""
+    if action.type == "add_label":
+        parts = []
+        if action.add_labels:
+            parts.append("+" + ", +".join(action.add_labels))
+        if action.remove_labels:
+            parts.append("-" + ", -".join(action.remove_labels))
+        return " ".join(parts) if parts else "(no labels)"
+    if action.type == "add_comment":
+        return f'"{action.body[:50]}"' if action.body else "(no body)"
+    return action.type
+
+
 @actions_app.command("provider")
 def actions_provider(
     ctx: typer.Context,
@@ -1329,17 +1333,7 @@ def actions_list(
     table.add_column("Type", style="yellow")
     table.add_column("Details")
     for i, action in enumerate(actions):
-        if action.type == "add_label":
-            parts = []
-            if action.add_labels:
-                parts.append("+" + ", +".join(action.add_labels))
-            if action.remove_labels:
-                parts.append("-" + ", -".join(action.remove_labels))
-            detail = " ".join(parts) if parts else "(no labels)"
-        elif action.type == "add_comment":
-            detail = action.body[:60] if action.body else "(no body)"
-        else:
-            detail = ""
+        detail = _format_action_detail(action)
         if action.repo:
             detail += f" ({action.repo}"
             if action.issue:
@@ -1385,7 +1379,7 @@ def actions_add(
     if action_type == "add_label" and not add_label and not remove_label:
         console.print("[yellow]⚠[/yellow] Warning: No labels specified for add_label action")
     if action_type == "add_comment" and not body:
-        console.print("[yellow]⚠[/yellow] No body specified for add_comment action")
+        console.print("[yellow]⚠[/yellow] Warning: No body specified for add_comment action")
     data = manager.load_config("pjob", code)
     config = PJobConfig.from_dict(data)
     action = PostExecAction(
