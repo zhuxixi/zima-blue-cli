@@ -8,6 +8,7 @@ from typing import Optional
 
 import yaml
 
+from zima.models.actions import ActionsConfig, PostExecAction
 from zima.utils import get_zima_home
 
 
@@ -22,6 +23,7 @@ class Scene:
         variables: Default variable values for the template.
         provider: Action provider name (default ``"github"``).
         scan_command: Optional CLI command to scan for items (e.g. PRs/MRs).
+        default_actions: Optional default actions (postExec label transitions, etc.).
     """
 
     name: str
@@ -30,6 +32,7 @@ class Scene:
     variables: dict[str, str]
     provider: str = "github"
     scan_command: Optional[list[str]] = None
+    default_actions: Optional[ActionsConfig] = None
 
 
 BUILTIN_SCENES: dict[str, Scene] = {
@@ -50,6 +53,25 @@ BUILTIN_SCENES: dict[str, Scene] = {
             "--json",
             "number,title,url",
         ],
+        default_actions=ActionsConfig(
+            post_exec=[
+                PostExecAction(
+                    condition="success",
+                    type="add_label",
+                    remove_labels=["zima:needs-review"],
+                    repo="{{repo}}",
+                    issue="{{pr_number}}",
+                ),
+                PostExecAction(
+                    condition="failure",
+                    type="add_label",
+                    add_labels=["zima:needs-fix"],
+                    remove_labels=["zima:needs-review"],
+                    repo="{{repo}}",
+                    issue="{{pr_number}}",
+                ),
+            ],
+        ),
     ),
     "custom": Scene(
         name="Custom Task",

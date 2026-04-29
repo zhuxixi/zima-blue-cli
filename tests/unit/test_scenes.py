@@ -1,6 +1,7 @@
 """Unit tests for quickstart scene definitions."""
 
 from tests.base import TestIsolator
+from zima.models.actions import ActionsConfig
 from zima.scenes import BUILTIN_SCENES, QUICKSTART_SCENES, Scene, load_scenes
 
 
@@ -34,6 +35,16 @@ class TestSceneDataclass:
         )
         assert scene.provider == "github"
         assert scene.scan_command == ["gh", "pr", "list"]
+
+    def test_scene_creation_with_default_actions_none(self):
+        """Test Scene default_actions defaults to None."""
+        scene = Scene(
+            name="Test",
+            description="Test",
+            workflow_template="hi",
+            variables={},
+        )
+        assert scene.default_actions is None
 
 
 class TestBuiltinScenes:
@@ -78,6 +89,34 @@ class TestBuiltinScenes:
         assert scene.variables == {}
         assert scene.provider == "github"
         assert scene.scan_command is None
+
+    def test_code_review_scene_has_default_actions(self):
+        """Test code-review scene has postExec label transition actions."""
+        scene = BUILTIN_SCENES["code-review"]
+        assert scene.default_actions is not None
+        assert isinstance(scene.default_actions, ActionsConfig)
+        assert len(scene.default_actions.post_exec) == 2
+
+        success_action = scene.default_actions.post_exec[0]
+        assert success_action.condition == "success"
+        assert success_action.type == "add_label"
+        assert success_action.remove_labels == ["zima:needs-review"]
+        assert success_action.add_labels == []
+        assert success_action.repo == "{{repo}}"
+        assert success_action.issue == "{{pr_number}}"
+
+        failure_action = scene.default_actions.post_exec[1]
+        assert failure_action.condition == "failure"
+        assert failure_action.type == "add_label"
+        assert failure_action.add_labels == ["zima:needs-fix"]
+        assert failure_action.remove_labels == ["zima:needs-review"]
+        assert failure_action.repo == "{{repo}}"
+        assert failure_action.issue == "{{pr_number}}"
+
+    def test_custom_scene_has_no_default_actions(self):
+        """Test custom scene has no default actions."""
+        scene = BUILTIN_SCENES["custom"]
+        assert scene.default_actions is None
 
     def test_all_scenes_have_required_keys(self):
         """Test every scene has name, description, workflow_template, variables."""
