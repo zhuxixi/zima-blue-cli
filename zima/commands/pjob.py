@@ -21,6 +21,9 @@ from zima.utils import get_zima_home, validate_code_with_error
 app = typer.Typer(name="pjob", help="PJob management - execute Agent tasks")
 console = Console(legacy_windows=False, force_terminal=True)
 
+actions_app = typer.Typer(name="actions", help="Manage PJob postExec actions and provider")
+app.add_typer(actions_app, name="actions")
+
 
 @app.command()
 def create(
