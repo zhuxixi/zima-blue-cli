@@ -2,6 +2,7 @@
 
 import pytest
 
+from zima.models.actions import ActionsConfig, PostExecAction
 from zima.models.pjob import (
     ExecutionOptions,
     OutputOptions,
@@ -312,6 +313,41 @@ class TestPJobConfig:
         assert config.spec.variable == "var1"
         assert "a" in config.metadata.labels
 
+    def test_create_with_actions(self):
+        """Test PJobConfig.create with actions parameter."""
+        actions = ActionsConfig(
+            post_exec=[
+                PostExecAction(
+                    condition="success",
+                    type="add_label",
+                    remove_labels=["zima:needs-review"],
+                    repo="{{repo}}",
+                    issue="{{pr_number}}",
+                ),
+            ],
+        )
+        config = PJobConfig.create(
+            code="test-job",
+            name="Test Job",
+            agent="my-agent",
+            workflow="my-workflow",
+            actions=actions,
+        )
+        assert config.spec.actions.post_exec == actions.post_exec
+        assert config.spec.actions.post_exec[0].condition == "success"
+        assert config.spec.actions.post_exec[0].remove_labels == ["zima:needs-review"]
+
+    def test_create_without_actions_defaults_empty(self):
+        """Test PJobConfig.create without actions uses default empty ActionsConfig."""
+        config = PJobConfig.create(
+            code="test-job",
+            name="Test Job",
+            agent="my-agent",
+            workflow="my-workflow",
+        )
+        assert config.spec.actions.post_exec == []
+        assert config.spec.actions.pre_exec == []
+
     def test_get_config_refs(self):
         """Test getting config references."""
         config = PJobConfig.create(
@@ -334,8 +370,6 @@ class TestPJobConfig:
 class TestPJobSpecActions:
     def test_spec_with_actions(self):
         """Test PJobSpec with actions configuration."""
-        from zima.models.actions import ActionsConfig, PostExecAction
-
         actions = ActionsConfig(
             post_exec=[
                 PostExecAction(
@@ -365,8 +399,6 @@ class TestPJobSpecActions:
 
     def test_spec_actions_to_dict(self):
         """Test serializing PJobSpec with actions to dictionary."""
-        from zima.models.actions import ActionsConfig, PostExecAction
-
         spec = PJobSpec(
             agent="a",
             workflow="w",

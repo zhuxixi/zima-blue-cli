@@ -253,6 +253,7 @@ class PJobConfig(BaseConfig):
         execution: Optional[dict] = None,
         hooks: Optional[dict] = None,
         output: Optional[dict] = None,
+        actions: Optional[ActionsConfig] = None,
     ) -> PJobConfig:
         """
         Factory method to create a new PJobConfig.
@@ -271,6 +272,7 @@ class PJobConfig(BaseConfig):
             execution: Execution options
             hooks: Pre/post execution hooks
             output: Output handling options
+            actions: Post-execution actions configuration
 
         Returns:
             New PJobConfig instance
@@ -285,7 +287,7 @@ class PJobConfig(BaseConfig):
 
         now = generate_timestamp()
 
-        return cls(
+        job = cls(
             metadata=PJobMetadata(
                 code=code,
                 name=name,
@@ -302,10 +304,12 @@ class PJobConfig(BaseConfig):
                 execution=ExecutionOptions.from_dict(execution or {}),
                 hooks=hooks or {},
                 output=OutputOptions.from_dict(output or {}),
+                actions=actions or ActionsConfig(),
             ),
             created_at=now,
             updated_at=now,
         )
+        return job
 
     def validate(self, resolve_refs: bool = False) -> list[str]:
         """
