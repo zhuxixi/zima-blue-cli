@@ -227,13 +227,16 @@ class TestActionsRunnerPreExec:
         mock_provider.scan_prs.return_value = [
             {"number": "42", "title": "Fix", "url": "https://github.com/o/r/pull/42"}
         ]
+        mock_provider.fetch_diff.return_value = "diff content"
         with patch.object(runner._registry, "get", return_value=mock_provider):
             env = {}
             runner.run_pre(actions, env)
             mock_provider.scan_prs.assert_called_once_with("owner/repo", "zima:needs-review")
+            mock_provider.fetch_diff.assert_called_once_with("owner/repo", "42")
             assert env["pr_number"] == "42"
             assert env["pr_title"] == "Fix"
             assert env["pr_url"] == "https://github.com/o/r/pull/42"
+            assert env["pr_diff"] == "diff content"
 
     def test_run_pre_exec_empty_result(self):
         """Test preExec scan_pr with no results raises SkipAction."""
@@ -289,9 +292,12 @@ class TestActionsRunnerPreExec:
         mock_provider.scan_prs.return_value = [
             {"number": "7", "title": "Test", "url": "https://github.com/o/r/pull/7"}
         ]
+        mock_provider.fetch_diff.return_value = "diff data"
         with patch.object(runner._registry, "get", return_value=mock_provider):
             env = {"repo": "my-org/my-repo", "label": "needs-review"}
             runner.run_pre(actions, env)
             mock_provider.scan_prs.assert_called_once_with("my-org/my-repo", "needs-review")
+            mock_provider.fetch_diff.assert_called_once_with("my-org/my-repo", "7")
             assert env["repo"] == "my-org/my-repo"
             assert env["pr_number"] == "7"
+            assert env["pr_diff"] == "diff data"
