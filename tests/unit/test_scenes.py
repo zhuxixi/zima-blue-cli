@@ -209,6 +209,38 @@ class TestLoadScenes(TestIsolator):
         scenes = load_scenes()
         assert scenes["no-scan"].scan_command is None
 
+    def test_user_scene_with_default_actions(self, isolated_zima_home):
+        """Test load_scenes deserializes default_actions dict to ActionsConfig."""
+        from zima.models.actions import ActionsConfig
+
+        scenes_file = isolated_zima_home / "scenes.yaml"
+        scenes_file.write_text(
+            "scenes:\n"
+            "  my-review:\n"
+            "    name: My Review\n"
+            "    description: Custom review\n"
+            '    workflow_template: "Review {{ pr_url }}"\n'
+            "    variables:\n"
+            '      pr_url: ""\n'
+            "    default_actions:\n"
+            "      postExec:\n"
+            "        - condition: success\n"
+            "          type: add_label\n"
+            "          removeLabels:\n"
+            "            - zima:needs-review\n"
+            '          repo: "{{repo}}"\n'
+            '          issue: "{{pr_number}}"\n',
+            encoding="utf-8",
+        )
+        scenes = load_scenes()
+        assert "my-review" in scenes
+        assert isinstance(scenes["my-review"].default_actions, ActionsConfig)
+        assert len(scenes["my-review"].default_actions.post_exec) == 1
+        assert scenes["my-review"].default_actions.post_exec[0].condition == "success"
+        assert scenes["my-review"].default_actions.post_exec[0].remove_labels == [
+            "zima:needs-review"
+        ]
+
     def test_empty_scenes_yaml(self, isolated_zima_home):
         """Test load_scenes handles empty scenes.yaml gracefully."""
         scenes_file = isolated_zima_home / "scenes.yaml"

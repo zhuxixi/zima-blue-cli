@@ -96,7 +96,9 @@ def load_scenes() -> dict[str, Scene]:
             return scenes
         for key, spec in data.get("scenes", {}).items():
             try:
+                if "default_actions" in spec and isinstance(spec["default_actions"], dict):
+                    spec["default_actions"] = ActionsConfig.from_dict(spec["default_actions"])
                 scenes[key] = Scene(**spec)
-            except TypeError as e:
+            except (TypeError, ValueError) as e:
                 print(f"Warning: Invalid scene config '{key}': {e}")
     return scenes
