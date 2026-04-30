@@ -1413,11 +1413,13 @@ def actions_remove(
     config = PJobConfig.from_dict(data)
     actions = config.spec.actions.post_exec
     if index < 0 or index >= len(actions):
-        upper = len(actions) - 1 if actions else 0
-        console.print(
-            f"[red]✗[/red] Invalid index {index}. "
-            f"PJob '{code}' has {len(actions)} action(s) (indices 0-{upper})"
-        )
+        if not actions:
+            console.print(f"[red]✗[/red] PJob '{code}' has no actions")
+        else:
+            console.print(
+                f"[red]✗[/red] Invalid index {index}. "
+                f"PJob '{code}' has {len(actions)} action(s) (indices 0-{len(actions) - 1})"
+            )
         raise typer.Exit(1)
     removed = actions.pop(index)
     manager.save_config("pjob", code, config.to_dict())
