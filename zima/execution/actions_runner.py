@@ -42,8 +42,15 @@ class ActionsRunner:
     and action dispatch to the configured provider.
     """
 
-    def __init__(self, registry: Optional[ProviderRegistry] = None):
+    def __init__(
+        self,
+        registry: Optional[ProviderRegistry] = None,
+        history=None,
+        pjob_code: Optional[str] = None,
+    ):
         self._registry = registry or get_default_registry()
+        self._history = history
+        self._pjob_code = pjob_code
 
     def run(
         self,
@@ -119,6 +126,28 @@ class ActionsRunner:
             value = value.replace(f"{{{{{key}}}}}", str(val))
         return value
 
+    def _select_pr(self, prs: list[dict], repo: str) -> dict:
+        """Select the next eligible PR, skipping recently-failed ones.
+
+        Falls back to prs[0] when no history is configured.
+        """
+        if not self._history or not self._pjob_code:
+            return prs[0]
+
+        failures = self._history.get_recent_scan_pr_failures(self._pjob_code, 90)
+        skip_set = set()
+        for rec in failures:
+            spr = rec.get("scan_pr_result")
+            if spr:
+                skip_set.add((spr.get("repo", ""), spr.get("pr_number", "")))
+
+        for pr in prs:
+            pr_num = str(pr.get("number") or "")
+            if (repo, pr_num) not in skip_set:
+                return pr
+
+        raise SkipAction(f"All {len(prs)} PR(s) recently attempted, skipping")
+
     def run_pre(self, actions: ActionsConfig, env: dict[str, str]) -> dict[str, str]:
         """Execute all preExec actions, return discovered variables.
 
@@ -146,7 +175,7 @@ class ActionsRunner:
                 prs = provider.scan_prs(repo, label)
                 if not prs:
                     raise SkipAction(f"No PRs found with label '{label}' in {repo}")
-                pr = prs[0]
+                pr = self._select_pr(prs, repo)
                 discovered["repo"] = repo
                 discovered["pr_number"] = str(pr.get("number") or "")
                 discovered["pr_title"] = pr.get("title") or ""
