@@ -129,6 +129,6 @@ class TestInjectDynamicVars:
         bundle.inject_dynamic_vars(dynamic_vars)
 
         assert bundle.variable is not None
-        # With no existing variable, preExec values are all injected
-        assert bundle.variable.values["repo"] == "preexec-repo"
+        # Override key should be filtered out, only non-conflicting keys injected
+        assert "repo" not in bundle.variable.values
         assert bundle.variable.values["extra"] == "value"

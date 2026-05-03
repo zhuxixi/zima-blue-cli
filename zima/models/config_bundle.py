@@ -134,7 +134,11 @@ class ConfigBundle:
                 if key not in self.overrides.variable_values:
                     self.variable.values[key] = value
         else:
-            self.variable = VariableConfig(values=dynamic_vars)
+            filtered = {
+                k: v for k, v in dynamic_vars.items() if k not in self.overrides.variable_values
+            }
+            if filtered:
+                self.variable = VariableConfig(values=filtered)
 
     def apply_overrides(self, overrides: Overrides) -> None:
         """
