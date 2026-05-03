@@ -1,17 +1,19 @@
 """Integration tests for PJob actions subcommands."""
 
-import pytest
 from typer.testing import CliRunner
 
+from tests.base import TestIsolator
 from zima.cli import app
 from zima.config.manager import ConfigManager
+from zima.models.actions import PostExecAction
 from zima.models.agent import AgentConfig
+from zima.models.pjob import PJobConfig
 from zima.models.workflow import WorkflowConfig
 
 runner = CliRunner()
 
 
-def _create_deps(tmp_path, pjob_code="test-pjob"):
+def _create_deps(temp_dir, pjob_code="test-pjob"):
     """Helper: set up ZIMA_HOME, create agent+workflow+pjob."""
     manager = ConfigManager()
     agent = AgentConfig.create(code="test-agent", name="Test Agent", agent_type="kimi")
@@ -37,22 +39,15 @@ def _create_deps(tmp_path, pjob_code="test-pjob"):
     return manager
 
 
-class TestPJobActionsProvider:
-    @pytest.fixture(autouse=True)
-    def setup_isolation(self, monkeypatch, tmp_path):
-        self.tmp_path = tmp_path
-        monkeypatch.setenv("ZIMA_HOME", str(tmp_path))
-        for kind in ["agents", "workflows", "variables", "envs", "pmgs", "pjobs"]:
-            (tmp_path / "configs" / kind).mkdir(parents=True, exist_ok=True)
-
+class TestPJobActionsProvider(TestIsolator):
     def test_provider_default(self):
-        _create_deps(self.tmp_path)
+        _create_deps(self.temp_dir)
         result = runner.invoke(app, ["pjob", "actions", "test-pjob", "provider"])
         assert result.exit_code == 0
         assert "github" in result.output
 
     def test_provider_set(self):
-        _create_deps(self.tmp_path)
+        _create_deps(self.temp_dir)
         result = runner.invoke(app, ["pjob", "actions", "test-pjob", "provider", "gitlab"])
         assert result.exit_code == 0
         assert "gitlab" in result.output
@@ -65,28 +60,17 @@ class TestPJobActionsProvider:
         assert "not found" in result.output
 
 
-class TestPJobActionsList:
-    @pytest.fixture(autouse=True)
-    def setup_isolation(self, monkeypatch, tmp_path):
-        self.tmp_path = tmp_path
-        monkeypatch.setenv("ZIMA_HOME", str(tmp_path))
-        for kind in ["agents", "workflows", "variables", "envs", "pmgs", "pjobs"]:
-            (tmp_path / "configs" / kind).mkdir(parents=True, exist_ok=True)
-
+class TestPJobActionsList(TestIsolator):
     def test_list_empty(self):
-        _create_deps(self.tmp_path, "t1")
+        _create_deps(self.temp_dir, "t1")
         result = runner.invoke(app, ["pjob", "actions", "t1", "list"])
         assert result.exit_code == 0
         assert "No postExec actions" in result.output
 
     def test_list_with_actions(self):
-        from zima.models.actions import PostExecAction
-
-        _create_deps(self.tmp_path)
+        _create_deps(self.temp_dir)
         manager = ConfigManager()
         data = manager.load_config("pjob", "test-pjob")
-        from zima.models.pjob import PJobConfig
-
         pjob = PJobConfig.from_dict(data)
         pjob.spec.actions.post_exec.append(
             PostExecAction(
@@ -108,16 +92,9 @@ class TestPJobActionsList:
         assert result.exit_code != 0
 
 
-class TestPJobActionsAdd:
-    @pytest.fixture(autouse=True)
-    def setup_isolation(self, monkeypatch, tmp_path):
-        self.tmp_path = tmp_path
-        monkeypatch.setenv("ZIMA_HOME", str(tmp_path))
-        for kind in ["agents", "workflows", "variables", "envs", "pmgs", "pjobs"]:
-            (tmp_path / "configs" / kind).mkdir(parents=True, exist_ok=True)
-
+class TestPJobActionsAdd(TestIsolator):
     def test_add_label_action(self):
-        _create_deps(self.tmp_path)
+        _create_deps(self.temp_dir)
         result = runner.invoke(
             app,
             [
@@ -146,7 +123,7 @@ class TestPJobActionsAdd:
         assert "reviewed" in list_result.output
 
     def test_add_comment_action(self):
-        _create_deps(self.tmp_path)
+        _create_deps(self.temp_dir)
         result = runner.invoke(
             app,
             [
@@ -169,7 +146,7 @@ class TestPJobActionsAdd:
         assert result.exit_code == 0
 
     def test_add_invalid_condition(self):
-        _create_deps(self.tmp_path)
+        _create_deps(self.temp_dir)
         result = runner.invoke(
             app,
             [
@@ -187,7 +164,7 @@ class TestPJobActionsAdd:
         assert "Invalid condition" in result.output
 
     def test_add_invalid_type(self):
-        _create_deps(self.tmp_path)
+        _create_deps(self.temp_dir)
         result = runner.invoke(
             app,
             [
@@ -205,19 +182,19 @@ class TestPJobActionsAdd:
         assert "Invalid type" in result.output
 
     def test_add_missing_condition(self):
-        _create_deps(self.tmp_path)
+        _create_deps(self.temp_dir)
         result = runner.invoke(app, ["pjob", "actions", "test-pjob", "add", "--type", "add_label"])
         assert result.exit_code != 0
 
     def test_add_missing_type(self):
-        _create_deps(self.tmp_path)
+        _create_deps(self.temp_dir)
         result = runner.invoke(
             app, ["pjob", "actions", "test-pjob", "add", "--condition", "success"]
         )
         assert result.exit_code != 0
 
     def test_add_label_warns_no_labels(self):
-        _create_deps(self.tmp_path)
+        _create_deps(self.temp_dir)
         result = runner.invoke(
             app,
             [
@@ -254,7 +231,7 @@ class TestPJobActionsAdd:
         assert result.exit_code != 0
 
     def test_add_multiple_actions(self):
-        _create_deps(self.tmp_path)
+        _create_deps(self.temp_dir)
         result1 = runner.invoke(
             app,
             [
@@ -292,7 +269,7 @@ class TestPJobActionsAdd:
         assert "add_comment" in list_result.output
 
     def test_add_comment_warns_no_body(self):
-        _create_deps(self.tmp_path)
+        _create_deps(self.temp_dir)
         result = runner.invoke(
             app,
             [
@@ -311,16 +288,9 @@ class TestPJobActionsAdd:
         assert "warn" in output_lower
 
 
-class TestPJobActionsRemove:
-    @pytest.fixture(autouse=True)
-    def setup_isolation(self, monkeypatch, tmp_path):
-        self.tmp_path = tmp_path
-        monkeypatch.setenv("ZIMA_HOME", str(tmp_path))
-        for kind in ["agents", "workflows", "variables", "envs", "pmgs", "pjobs"]:
-            (tmp_path / "configs" / kind).mkdir(parents=True, exist_ok=True)
-
+class TestPJobActionsRemove(TestIsolator):
     def _create_with_actions(self, pjob_code="test-pjob"):
-        _create_deps(self.tmp_path, pjob_code)
+        _create_deps(self.temp_dir, pjob_code)
         runner.invoke(
             app,
             [
@@ -375,3 +345,9 @@ class TestPJobActionsRemove:
         runner.invoke(app, ["pjob", "actions", "test-pjob", "remove", "--index", "0"])
         list_result = runner.invoke(app, ["pjob", "actions", "test-pjob", "list"])
         assert "No postExec actions" in list_result.output
+
+    def test_remove_from_empty_actions(self):
+        _create_deps(self.temp_dir)
+        result = runner.invoke(app, ["pjob", "actions", "test-pjob", "remove", "--index", "0"])
+        assert result.exit_code != 0
+        assert "no actions" in result.output
