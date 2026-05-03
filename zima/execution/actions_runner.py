@@ -119,21 +119,25 @@ class ActionsRunner:
             value = value.replace(f"{{{{{key}}}}}", str(val))
         return value
 
-    def run_pre(self, actions: ActionsConfig, env: dict[str, str]) -> None:
-        """Execute all preExec actions, mutating env with scan results.
+    def run_pre(self, actions: ActionsConfig, env: dict[str, str]) -> dict[str, str]:
+        """Execute all preExec actions, return discovered variables.
 
         Args:
             actions: Actions configuration from PJob.
-            env: Mutable environment dict for variable substitution.
+            env: Environment dict for {{VAR}} substitution in action fields.
+
+        Returns:
+            Dictionary of discovered variables (e.g., pr_number, pr_url, pr_diff).
 
         Raises:
             SkipAction: If a preExec action indicates no work to do.
         """
+        discovered: dict[str, str] = {}
         try:
             provider = self._registry.get(actions.provider)
         except ProviderNotFoundError as e:
             print(f"Warning: {e}")
-            return
+            return discovered
 
         for action in actions.pre_exec:
             if action.type == "scan_pr":
@@ -142,12 +146,13 @@ class ActionsRunner:
                 prs = provider.scan_prs(repo, label)
                 if not prs:
                     raise SkipAction(f"No PRs found with label '{label}' in {repo}")
-                # Take the first PR and inject into env
                 pr = prs[0]
-                env["repo"] = repo
-                env["pr_number"] = str(pr.get("number") or "")
-                env["pr_title"] = pr.get("title") or ""
-                env["pr_url"] = pr.get("url") or ""
-                env["pr_diff"] = provider.fetch_diff(repo, env["pr_number"])
+                discovered["repo"] = repo
+                discovered["pr_number"] = str(pr.get("number") or "")
+                discovered["pr_title"] = pr.get("title") or ""
+                discovered["pr_url"] = pr.get("url") or ""
+                discovered["pr_diff"] = provider.fetch_diff(repo, discovered["pr_number"])
             else:
                 print(f"Warning: Unknown preExec action type '{action.type}', skipping")
+
+        return discovered
