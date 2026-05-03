@@ -203,16 +203,7 @@ class PJobExecutor:
                     # Merge discovered vars into env (for postExec substitution)
                     env_vars.update(dynamic_vars)
                     # Merge discovered vars into bundle (for Jinja2 rendering)
-                    if dynamic_vars:
-                        if bundle.variable:
-                            for key, value in dynamic_vars.items():
-                                # Don't overwrite runtime override values (higher priority)
-                                if key not in bundle.overrides.variable_values:
-                                    bundle.variable.values[key] = value
-                        else:
-                            from zima.models.variable import VariableConfig
-
-                            bundle.variable = VariableConfig(values=dynamic_vars)
+                    bundle.inject_dynamic_vars(dynamic_vars)
                 except SkipAction as e:
                     result.status = ExecutionStatus.SKIPPED
                     result.returncode = 0

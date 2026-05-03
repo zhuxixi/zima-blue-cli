@@ -122,6 +122,20 @@ class ConfigBundle:
 
         return bundle
 
+    def inject_dynamic_vars(self, dynamic_vars: dict[str, str]) -> None:
+        """Merge preExec-discovered variables into the bundle.
+
+        Priority: runtime overrides > preExec discovered > config static values.
+        """
+        if not dynamic_vars:
+            return
+        if self.variable:
+            for key, value in dynamic_vars.items():
+                if key not in self.overrides.variable_values:
+                    self.variable.values[key] = value
+        else:
+            self.variable = VariableConfig(values=dynamic_vars)
+
     def apply_overrides(self, overrides: Overrides) -> None:
         """
         Apply runtime overrides to the bundle.

@@ -77,7 +77,7 @@ class TestPreExecIntegration:
         assert result.returncode == 0
         assert "No PRs found" in result.stderr
         assert result.stdout == ""
-        # Command is built before preExec runs; agent subprocess is skipped
+        # preExec raised SkipAction before command execution
 
     def test_run_pre_exec_success(self, mock_pjob_with_pre_exec, isolated_zima_home):
         """Test that successful preExec allows agent execution to proceed."""
@@ -239,3 +239,217 @@ class TestPreExecIntegration:
         assert result.status == ExecutionStatus.FAILED
         assert result.returncode == 1
         assert "GitHub API rate limit exceeded" in result.stderr
+
+    def test_preexec_priority_runtime_override_wins(self, isolated_zima_home):
+        """Test that runtime overrides take priority over preExec dynamic vars."""
+        from zima.config.manager import ConfigManager
+        from zima.models.variable import VariableConfig
+
+        manager = ConfigManager()
+
+        agent = AgentConfig.create(
+            code="test-agent",
+            name="Test Agent",
+            agent_type="kimi",
+            parameters={"mockCommand": "echo hello"},
+        )
+        manager.save_config("agent", "test-agent", agent.to_dict())
+
+        workflow = WorkflowConfig.create(
+            code="test-workflow",
+            name="Test Workflow",
+            template="repo={{repo}}, extra={{extra}}",
+        )
+        manager.save_config("workflow", "test-workflow", workflow.to_dict())
+
+        var = VariableConfig.create(
+            code="test-var",
+            name="Test Vars",
+            values={"repo": "", "extra": ""},
+        )
+        manager.save_config("variable", "test-var", var.to_dict())
+
+        pjob = PJobConfig.create(
+            code="test-pjob",
+            name="Test PJob",
+            agent="test-agent",
+            workflow="test-workflow",
+            variable="test-var",
+            overrides={"variableValues": {"repo": "override-repo"}},
+        )
+        pjob.spec.actions = ActionsConfig(
+            provider="github",
+            pre_exec=[PreExecAction(type="scan_pr", repo="x/y", label="ready")],
+        )
+        manager.save_config("pjob", "test-pjob", pjob.to_dict())
+
+        executor = PJobExecutor()
+
+        with patch.object(
+            executor._actions_runner,
+            "run_pre",
+            return_value={"repo": "preexec-repo", "extra": "preexec-value"},
+        ):
+            result = executor.execute("test-pjob", dry_run=True)
+
+        assert result.status == ExecutionStatus.SUCCESS
+        # Runtime override "override-repo" should win over preExec "preexec-repo"
+        assert "override-repo" in result.prompt_content
+        assert "preexec-repo" not in result.prompt_content
+        # Non-conflicting preExec key should be present
+        assert "preexec-value" in result.prompt_content
+
+    def test_preexec_priority_over_static_config(self, isolated_zima_home):
+        """Test that preExec values override static variable config values."""
+        from zima.config.manager import ConfigManager
+        from zima.models.variable import VariableConfig
+
+        manager = ConfigManager()
+
+        agent = AgentConfig.create(
+            code="test-agent",
+            name="Test Agent",
+            agent_type="kimi",
+            parameters={"mockCommand": "echo hello"},
+        )
+        manager.save_config("agent", "test-agent", agent.to_dict())
+
+        workflow = WorkflowConfig.create(
+            code="test-workflow",
+            name="Test Workflow",
+            template="repo={{repo}}",
+        )
+        manager.save_config("workflow", "test-workflow", workflow.to_dict())
+
+        var = VariableConfig.create(
+            code="test-var",
+            name="Test Vars",
+            values={"repo": "static-repo"},
+        )
+        manager.save_config("variable", "test-var", var.to_dict())
+
+        pjob = PJobConfig.create(
+            code="test-pjob",
+            name="Test PJob",
+            agent="test-agent",
+            workflow="test-workflow",
+            variable="test-var",
+        )
+        pjob.spec.actions = ActionsConfig(
+            provider="github",
+            pre_exec=[PreExecAction(type="scan_pr", repo="x/y", label="ready")],
+        )
+        manager.save_config("pjob", "test-pjob", pjob.to_dict())
+
+        executor = PJobExecutor()
+
+        with patch.object(
+            executor._actions_runner,
+            "run_pre",
+            return_value={"repo": "preexec-repo"},
+        ):
+            result = executor.execute("test-pjob", dry_run=True)
+
+        assert result.status == ExecutionStatus.SUCCESS
+        # preExec "preexec-repo" should override static "static-repo"
+        assert "preexec-repo" in result.prompt_content
+        assert "static-repo" not in result.prompt_content
+
+    def test_preexec_no_variable_creates_dynamic_var(self, isolated_zima_home):
+        """Test that preExec dynamic vars work when PJob has no variable reference."""
+        from zima.config.manager import ConfigManager
+
+        manager = ConfigManager()
+
+        agent = AgentConfig.create(
+            code="test-agent",
+            name="Test Agent",
+            agent_type="kimi",
+            parameters={"mockCommand": "echo hello"},
+        )
+        manager.save_config("agent", "test-agent", agent.to_dict())
+
+        workflow = WorkflowConfig.create(
+            code="test-workflow",
+            name="Test Workflow",
+            template="Review PR #{{pr_number}}: {{pr_title}}",
+        )
+        manager.save_config("workflow", "test-workflow", workflow.to_dict())
+
+        # PJob with NO variable reference
+        pjob = PJobConfig.create(
+            code="test-pjob",
+            name="Test PJob",
+            agent="test-agent",
+            workflow="test-workflow",
+        )
+        pjob.spec.actions = ActionsConfig(
+            provider="github",
+            pre_exec=[PreExecAction(type="scan_pr", repo="x/y", label="ready")],
+        )
+        manager.save_config("pjob", "test-pjob", pjob.to_dict())
+
+        executor = PJobExecutor()
+
+        with patch.object(
+            executor._actions_runner,
+            "run_pre",
+            return_value={"pr_number": "42", "pr_title": "Fix bug"},
+        ):
+            result = executor.execute("test-pjob", dry_run=True)
+
+        assert result.status == ExecutionStatus.SUCCESS
+        # Dynamic vars should still be available for rendering
+        assert "42" in result.prompt_content
+        assert "Fix bug" in result.prompt_content
+
+    def test_preexec_empty_dynamic_vars(self, isolated_zima_home):
+        """Test that empty dynamic_vars from preExec doesn't crash and runs normally."""
+        from zima.config.manager import ConfigManager
+        from zima.models.variable import VariableConfig
+
+        manager = ConfigManager()
+
+        agent = AgentConfig.create(
+            code="test-agent",
+            name="Test Agent",
+            agent_type="kimi",
+            parameters={"mockCommand": "echo hello"},
+        )
+        manager.save_config("agent", "test-agent", agent.to_dict())
+
+        workflow = WorkflowConfig.create(
+            code="test-workflow",
+            name="Test Workflow",
+            template="Hello {{name}}",
+        )
+        manager.save_config("workflow", "test-workflow", workflow.to_dict())
+
+        var = VariableConfig.create(
+            code="test-var",
+            name="Test Vars",
+            values={"name": "world"},
+        )
+        manager.save_config("variable", "test-var", var.to_dict())
+
+        pjob = PJobConfig.create(
+            code="test-pjob",
+            name="Test PJob",
+            agent="test-agent",
+            workflow="test-workflow",
+            variable="test-var",
+        )
+        pjob.spec.actions = ActionsConfig(
+            provider="github",
+            pre_exec=[PreExecAction(type="scan_pr", repo="x/y", label="ready")],
+        )
+        manager.save_config("pjob", "test-pjob", pjob.to_dict())
+
+        executor = PJobExecutor()
+
+        with patch.object(executor._actions_runner, "run_pre", return_value={}):
+            result = executor.execute("test-pjob", dry_run=True)
+
+        assert result.status == ExecutionStatus.SUCCESS
+        # Static variable should still render normally
+        assert "world" in result.prompt_content
