@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.1] - 2026-05-03
+
+### Fixes
+- **bundle**: inject_dynamic_vars priority when variable is None (#86)
+- **executor**: run preExec before template rendering for dynamic vars (#85)
+
+### Changes
+- **plan**: add Issue #84 preExec render order implementation plan
+- **spec**: add Issue #84 preExec render order fix design
+
+[0.4.1]: https://github.com/zhuxixi/zima-blue-cli/compare/v0.4.0...v0.4.1
+
 ## [0.4.0] - 2026-05-03
 
 ### Features
