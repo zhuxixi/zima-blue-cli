@@ -197,11 +197,18 @@ class PJobExecutor:
             result.env = env_vars
 
             # 5. Execute preExec actions (before rendering so dynamic vars are available)
-            if pjob.spec.actions and pjob.spec.actions.pre_exec:
+            # Skip preExec in dry_run to avoid side effects (e.g. GitHub API calls)
+            if pjob.spec.actions and pjob.spec.actions.pre_exec and not dry_run:
                 try:
                     dynamic_vars = self._actions_runner.run_pre(pjob.spec.actions, env_vars)
                     # Merge discovered vars into env (for postExec substitution)
-                    env_vars.update(dynamic_vars)
+                    # Skip keys that already exist in runtime overrides (higher priority)
+                    for key, value in dynamic_vars.items():
+                        if (
+                            key not in bundle.overrides.env_vars
+                            and key not in bundle.overrides.variable_values
+                        ):
+                            env_vars[key] = value
                     # Merge discovered vars into bundle (for Jinja2 rendering)
                     bundle.inject_dynamic_vars(dynamic_vars)
                 except SkipAction as e:
