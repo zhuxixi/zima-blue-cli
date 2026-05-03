@@ -277,7 +277,7 @@ class TestPreExecToPostExecFlow(TestIsolator):
         self, full_reviewer_setup, isolated_zima_home
     ):
         """preExec scan_pr → dynamic vars in template → postExec label with those vars."""
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import MagicMock
 
         executor = PJobExecutor()
         mock_ops = MagicMock()
