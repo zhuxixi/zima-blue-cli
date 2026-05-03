@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.4.2] - 2026-05-03
+
+### Fixes
+- **executor**: preExec {{var}} substitution includes VariableConfig values (#88)
+
+### Changes
+- **plan**: add Issue #84 preExec render order implementation plan
+- **spec**: add Issue #84 preExec render order fix design
+
+[0.4.2]: https://github.com/zhuxixi/zima-blue-cli/compare/v0.4.1...v0.4.2
+
 ## [0.4.1] - 2026-05-03
 
 ### Fixes
