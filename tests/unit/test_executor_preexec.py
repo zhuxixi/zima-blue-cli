@@ -136,14 +136,14 @@ class TestPreExecIntegration:
         mock_run_command.assert_called_once()
         assert result.status == ExecutionStatus.SUCCESS
 
-    def test_run_pre_exec_mutates_env(self, mock_pjob_with_pre_exec, isolated_zima_home):
-        """Test that preExec can mutate env vars (e.g., inject PR info)."""
+    def test_run_pre_exec_vars_in_env(self, mock_pjob_with_pre_exec, isolated_zima_home):
+        """Test that preExec returned variables are merged into env vars."""
         executor = PJobExecutor()
 
         with patch.object(
             executor._actions_runner,
             "run_pre",
-            side_effect=lambda actions, env: env.update({"pr_number": "42", "pr_title": "Test PR"}),
+            return_value={"pr_number": "42", "pr_title": "Test PR"},
         ):
             with patch.object(executor, "_run_command") as mock_run_command:
                 mock_run_command.return_value = (0, "hello output", "", 12345)
@@ -153,6 +153,77 @@ class TestPreExecIntegration:
         assert result.status == ExecutionStatus.SUCCESS
         assert result.env.get("pr_number") == "42"
         assert result.env.get("pr_title") == "Test PR"
+
+    def test_run_pre_exec_vars_available_in_template(self, isolated_zima_home):
+        """Test that preExec discovered variables are available for Jinja2 rendering."""
+        from zima.config.manager import ConfigManager
+        from zima.models.variable import VariableConfig
+
+        manager = ConfigManager()
+
+        agent = AgentConfig.create(
+            code="test-agent",
+            name="Test Agent",
+            agent_type="kimi",
+            parameters={"mockCommand": "echo hello"},
+        )
+        manager.save_config("agent", "test-agent", agent.to_dict())
+
+        workflow = WorkflowConfig.create(
+            code="test-workflow",
+            name="Test Workflow",
+            template="Review PR #{{pr_number}}: {{pr_title}}\n{{pr_diff}}",
+        )
+        manager.save_config("workflow", "test-workflow", workflow.to_dict())
+
+        var = VariableConfig.create(
+            code="test-var",
+            name="Test Vars",
+            values={"pr_number": "", "pr_title": "", "pr_diff": ""},
+        )
+        manager.save_config("variable", "test-var", var.to_dict())
+
+        pjob = PJobConfig.create(
+            code="test-pjob",
+            name="Test PJob",
+            agent="test-agent",
+            workflow="test-workflow",
+            variable="test-var",
+        )
+        pjob.spec.actions = ActionsConfig(
+            provider="github",
+            pre_exec=[
+                PreExecAction(type="scan_pr", repo="owner/repo", label="ready"),
+            ],
+        )
+        manager.save_config("pjob", "test-pjob", pjob.to_dict())
+
+        executor = PJobExecutor()
+
+        dynamic_vars = {
+            "repo": "owner/repo",
+            "pr_number": "42",
+            "pr_title": "Fix bug",
+            "pr_url": "https://github.com/owner/repo/pull/42",
+            "pr_diff": "+added line",
+        }
+
+        with patch.object(
+            executor._actions_runner,
+            "run_pre",
+            return_value=dynamic_vars,
+        ):
+            result = executor.execute("test-pjob", dry_run=True)
+
+        assert result.status == ExecutionStatus.SUCCESS
+        # Verify dynamic vars are in env
+        assert result.env.get("pr_number") == "42"
+        assert result.env.get("pr_title") == "Fix bug"
+        assert result.env.get("pr_diff") == "+added line"
+        # Verify template was rendered with dynamic vars
+        assert "42" in result.prompt_content
+        assert "Fix bug" in result.prompt_content
+        assert "+added line" in result.prompt_content
 
     def test_run_pre_exec_failure(self, mock_pjob_with_pre_exec, isolated_zima_home):
         """Test that non-SkipAction exception from preExec returns FAILED status."""
