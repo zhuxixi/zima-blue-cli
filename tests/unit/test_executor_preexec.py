@@ -523,3 +523,62 @@ class TestPreExecIntegration:
 
         # Runtime override should win over preExec in env_vars
         assert result.env.get("pr_number") == "OVERRIDE"
+
+    def test_preexec_substitutes_variable_config_values(self, isolated_zima_home):
+        """Test that preExec {{var}} substitution includes VariableConfig values, not just env_vars.
+
+        Regression test for #88: preExec used _substitute_env_str which only looked up
+        env_vars (from EnvConfig), missing VariableConfig values like {{repo}}.
+        """
+        from zima.config.manager import ConfigManager
+        from zima.models.variable import VariableConfig
+
+        manager = ConfigManager()
+
+        agent = AgentConfig.create(
+            code="test-agent",
+            name="Test Agent",
+            agent_type="kimi",
+            parameters={"mockCommand": "echo hello"},
+        )
+        manager.save_config("agent", "test-agent", agent.to_dict())
+
+        workflow = WorkflowConfig.create(
+            code="test-workflow",
+            name="Test Workflow",
+            template="Hello",
+        )
+        manager.save_config("workflow", "test-workflow", workflow.to_dict())
+
+        # VariableConfig defines repo, NOT EnvConfig
+        var = VariableConfig.create(
+            code="test-var",
+            name="Test Vars",
+            values={"repo": "zhuxixi/zima-blue-cli", "label": "zima:needs-review"},
+        )
+        manager.save_config("variable", "test-var", var.to_dict())
+
+        pjob = PJobConfig.create(
+            code="test-pjob",
+            name="Test PJob",
+            agent="test-agent",
+            workflow="test-workflow",
+            variable="test-var",
+        )
+        pjob.spec.actions = ActionsConfig(
+            provider="github",
+            pre_exec=[PreExecAction(type="scan_pr", repo="{{repo}}", label="{{label}}")],
+        )
+        manager.save_config("pjob", "test-pjob", pjob.to_dict())
+
+        executor = PJobExecutor()
+
+        with patch.object(executor._actions_runner, "run_pre", return_value={}) as mock_run_pre:
+            with patch.object(executor, "_run_command") as mock_run:
+                mock_run.return_value = (0, "done", "", 12345)
+                executor.execute("test-pjob")
+
+        # The env dict passed to run_pre should contain VariableConfig values
+        call_env = mock_run_pre.call_args[0][1]  # second positional arg = env dict
+        assert call_env.get("repo") == "zhuxixi/zima-blue-cli"
+        assert call_env.get("label") == "zima:needs-review"
