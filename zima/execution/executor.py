@@ -53,6 +53,7 @@ class ExecutionResult:
         execution_id: Unique execution ID
         temp_dir: Temporary directory (if kept)
         action_errors: Post-exec action failure messages
+        scan_pr_result: Scan PR result data (repo, pr_number, etc.)
     """
 
     pjob_code: str = ""
@@ -92,6 +93,7 @@ class ExecutionResult:
             "temp_dir": str(self.temp_dir) if self.temp_dir else None,
             "pid": self.pid,
             "action_errors": self.action_errors,
+            **({"scan_pr_result": self.scan_pr_result} if self.scan_pr_result is not None else {}),
         }
 
     @property
