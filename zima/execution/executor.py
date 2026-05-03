@@ -203,7 +203,8 @@ class PJobExecutor:
                     # Merge variable config values into env for {{var}} substitution
                     pre_env = env_vars.copy()
                     for k, v in bundle.get_variable_values().items():
-                        pre_env.setdefault(k, str(v))
+                        if v is not None:
+                            pre_env.setdefault(k, str(v))
                     dynamic_vars = self._actions_runner.run_pre(pjob.spec.actions, pre_env)
                     # Merge discovered vars into env (for postExec substitution)
                     # Skip keys that already exist in runtime overrides (higher priority)
