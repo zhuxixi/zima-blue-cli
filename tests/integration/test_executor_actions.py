@@ -199,3 +199,102 @@ class TestReviewerEndToEnd(TestIsolator):
         assert "approved" in result.stdout
         mock_ops.add_label.assert_called_once_with("owner/repo", "42", "zima:approved")
         mock_ops.remove_label.assert_called_once_with("owner/repo", "42", "zima:needs-review")
+
+
+class TestPreExecToPostExecFlow(TestIsolator):
+    """Integration test: preExec discovers PR → template renders with vars → postExec uses vars."""
+
+    @pytest.fixture
+    def full_reviewer_setup(self, isolated_zima_home, config_manager):
+        """Set up reviewer configs with preExec scan_pr + postExec label actions."""
+        from zima.models.actions import ActionsConfig, PostExecAction, PreExecAction
+        from zima.models.variable import VariableConfig
+        from zima.models.workflow import WorkflowConfig
+
+        agent_data = {
+            "apiVersion": "zima.io/v1",
+            "kind": "Agent",
+            "metadata": {"code": "reviewer-agent", "name": "Reviewer Agent"},
+            "spec": {
+                "type": "kimi",
+                "parameters": {
+                    "mockCommand": [
+                        "echo",
+                        "Review done.\n<zima-review>\n  <verdict>approved</verdict>\n"
+                        "  <summary>LGTM</summary>\n</zima-review>",
+                    ]
+                },
+            },
+        }
+        config_manager.save_config("agent", "reviewer-agent", agent_data)
+
+        wf = WorkflowConfig.create(
+            code="reviewer-wf",
+            name="Reviewer Workflow",
+            template="Review PR #{{pr_number}} in {{repo}}\nDiff:\n{{pr_diff}}",
+        )
+        config_manager.save_config("workflow", "reviewer-wf", wf.to_dict())
+
+        var = VariableConfig.create(
+            code="reviewer-var",
+            name="Reviewer Vars",
+            values={"repo": "owner/repo", "pr_number": "", "pr_title": "", "pr_diff": ""},
+        )
+        config_manager.save_config("variable", "reviewer-var", var.to_dict())
+
+        pjob = PJobConfig.create(
+            code="reviewer-full",
+            name="Full Reviewer",
+            agent="reviewer-agent",
+            workflow="reviewer-wf",
+            variable="reviewer-var",
+        )
+        pjob.spec.actions = ActionsConfig(
+            provider="github",
+            pre_exec=[
+                PreExecAction(
+                    type="scan_pr",
+                    repo="owner/repo",
+                    label="zima:needs-review",
+                )
+            ],
+            post_exec=[
+                PostExecAction(
+                    condition="success",
+                    type="add_label",
+                    add_labels=["zima:approved"],
+                    remove_labels=["zima:needs-review"],
+                    repo="{{repo}}",
+                    issue="{{pr_number}}",
+                )
+            ],
+        )
+        config_manager.save_config("pjob", "reviewer-full", pjob.to_dict())
+
+        return pjob
+
+    def test_preexec_vars_flow_to_template_and_postexec(
+        self, full_reviewer_setup, isolated_zima_home
+    ):
+        """preExec scan_pr → dynamic vars in template → postExec label with those vars."""
+        from unittest.mock import MagicMock
+
+        executor = PJobExecutor()
+        mock_ops = MagicMock()
+        mock_ops.scan_prs.return_value = [
+            {"number": "99", "title": "Bug fix", "url": "https://github.com/owner/repo/pull/99"}
+        ]
+        mock_ops.fetch_diff.return_value = "+fixed code"
+        mock_registry = MagicMock()
+        mock_registry.get.return_value = mock_ops
+        executor._actions_runner._registry = mock_registry
+
+        result = executor.execute("reviewer-full")
+
+        assert result.status.value == "success"
+        # Dynamic vars should be in env
+        assert result.env.get("pr_number") == "99"
+        assert result.env.get("pr_diff") == "+fixed code"
+        # postExec should use the dynamic vars for label action
+        mock_ops.add_label.assert_called_once_with("owner/repo", "99", "zima:approved")
+        mock_ops.remove_label.assert_called_once_with("owner/repo", "99", "zima:needs-review")

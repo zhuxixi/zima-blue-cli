@@ -135,12 +135,12 @@ class PJobExecutor:
     1. Load PJob configuration
     2. Resolve config bundle
     3. Create temp directory
-    4. Render workflow template
-    5. Resolve environment variables
-    6. Build agent command
-    7. Dry run check
-    8. Execute pre-hooks
-    9. Execute preExec actions
+    4. Resolve environment variables
+    5. Execute preExec actions
+    6. Render workflow template
+    7. Build agent command
+    8. Dry run check
+    9. Execute pre-hooks
     10. Run main command
     11. Execute post-hooks
     12. Handle output and cleanup
@@ -192,19 +192,41 @@ class PJobExecutor:
             temp_dir = self._create_temp_dir(pjob_code, execution_id)
             result.temp_dir = temp_dir
 
-            # 4. Render workflow template
-            prompt_file = self._render_workflow(bundle, temp_dir)
-            result.prompt_file = prompt_file
-
-            # 5. Resolve environment variables
+            # 4. Resolve environment variables (moved up for preExec)
             env_vars = self._resolve_env(bundle)
             result.env = env_vars
 
-            # 6. Build command
+            # 5. Execute preExec actions (before rendering so dynamic vars are available)
+            # Skip preExec in dry_run to avoid side effects (e.g. GitHub API calls)
+            if pjob.spec.actions and pjob.spec.actions.pre_exec and not dry_run:
+                try:
+                    dynamic_vars = self._actions_runner.run_pre(pjob.spec.actions, env_vars)
+                    # Merge discovered vars into env (for postExec substitution)
+                    # Skip keys that already exist in runtime overrides (higher priority)
+                    for key, value in dynamic_vars.items():
+                        if (
+                            key not in bundle.overrides.env_vars
+                            and key not in bundle.overrides.variable_values
+                        ):
+                            env_vars[key] = value
+                    # Merge discovered vars into bundle (for Jinja2 rendering)
+                    bundle.inject_dynamic_vars(dynamic_vars)
+                except SkipAction as e:
+                    result.status = ExecutionStatus.SKIPPED
+                    result.returncode = 0
+                    result.stderr = str(e)
+                    result.finished_at = generate_timestamp()
+                    return result
+
+            # 6. Render workflow template (after preExec so dynamic vars are available)
+            prompt_file = self._render_workflow(bundle, temp_dir)
+            result.prompt_file = prompt_file
+
+            # 7. Build command
             command = bundle.build_command(prompt_file)
             result.command = command
 
-            # 7. Dry run - capture prompt content and return
+            # 8. Dry run - capture prompt content and return
             if dry_run:
                 result.status = ExecutionStatus.SUCCESS
                 result.stdout = f"DRY RUN: Would execute:\n{' '.join(command)}"
@@ -213,19 +235,8 @@ class PJobExecutor:
                 result.finished_at = generate_timestamp()
                 return result
 
-            # 8. Execute pre-hooks
+            # 9. Execute pre-hooks
             self._run_hooks(pjob.spec.hooks.get("preExec", []), env_vars, bundle.work_dir)
-
-            # 9. Execute preExec actions
-            if pjob.spec.actions and pjob.spec.actions.pre_exec:
-                try:
-                    self._actions_runner.run_pre(pjob.spec.actions, env_vars)
-                except SkipAction as e:
-                    result.status = ExecutionStatus.SKIPPED
-                    result.returncode = 0
-                    result.stderr = str(e)
-                    result.finished_at = generate_timestamp()
-                    return result
 
             # 10. Run main command
             result.status = ExecutionStatus.RUNNING
