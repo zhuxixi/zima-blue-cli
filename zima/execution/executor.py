@@ -200,7 +200,12 @@ class PJobExecutor:
             # Skip preExec in dry_run to avoid side effects (e.g. GitHub API calls)
             if pjob.spec.actions and pjob.spec.actions.pre_exec and not dry_run:
                 try:
-                    dynamic_vars = self._actions_runner.run_pre(pjob.spec.actions, env_vars)
+                    # Merge variable config values into env for {{var}} substitution
+                    pre_env = env_vars.copy()
+                    for k, v in bundle.get_variable_values().items():
+                        if v is not None:
+                            pre_env.setdefault(k, str(v))
+                    dynamic_vars = self._actions_runner.run_pre(pjob.spec.actions, pre_env)
                     # Merge discovered vars into env (for postExec substitution)
                     # Skip keys that already exist in runtime overrides (higher priority)
                     for key, value in dynamic_vars.items():
