@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from zima.execution.history import ExecutionHistory, _is_pid_alive
+from zima.execution.history import ExecutionHistory, ExecutionRecord, _is_pid_alive
 
 
 class TestExecutionHistoryWriteAndRead:
@@ -199,6 +199,45 @@ class TestExecutionHistoryWriteAndRead:
         data = self.history.get_runtime_state(self.pjob_code, self.exec_id)
         assert data is not None
         assert data["status"] == "dead"
+
+    def test_scan_pr_result_round_trip(self):
+        """scan_pr_result is persisted and loaded correctly."""
+        record = ExecutionRecord(
+            execution_id="a1",
+            pjob_code="test-pjob",
+            status="failed",
+            returncode=1,
+            scan_pr_result={"repo": "owner/repo", "pr_number": "42"},
+            started_at="2026-05-03T10:00:00+08:00",
+        )
+        data = record.to_dict()
+        assert data["scan_pr_result"] == {"repo": "owner/repo", "pr_number": "42"}
+
+        restored = ExecutionRecord.from_dict(data)
+        assert restored.scan_pr_result == {"repo": "owner/repo", "pr_number": "42"}
+
+    def test_scan_pr_result_defaults_to_none(self):
+        """Existing records without scan_pr_result deserialize as None."""
+        record = ExecutionRecord.from_dict(
+            {
+                "execution_id": "a1",
+                "pjob_code": "test-pjob",
+                "status": "success",
+                "returncode": 0,
+            }
+        )
+        assert record.scan_pr_result is None
+
+    def test_scan_pr_result_excluded_when_none(self):
+        """to_dict omits scan_pr_result when it is None."""
+        record = ExecutionRecord(
+            execution_id="a1",
+            pjob_code="test-pjob",
+            status="success",
+            returncode=0,
+        )
+        data = record.to_dict()
+        assert "scan_pr_result" not in data
 
 
 class TestLegacyMigration:

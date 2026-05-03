@@ -85,6 +85,7 @@ class ExecutionRecord:
         stderr_preview: First N chars of stderr.
         error_detail: Detailed error information.
         pid: Process PID.
+        scan_pr_result: Scan PR result data (repo, pr_number, etc.).
     """
 
     execution_id: str
@@ -99,6 +100,7 @@ class ExecutionRecord:
     stderr_preview: str = ""
     error_detail: str = ""
     pid: Optional[int] = None
+    scan_pr_result: Optional[dict] = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -115,6 +117,7 @@ class ExecutionRecord:
             "stderr_preview": self.stderr_preview,
             "error_detail": self.error_detail,
             "pid": self.pid,
+            **({"scan_pr_result": self.scan_pr_result} if self.scan_pr_result is not None else {}),
         }
 
     @classmethod
@@ -133,6 +136,7 @@ class ExecutionRecord:
             stderr_preview=data.get("stderr_preview", ""),
             error_detail=data.get("error_detail", ""),
             pid=data.get("pid"),
+            scan_pr_result=data.get("scan_pr_result"),
         )
 
     @classmethod
@@ -158,6 +162,7 @@ class ExecutionRecord:
             stderr_preview=stderr_preview,
             error_detail=error_detail,
             pid=result.pid,
+            scan_pr_result=getattr(result, "scan_pr_result", None),
         )
 
 
@@ -181,6 +186,7 @@ _STATE_FILE_FIELDS = [
     "log_path",
     "agent",
     "workflow",
+    "scan_pr_result",
 ]
 
 
