@@ -210,7 +210,7 @@ class TestActionsRunner:
 
 class TestActionsRunnerPreExec:
     def test_run_pre_exec_scan_pr(self):
-        """Test running preExec scan_pr action."""
+        """Test running preExec scan_pr action returns discovered variables."""
         from zima.models.actions import PreExecAction
 
         runner = ActionsRunner()
@@ -230,13 +230,17 @@ class TestActionsRunnerPreExec:
         mock_provider.fetch_diff.return_value = "diff content"
         with patch.object(runner._registry, "get", return_value=mock_provider):
             env = {}
-            runner.run_pre(actions, env)
+            result = runner.run_pre(actions, env)
             mock_provider.scan_prs.assert_called_once_with("owner/repo", "zima:needs-review")
             mock_provider.fetch_diff.assert_called_once_with("owner/repo", "42")
-            assert env["pr_number"] == "42"
-            assert env["pr_title"] == "Fix"
-            assert env["pr_url"] == "https://github.com/o/r/pull/42"
-            assert env["pr_diff"] == "diff content"
+            assert result == {
+                "repo": "owner/repo",
+                "pr_number": "42",
+                "pr_title": "Fix",
+                "pr_url": "https://github.com/o/r/pull/42",
+                "pr_diff": "diff content",
+            }
+            assert "pr_number" not in env
 
     def test_run_pre_exec_empty_result(self):
         """Test preExec scan_pr with no results raises SkipAction."""
@@ -254,7 +258,7 @@ class TestActionsRunnerPreExec:
             assert "no prs found" in str(exc_info.value).lower()
 
     def test_run_pre_provider_not_found(self, capsys):
-        """Test run_pre warns and returns when provider is not found."""
+        """Test run_pre warns and returns empty dict when provider is not found."""
         from zima.models.actions import PreExecAction
 
         runner = ActionsRunner()
@@ -268,10 +272,11 @@ class TestActionsRunnerPreExec:
             side_effect=ProviderNotFoundError("Provider 'nonexistent' not found"),
         ):
             env = {"existing": "value"}
-            runner.run_pre(actions, env)
+            result = runner.run_pre(actions, env)
             captured = capsys.readouterr()
             assert "Warning" in captured.out
             assert "nonexistent" in captured.out
+            assert result == {}
             assert env == {"existing": "value"}
 
     def test_run_pre_exec_env_substitution(self):
@@ -295,9 +300,9 @@ class TestActionsRunnerPreExec:
         mock_provider.fetch_diff.return_value = "diff data"
         with patch.object(runner._registry, "get", return_value=mock_provider):
             env = {"repo": "my-org/my-repo", "label": "needs-review"}
-            runner.run_pre(actions, env)
+            result = runner.run_pre(actions, env)
             mock_provider.scan_prs.assert_called_once_with("my-org/my-repo", "needs-review")
             mock_provider.fetch_diff.assert_called_once_with("my-org/my-repo", "7")
-            assert env["repo"] == "my-org/my-repo"
-            assert env["pr_number"] == "7"
-            assert env["pr_diff"] == "diff data"
+            assert result["repo"] == "my-org/my-repo"
+            assert result["pr_number"] == "7"
+            assert result["pr_diff"] == "diff data"
