@@ -240,6 +240,69 @@ class TestExecutionHistoryWriteAndRead:
         assert "scan_pr_result" not in data
 
 
+class TestGetRecentScanPrFailures:
+    @pytest.fixture(autouse=True)
+    def setup(self, isolated_zima_home):
+        self.history = ExecutionHistory()
+        self.pjob_code = "reviewer-kimi"
+
+    def _write_record(self, exec_id, status, scan_pr_result, started_at, minutes_ago=0):
+        """Helper to write an execution record."""
+        from datetime import datetime, timedelta, timezone
+
+        if started_at is None:
+            ts = datetime.now(timezone.utc).astimezone() - timedelta(minutes=minutes_ago)
+            started_at = ts.isoformat()
+        self.history.write_runtime_state(
+            self.pjob_code,
+            exec_id,
+            {
+                "execution_id": exec_id,
+                "pjob_code": self.pjob_code,
+                "status": status,
+                "returncode": 1,
+                "started_at": started_at,
+                "scan_pr_result": scan_pr_result,
+            },
+        )
+
+    def test_returns_recently_failed_prs(self):
+        self._write_record("a1", "failed", {"repo": "o/r", "pr_number": "10"}, None, minutes_ago=5)
+        self._write_record("a2", "failed", {"repo": "o/r", "pr_number": "20"}, None, minutes_ago=30)
+
+        results = self.history.get_recent_scan_pr_failures(self.pjob_code, within_minutes=90)
+        assert len(results) == 2
+        pr_numbers = {r["scan_pr_result"]["pr_number"] for r in results}
+        assert pr_numbers == {"10", "20"}
+
+    def test_excludes_prs_outside_time_window(self):
+        self._write_record("a1", "failed", {"repo": "o/r", "pr_number": "10"}, None, minutes_ago=5)
+        self._write_record(
+            "a2", "failed", {"repo": "o/r", "pr_number": "20"}, None, minutes_ago=120
+        )
+
+        results = self.history.get_recent_scan_pr_failures(self.pjob_code, within_minutes=90)
+        assert len(results) == 1
+        assert results[0]["scan_pr_result"]["pr_number"] == "10"
+
+    def test_excludes_success_and_running_status(self):
+        self._write_record("a1", "success", {"repo": "o/r", "pr_number": "10"}, None, minutes_ago=5)
+        self._write_record("a2", "running", {"repo": "o/r", "pr_number": "20"}, None, minutes_ago=5)
+
+        results = self.history.get_recent_scan_pr_failures(self.pjob_code, within_minutes=90)
+        assert len(results) == 0
+
+    def test_excludes_records_without_scan_pr_result(self):
+        self._write_record("a1", "failed", None, None, minutes_ago=5)
+
+        results = self.history.get_recent_scan_pr_failures(self.pjob_code, within_minutes=90)
+        assert len(results) == 0
+
+    def test_returns_empty_for_nonexistent_pjob(self):
+        results = self.history.get_recent_scan_pr_failures("nonexistent", within_minutes=90)
+        assert results == []
+
+
 class TestLegacyMigration:
     @pytest.fixture(autouse=True)
     def setup(self, isolated_zima_home):
