@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.4.0] - 2026-05-03
+
+### Features
+- **pjob**: CLI support for postExec actions configuration (#73)
+- **scenes**: add default_actions to Scene for postExec label transitions
+- **pjob**: add actions parameter to PJobConfig.create()
+- PR code review automation with preExec actions and label management (#35)
+- PJob 运行时状态追踪与生命周期管理 (#70) (#72)
+
+### Fixes
+- **pjob**: improve actions_remove empty list message and refactor tests (#81)
+- **scenes**: deserialize default_actions dict from user scenes.yaml
+- **quickstart**: pass scene default_actions to generated PJob (#74)
+- **actions_runner**: inject pr_diff via fetch_diff in preExec scan_pr (#75 follow-up)
+- **agent**: do not pass --work-dir or --cwd to Claude CLI (#64) (#71)
+- **agent**: use --cwd for Claude agent instead of --work-dir (#69)
+
+### Changes
+- Merge pull request #78 from zhuxixi/fix/74-quickstart-actions
+- add implementation plan for PJob actions CLI (#73)
+- add design spec for PJob actions CLI (#73)
+
+[0.4.0]: https://github.com/zhuxixi/zima-blue-cli/compare/v0.3.1...v0.4.0
+
 ## [0.3.1] - 2026-04-27
 
 ### Features
