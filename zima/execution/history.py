@@ -85,6 +85,7 @@ class ExecutionRecord:
         stderr_preview: First N chars of stderr.
         error_detail: Detailed error information.
         pid: Process PID.
+        scan_pr_result: Scan PR result data (repo, pr_number, etc.).
     """
 
     execution_id: str
@@ -99,6 +100,7 @@ class ExecutionRecord:
     stderr_preview: str = ""
     error_detail: str = ""
     pid: Optional[int] = None
+    scan_pr_result: Optional[dict] = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -115,6 +117,7 @@ class ExecutionRecord:
             "stderr_preview": self.stderr_preview,
             "error_detail": self.error_detail,
             "pid": self.pid,
+            **({"scan_pr_result": self.scan_pr_result} if self.scan_pr_result is not None else {}),
         }
 
     @classmethod
@@ -133,6 +136,7 @@ class ExecutionRecord:
             stderr_preview=data.get("stderr_preview", ""),
             error_detail=data.get("error_detail", ""),
             pid=data.get("pid"),
+            scan_pr_result=data.get("scan_pr_result"),
         )
 
     @classmethod
@@ -158,6 +162,7 @@ class ExecutionRecord:
             stderr_preview=stderr_preview,
             error_detail=error_detail,
             pid=result.pid,
+            scan_pr_result=getattr(result, "scan_pr_result", None),
         )
 
 
@@ -181,6 +186,7 @@ _STATE_FILE_FIELDS = [
     "log_path",
     "agent",
     "workflow",
+    "scan_pr_result",
 ]
 
 
@@ -426,6 +432,46 @@ class ExecutionHistory:
             "success_rate": success / total * 100,
             "avg_duration": round(avg_duration, 2),
         }
+
+    def get_recent_scan_pr_failures(self, pjob_code: str, within_minutes: int = 90) -> list[dict]:
+        """Return recent failed executions that have scan_pr_result.
+
+        Used by scan_pr skip logic to avoid re-picking recently-failed PRs.
+
+        Args:
+            pjob_code: PJob code to query.
+            within_minutes: Time window in minutes.
+
+        Returns:
+            List of execution state dicts with status in
+            ("failed", "timeout", "cancelled", "dead") and a non-None
+            scan_pr_result, started within the given time window.
+        """
+        from datetime import datetime, timedelta, timezone
+
+        failed_statuses = {"failed", "timeout", "cancelled", "dead"}
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=within_minutes)
+
+        results: list[dict] = []
+        for record in self.list_executions(pjob_code):
+            if record.get("status") not in failed_statuses:
+                continue
+            spr = record.get("scan_pr_result")
+            if spr is None:
+                continue
+            started = record.get("started_at", "")
+            if not started:
+                continue
+            try:
+                started_dt = datetime.fromisoformat(started.replace("Z", "+00:00"))
+                if started_dt.tzinfo is None:
+                    started_dt = started_dt.replace(tzinfo=timezone.utc)
+                if started_dt >= cutoff:
+                    results.append(record)
+            except (ValueError, TypeError):
+                continue
+
+        return results
 
     # ------------------------------------------------------------------
     # Backward-compatible API (delegates to directory-based storage)

@@ -86,6 +86,7 @@ def run_pjob_in_background(
         stdout_preview=stdout_preview,
         stderr_preview=stderr_preview,
         error_detail=result.error_detail[:2000] if result.error_detail else "",
+        scan_pr_result=result.scan_pr_result,
     )
 
     return 0 if result.status.value == "success" else 1
