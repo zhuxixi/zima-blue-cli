@@ -202,10 +202,127 @@ class TestActionsRunner:
             "get",
             side_effect=ProviderNotFoundError("Provider 'nonexistent' not found"),
         ):
-            runner.run(actions, returncode=0, env={})
+            errors = runner.run(actions, returncode=0, env={})
             captured = capsys.readouterr()
             assert "Warning" in captured.out
             assert "nonexistent" in captured.out
+            assert len(errors) == 1
+
+
+class TestActionsRunnerErrorPropagation:
+    """Regression tests for #92: postExec action failures must propagate."""
+
+    def test_add_label_failure_returns_error(self, capsys):
+        """Failed add_label returns error message instead of swallowing."""
+        runner = ActionsRunner()
+        actions = ActionsConfig(
+            post_exec=[
+                PostExecAction(
+                    condition="success",
+                    type="add_label",
+                    add_labels=["zima:reviewed"],
+                    repo="owner/repo",
+                    issue="42",
+                )
+            ]
+        )
+        mock_provider = MagicMock()
+        mock_provider.add_label.side_effect = PermissionError("token lacks scope")
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            errors = runner.run(actions, returncode=0, env={})
+        assert len(errors) == 1
+        assert "Failed to add label" in errors[0]
+        assert "token lacks scope" in errors[0]
+        captured = capsys.readouterr()
+        assert "Warning" in captured.out
+
+    def test_remove_label_failure_returns_error(self, capsys):
+        """Failed remove_label returns error message."""
+        runner = ActionsRunner()
+        actions = ActionsConfig(
+            post_exec=[
+                PostExecAction(
+                    condition="success",
+                    type="add_label",
+                    remove_labels=["zima:needs-review"],
+                    repo="owner/repo",
+                    issue="42",
+                )
+            ]
+        )
+        mock_provider = MagicMock()
+        mock_provider.remove_label.side_effect = PermissionError("insufficient permissions")
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            errors = runner.run(actions, returncode=0, env={})
+        assert len(errors) == 1
+        assert "Failed to remove label" in errors[0]
+        assert "insufficient permissions" in errors[0]
+
+    def test_post_comment_failure_returns_error(self, capsys):
+        """Failed post_comment returns error message."""
+        runner = ActionsRunner()
+        actions = ActionsConfig(
+            post_exec=[
+                PostExecAction(
+                    condition="success",
+                    type="add_comment",
+                    body="Done",
+                    repo="owner/repo",
+                    issue="42",
+                )
+            ]
+        )
+        mock_provider = MagicMock()
+        mock_provider.post_comment.side_effect = ConnectionError("network down")
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            errors = runner.run(actions, returncode=0, env={})
+        assert len(errors) == 1
+        assert "Failed to post comment" in errors[0]
+        assert "network down" in errors[0]
+
+    def test_mixed_success_and_failure_collects_all_errors(self):
+        """Multiple action failures are all collected."""
+        runner = ActionsRunner()
+        actions = ActionsConfig(
+            post_exec=[
+                PostExecAction(
+                    condition="success",
+                    type="add_label",
+                    add_labels=["ok"],
+                    remove_labels=["zima:needs-review"],
+                    repo="owner/repo",
+                    issue="42",
+                )
+            ]
+        )
+        mock_provider = MagicMock()
+        mock_provider.add_label.return_value = None  # succeeds
+        mock_provider.remove_label.side_effect = PermissionError("nope")
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            errors = runner.run(actions, returncode=0, env={})
+        assert len(errors) == 1
+        assert "Failed to remove label" in errors[0]
+        mock_provider.add_label.assert_called_once()
+
+    def test_successful_actions_return_empty_errors(self):
+        """No errors returned when all actions succeed."""
+        runner = ActionsRunner()
+        actions = ActionsConfig(
+            post_exec=[
+                PostExecAction(
+                    condition="success",
+                    type="add_label",
+                    add_labels=["ok"],
+                    remove_labels=["old"],
+                    repo="owner/repo",
+                    issue="42",
+                )
+            ]
+        )
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            errors = runner.run(actions, returncode=0, env={})
+        assert errors == []
 
 
 class TestActionsRunnerPreExec:

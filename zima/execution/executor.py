@@ -332,6 +332,11 @@ class PJobExecutor:
 
             result.finished_at = generate_timestamp()
 
+            # Mark as failed when postExec actions failed but agent succeeded
+            if result.status == ExecutionStatus.SUCCESS and result.action_errors:
+                result.status = ExecutionStatus.FAILED
+                result.returncode = 1
+
             # Cleanup temp directory
             _pjob_cleanup = locals().get("pjob")
             if temp_dir and not (
@@ -544,11 +549,12 @@ class PJobExecutor:
             effective_returncode = 1
 
         try:
-            self._actions_runner.run(
+            action_errors = self._actions_runner.run(
                 actions=pjob.spec.actions,
                 returncode=effective_returncode,
                 env=env_vars,
             )
+            result.action_errors.extend(action_errors)
         except Exception as e:
             import traceback
 

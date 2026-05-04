@@ -57,26 +57,32 @@ class ActionsRunner:
         actions: ActionsConfig,
         returncode: int,
         env: dict[str, str],
-    ) -> None:
+    ) -> list[str]:
         """Execute all matching postExec actions.
 
         Args:
             actions: Actions configuration from PJob.
             returncode: Agent process exit code.
             env: Environment variables for {{VAR}} substitution.
+
+        Returns:
+            List of error messages from failed actions.
         """
         try:
             provider = self._registry.get(actions.provider)
         except ProviderNotFoundError as e:
             print(f"Warning: {e}")
-            return
+            return [str(e)]
 
+        errors: list[str] = []
         for action in actions.post_exec:
             if not _matches_condition(action.condition, returncode):
                 continue
 
             processed = self._substitute_env(action, env)
-            self._execute_action(processed, provider)
+            errors.extend(self._execute_action(processed, provider))
+
+        return errors
 
     def _substitute_env(self, action: PostExecAction, env: dict[str, str]) -> PostExecAction:
         """Replace {{VAR}} placeholders with env values."""
@@ -96,29 +102,43 @@ class ActionsRunner:
             body=sub(action.body),
         )
 
-    def _execute_action(self, action: PostExecAction, provider: ActionProvider) -> None:
-        """Execute a single action, logging individual failures but continuing."""
+    def _execute_action(self, action: PostExecAction, provider: ActionProvider) -> list[str]:
+        """Execute a single action, collecting failures.
+
+        Returns:
+            List of error messages from failed operations.
+        """
         if not action.repo or not action.issue:
-            return
+            return []
+
+        errors: list[str] = []
 
         if action.type == "add_label":
             for label in action.add_labels:
                 try:
                     provider.add_label(action.repo, action.issue, label)
                 except Exception as e:
-                    print(f"Warning: Failed to add label '{label}': {e}")
+                    msg = f"Failed to add label '{label}': {e}"
+                    errors.append(msg)
+                    print(f"Warning: {msg}")
             for label in action.remove_labels:
                 try:
                     provider.remove_label(action.repo, action.issue, label)
                 except Exception as e:
-                    print(f"Warning: Failed to remove label '{label}': {e}")
+                    msg = f"Failed to remove label '{label}': {e}"
+                    errors.append(msg)
+                    print(f"Warning: {msg}")
 
         elif action.type == "add_comment":
             if action.body:
                 try:
                     provider.post_comment(action.repo, action.issue, action.body)
                 except Exception as e:
-                    print(f"Warning: Failed to post comment: {e}")
+                    msg = f"Failed to post comment: {e}"
+                    errors.append(msg)
+                    print(f"Warning: {msg}")
+
+        return errors
 
     def _substitute_env_str(self, value: str, env: dict[str, str]) -> str:
         """Replace {{VAR}} placeholders with env values."""
