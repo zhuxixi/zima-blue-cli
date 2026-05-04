@@ -139,7 +139,7 @@ class ActionsRunner:
         for rec in failures:
             spr = rec.get("scan_pr_result")
             if spr:
-                skip_set.add((spr.get("repo", ""), spr.get("pr_number", "")))
+                skip_set.add((spr.get("repo") or "", spr.get("pr_number") or ""))
 
         for pr in prs:
             pr_num = str(pr.get("number") or "")
