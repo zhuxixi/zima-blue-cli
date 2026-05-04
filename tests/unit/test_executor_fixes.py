@@ -2,10 +2,7 @@
 
 import os
 
-from unittest.mock import MagicMock, patch
-
 from zima.execution.executor import ExecutionResult, ExecutionStatus, PJobExecutor, _friendly_error
-from zima.models.actions import ActionsConfig, PostExecAction
 
 
 class TestFriendlyError:
