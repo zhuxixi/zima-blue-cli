@@ -32,6 +32,52 @@ class TestDetectGitRepo(TestIsolator):
             assert result is None
 
 
+class TestDetectRepoSlug(TestIsolator):
+    """Test git remote repo slug detection."""
+
+    def test_detect_repo_slug_https(self):
+        """Test detection from HTTPS URL."""
+        from zima.commands.quickstart import _detect_repo_slug
+
+        with patch("zima.commands.quickstart.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0, stdout="https://github.com/zhuxixi/zima-blue-cli.git\n", stderr=""
+            )
+            result = _detect_repo_slug()
+            assert result == "zhuxixi/zima-blue-cli"
+
+    def test_detect_repo_slug_ssh(self):
+        """Test detection from SSH URL."""
+        from zima.commands.quickstart import _detect_repo_slug
+
+        with patch("zima.commands.quickstart.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0, stdout="git@github.com:zhuxixi/zima-blue-cli.git\n", stderr=""
+            )
+            result = _detect_repo_slug()
+            assert result == "zhuxixi/zima-blue-cli"
+
+    def test_detect_repo_slug_no_git(self):
+        """Test returns empty string when git command fails."""
+        from zima.commands.quickstart import _detect_repo_slug
+
+        with patch("zima.commands.quickstart.subprocess.run") as mock_run:
+            mock_run.side_effect = Exception("no git")
+            result = _detect_repo_slug()
+            assert result == ""
+
+    def test_detect_repo_slug_https_no_git_suffix(self):
+        """Test detection from HTTPS URL without .git suffix."""
+        from zima.commands.quickstart import _detect_repo_slug
+
+        with patch("zima.commands.quickstart.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0, stdout="https://github.com/owner/repo\n", stderr=""
+            )
+            result = _detect_repo_slug()
+            assert result == "owner/repo"
+
+
 class TestGenerateUniqueCode(TestIsolator):
     """Test unique code generation."""
 
@@ -123,6 +169,7 @@ class TestCreateAllConfigs(TestIsolator):
             work_dir="/tmp/workspace",
             env_code="test-env",
             manager=manager,
+            detected_repo="zhuxixi/zima-blue-cli",
         )
 
         assert "agent" in codes
@@ -141,14 +188,17 @@ class TestCreateAllConfigs(TestIsolator):
         agent_data = manager.load_config("agent", codes["agent"])
         assert agent_data["spec"]["parameters"]["workDir"] == "/tmp/workspace"
 
-        # Verify workflow has variables
+        # Verify workflow has variables including repo and pr_number
         wf_data = manager.load_config("workflow", codes["workflow"])
         var_names = {v["name"] for v in wf_data["spec"]["variables"]}
         assert "pr_url" in var_names
+        assert "repo" in var_names
+        assert "pr_number" in var_names
 
-        # Verify variable has forWorkflow
+        # Verify variable has forWorkflow and repo populated
         var_data = manager.load_config("variable", codes["variable"])
         assert var_data["spec"]["forWorkflow"] == codes["workflow"]
+        assert var_data["spec"]["values"]["repo"] == "zhuxixi/zima-blue-cli"
 
         # Verify pjob refs are correct
         job_data = manager.load_config("pjob", codes["pjob"])
@@ -158,7 +208,7 @@ class TestCreateAllConfigs(TestIsolator):
         assert job_data["spec"]["env"] == "test-env"
 
     def test_create_all_configs_code_review_has_actions(self):
-        """Test code-review PJob gets postExec actions from scene defaults."""
+        """Test code-review PJob gets preExec and postExec actions from scene defaults."""
         from zima.commands.quickstart import _create_all_configs
         from zima.config.manager import ConfigManager
 
@@ -174,8 +224,16 @@ class TestCreateAllConfigs(TestIsolator):
 
         job_data = manager.load_config("pjob", codes["pjob"])
         actions = job_data["spec"].get("actions", {})
-        post_exec = actions.get("postExec", [])
 
+        # preExec: scan_pr
+        pre_exec = actions.get("preExec", [])
+        assert len(pre_exec) == 1
+        assert pre_exec[0]["type"] == "scan_pr"
+        assert pre_exec[0]["label"] == "zima:needs-review"
+        assert pre_exec[0]["repo"] == "{{repo}}"
+
+        # postExec: success and failure
+        post_exec = actions.get("postExec", [])
         assert len(post_exec) == 2
         assert post_exec[0]["condition"] == "success"
         assert post_exec[0]["removeLabels"] == ["zima:needs-review"]

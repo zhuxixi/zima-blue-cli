@@ -42,6 +42,39 @@ def _detect_git_repo() -> Optional[str]:
         return None
 
 
+def _detect_repo_slug() -> str:
+    """Detect owner/repo slug from git remote URL. Returns '' if not detected."""
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=_SUBPROCESS_TIMEOUT,
+        )
+        url = result.stdout.strip()
+    except Exception:
+        return ""
+
+    # HTTPS: https://github.com/owner/repo.git
+    # SSH:   git@github.com:owner/repo.git
+    # Plain: owner/repo
+    if url.startswith("git@"):
+        # git@host:owner/repo.git
+        path = url.split(":", 1)[-1]
+    elif "://" in url:
+        # https://host/owner/repo.git
+        path = url.split("://", 1)[-1].split("/", 1)[-1]
+    else:
+        path = url
+
+    path = path.removesuffix(".git")
+    parts = path.split("/")
+    if len(parts) >= 2:
+        return f"{parts[-2]}/{parts[-1]}"
+    return ""
+
+
 def _scan_with_command(command: list[str]) -> list[dict]:
     """Scan for open PRs/MRs using the given CLI command."""
     try:
@@ -114,6 +147,7 @@ def _create_all_configs(
     work_dir: str,
     env_code: Optional[str],
     manager: ConfigManager,
+    detected_repo: str = "",
 ) -> dict[str, str]:
     """Create all 5 configurations. Returns dict of created codes."""
     from zima.models.agent import AgentConfig
@@ -150,11 +184,14 @@ def _create_all_configs(
     manager.save_config("workflow", wf_code, wf.to_dict())
 
     # 3. Create Variable
+    values = scene.variables.copy()
+    if detected_repo:
+        values["repo"] = detected_repo
     var = VariableConfig.create(
         code=var_code,
         name=f"{base_name.title()} Variables",
         for_workflow=wf_code,
-        values=scene.variables.copy(),
+        values=values,
     )
     manager.save_config("variable", var_code, var.to_dict())
 
@@ -308,17 +345,9 @@ def quickstart(
     # Step 4: Resolve workDir
     resolved_work_dir = _resolve_work_dir(preselected=work_dir)
 
-    # Step 5: Show PR scan (display only)
+    # Step 5: Detect repo from git remote
+    detected_repo = _detect_repo_slug()
     scene = scenes[scene_key]
-    if scene.scan_command:
-        console.print("\n[bold]Scanning for open items...[/bold]")
-        prs = _scan_with_command(scene.scan_command)
-        if prs:
-            console.print(f"  Found {len(prs)} PR(s) (display only, not saved to config):")
-            for pr in prs:
-                console.print(f"    PR #{pr['number']}: {pr['title']}", markup=False)
-        else:
-            console.print("  No matching PRs found. You'll provide the URL when running.")
 
     # Step 6: Select env
     manager = ConfigManager()
@@ -350,6 +379,7 @@ def quickstart(
         work_dir=resolved_work_dir,
         env_code=env_code,
         manager=manager,
+        detected_repo=detected_repo,
     )
 
     # Step 9: Print results
