@@ -14,6 +14,7 @@ from typing import Optional
 
 from zima.config.manager import ConfigManager
 from zima.execution.actions_runner import ActionsRunner, SkipAction
+from zima.execution.history import ExecutionHistory
 from zima.models.config_bundle import ConfigBundle
 from zima.models.pjob import Overrides, PJobConfig
 from zima.review.parser import ReviewParser
@@ -52,6 +53,7 @@ class ExecutionResult:
         execution_id: Unique execution ID
         temp_dir: Temporary directory (if kept)
         action_errors: Post-exec action failure messages
+        scan_pr_result: Scan PR result data (repo, pr_number, etc.)
     """
 
     pjob_code: str = ""
@@ -71,6 +73,7 @@ class ExecutionResult:
     prompt_content: str = ""  # Rendered workflow content (kept for dry-run)
     pid: Optional[int] = None  # 执行的进程 PID
     action_errors: list[str] = field(default_factory=list)
+    scan_pr_result: Optional[dict] = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -90,6 +93,7 @@ class ExecutionResult:
             "temp_dir": str(self.temp_dir) if self.temp_dir else None,
             "pid": self.pid,
             "action_errors": self.action_errors,
+            **({"scan_pr_result": self.scan_pr_result} if self.scan_pr_result is not None else {}),
         }
 
     @property
@@ -151,7 +155,11 @@ class PJobExecutor:
         """Initialize executor."""
         self.config_manager = ConfigManager()
         self._current_process: Optional[subprocess.Popen] = None
-        self._actions_runner = ActionsRunner()
+        self._history = ExecutionHistory()
+        self._actions_runner = ActionsRunner(
+            history=self._history,
+            pjob_code=None,
+        )
 
     def execute(
         self,
@@ -178,6 +186,7 @@ class PJobExecutor:
             execution_id=execution_id,
             started_at=generate_timestamp(),
         )
+        self._actions_runner._pjob_code = pjob_code
         temp_dir: Optional[Path] = None
 
         try:
@@ -216,6 +225,12 @@ class PJobExecutor:
                             env_vars[key] = value
                     # Merge discovered vars into bundle (for Jinja2 rendering)
                     bundle.inject_dynamic_vars(dynamic_vars)
+                    # Persist scan_pr_result for skip logic
+                    if "pr_number" in dynamic_vars:
+                        result.scan_pr_result = {
+                            "repo": dynamic_vars.get("repo", ""),
+                            "pr_number": dynamic_vars["pr_number"],
+                        }
                 except SkipAction as e:
                     result.status = ExecutionStatus.SKIPPED
                     result.returncode = 0

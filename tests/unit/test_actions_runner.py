@@ -306,3 +306,92 @@ class TestActionsRunnerPreExec:
             assert result["repo"] == "my-org/my-repo"
             assert result["pr_number"] == "7"
             assert result["pr_diff"] == "diff data"
+
+
+class TestActionsRunnerPreExecSkipLogic:
+    def _make_actions(self, repo="owner/repo", label="zima:needs-review"):
+        from zima.models.actions import PreExecAction
+
+        return ActionsConfig(pre_exec=[PreExecAction(type="scan_pr", repo=repo, label=label)])
+
+    def test_no_history_falls_back_to_first_pr(self):
+        """Without history, picks the first PR (prs[0] behavior)."""
+        runner = ActionsRunner()
+        actions = self._make_actions()
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = [
+            {"number": "10", "title": "PR 10", "url": "url10"},
+            {"number": "20", "title": "PR 20", "url": "url20"},
+        ]
+        mock_provider.fetch_diff.return_value = "diff"
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(actions, {})
+        assert result["pr_number"] == "10"
+
+    def test_skips_recently_failed_pr(self):
+        """Skips a PR that failed within the time window."""
+        mock_history = MagicMock()
+        mock_history.get_recent_scan_pr_failures.return_value = [
+            {"scan_pr_result": {"repo": "owner/repo", "pr_number": "10"}}
+        ]
+        runner = ActionsRunner(history=mock_history, pjob_code="reviewer")
+        actions = self._make_actions()
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = [
+            {"number": "10", "title": "PR 10", "url": "url10"},
+            {"number": "20", "title": "PR 20", "url": "url20"},
+        ]
+        mock_provider.fetch_diff.return_value = "diff"
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(actions, {})
+        assert result["pr_number"] == "20"
+        mock_history.get_recent_scan_pr_failures.assert_called_once_with("reviewer", 90)
+
+    def test_skips_all_raises_skip_action(self):
+        """Raises SkipAction when all PRs were recently attempted."""
+        mock_history = MagicMock()
+        mock_history.get_recent_scan_pr_failures.return_value = [
+            {"scan_pr_result": {"repo": "owner/repo", "pr_number": "10"}},
+            {"scan_pr_result": {"repo": "owner/repo", "pr_number": "20"}},
+        ]
+        runner = ActionsRunner(history=mock_history, pjob_code="reviewer")
+        actions = self._make_actions()
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = [
+            {"number": "10", "title": "PR 10", "url": "url10"},
+            {"number": "20", "title": "PR 20", "url": "url20"},
+        ]
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with pytest.raises(SkipAction) as exc_info:
+                runner.run_pre(actions, {})
+            assert "recently attempted" in str(exc_info.value).lower()
+
+    def test_no_history_param_skips_query(self):
+        """When history is None, no query is made and first PR is picked."""
+        runner = ActionsRunner(history=None, pjob_code="reviewer")
+        actions = self._make_actions()
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = [
+            {"number": "10", "title": "PR 10", "url": "url10"},
+        ]
+        mock_provider.fetch_diff.return_value = "diff"
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(actions, {})
+        assert result["pr_number"] == "10"
+
+    def test_different_repo_not_skipped(self):
+        """A failed PR on a different repo does not cause skipping."""
+        mock_history = MagicMock()
+        mock_history.get_recent_scan_pr_failures.return_value = [
+            {"scan_pr_result": {"repo": "other/repo", "pr_number": "10"}},
+        ]
+        runner = ActionsRunner(history=mock_history, pjob_code="reviewer")
+        actions = self._make_actions(repo="owner/repo")
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = [
+            {"number": "10", "title": "PR 10", "url": "url10"},
+        ]
+        mock_provider.fetch_diff.return_value = "diff"
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(actions, {})
+        assert result["pr_number"] == "10"
