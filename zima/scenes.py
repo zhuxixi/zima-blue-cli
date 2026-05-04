@@ -8,7 +8,7 @@ from typing import Optional
 
 import yaml
 
-from zima.models.actions import ActionsConfig, PostExecAction
+from zima.models.actions import ActionsConfig, PostExecAction, PreExecAction
 from zima.utils import get_zima_home
 
 
@@ -40,20 +40,12 @@ BUILTIN_SCENES: dict[str, Scene] = {
         name="Code Review",
         description="Review PRs/MRs with AI agent",
         workflow_template="review pr {{ pr_url }}",
-        variables={"pr_url": ""},
+        variables={"pr_url": "", "repo": "", "pr_number": ""},
         provider="github",
-        scan_command=[
-            "gh",
-            "pr",
-            "list",
-            "--state",
-            "open",
-            "--label",
-            "need-review",
-            "--json",
-            "number,title,url",
-        ],
         default_actions=ActionsConfig(
+            pre_exec=[
+                PreExecAction(type="scan_pr", repo="{{repo}}", label="zima:needs-review"),
+            ],
             post_exec=[
                 PostExecAction(
                     condition="success",
