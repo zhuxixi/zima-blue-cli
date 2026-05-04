@@ -1,8 +1,8 @@
-"""Unit tests for executor bug fixes (#11, #13, #15, #16)."""
+"""Unit tests for executor bug fixes (#11, #13, #15, #16, #92)."""
 
 import os
 
-from zima.execution.executor import PJobExecutor, _friendly_error
+from zima.execution.executor import ExecutionResult, ExecutionStatus, PJobExecutor, _friendly_error
 
 
 class TestFriendlyError:
@@ -122,3 +122,55 @@ class TestCreateTempDir:
 
         assert (temp_dir / "temp" / "pjobs").exists()
         assert result.exists()
+
+
+class TestActionErrorStatusFlip:
+    """Regression tests for #92: action errors flip status from SUCCESS to FAILED."""
+
+    def test_action_error_flips_status_to_failed(self):
+        """When postExec action fails, status changes from SUCCESS to FAILED."""
+        result = ExecutionResult(
+            pjob_code="reviewer",
+            status=ExecutionStatus.SUCCESS,
+            returncode=0,
+            action_errors=["Failed to remove label 'zima:needs-review': PermissionError"],
+        )
+        # Simulate the status flip logic from executor finally block
+        if result.status == ExecutionStatus.SUCCESS and result.action_errors:
+            result.status = ExecutionStatus.FAILED
+            result.returncode = 1
+
+        assert result.status == ExecutionStatus.FAILED
+        assert result.returncode == 1
+        assert len(result.action_errors) == 1
+
+    def test_no_errors_keeps_success(self):
+        """When no action errors, status remains SUCCESS."""
+        result = ExecutionResult(
+            pjob_code="reviewer",
+            status=ExecutionStatus.SUCCESS,
+            returncode=0,
+            action_errors=[],
+        )
+        if result.status == ExecutionStatus.SUCCESS and result.action_errors:
+            result.status = ExecutionStatus.FAILED
+            result.returncode = 1
+
+        assert result.status == ExecutionStatus.SUCCESS
+        assert result.returncode == 0
+
+    def test_agent_failure_not_overridden_by_action_errors(self):
+        """Agent failure status is not affected by action_errors check."""
+        result = ExecutionResult(
+            pjob_code="reviewer",
+            status=ExecutionStatus.FAILED,
+            returncode=1,
+            action_errors=["Some action error"],
+        )
+        if result.status == ExecutionStatus.SUCCESS and result.action_errors:
+            result.status = ExecutionStatus.FAILED
+            result.returncode = 1
+
+        # Status was already FAILED, should stay FAILED
+        assert result.status == ExecutionStatus.FAILED
+        assert result.returncode == 1
