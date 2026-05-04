@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.0] - 2026-05-05
+
+### Features
+- multi-PR queue for scan_pr with skip logic (#80)
+
+### Fixes
+- **execution**: postExec action failures reflected in execution status (#92)
+
+### Changes
+- add implementation plan for issue #80 multi-PR queue
+- add spec for issue #80 multi-PR queue scan_pr design
+
+[0.5.0]: https://github.com/zhuxixi/zima-blue-cli/compare/v0.4.2...v0.5.0
+
 ## [0.4.2] - 2026-05-03
 
 ### Fixes
