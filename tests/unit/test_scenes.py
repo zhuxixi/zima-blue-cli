@@ -66,19 +66,9 @@ class TestBuiltinScenes:
         assert scene.name == "Code Review"
         assert scene.description == "Review PRs/MRs with AI agent"
         assert scene.workflow_template == "review pr {{ pr_url }}"
-        assert scene.variables == {"pr_url": ""}
+        assert scene.variables == {"pr_url": "", "repo": "", "pr_number": ""}
         assert scene.provider == "github"
-        assert scene.scan_command == [
-            "gh",
-            "pr",
-            "list",
-            "--state",
-            "open",
-            "--label",
-            "need-review",
-            "--json",
-            "number,title,url",
-        ]
+        assert scene.scan_command is None
 
     def test_custom_scene_structure(self):
         """Test custom scene has correct fields."""
@@ -91,10 +81,19 @@ class TestBuiltinScenes:
         assert scene.scan_command is None
 
     def test_code_review_scene_has_default_actions(self):
-        """Test code-review scene has postExec label transition actions."""
+        """Test code-review scene has preExec and postExec actions."""
         scene = BUILTIN_SCENES["code-review"]
         assert scene.default_actions is not None
         assert isinstance(scene.default_actions, ActionsConfig)
+
+        # preExec: scan_pr
+        assert len(scene.default_actions.pre_exec) == 1
+        pre_action = scene.default_actions.pre_exec[0]
+        assert pre_action.type == "scan_pr"
+        assert pre_action.repo == "{{repo}}"
+        assert pre_action.label == "zima:needs-review"
+
+        # postExec: success and failure label transitions
         assert len(scene.default_actions.post_exec) == 2
 
         success_action = scene.default_actions.post_exec[0]
@@ -112,6 +111,15 @@ class TestBuiltinScenes:
         assert failure_action.remove_labels == ["zima:needs-review"]
         assert failure_action.repo == "{{repo}}"
         assert failure_action.issue == "{{pr_number}}"
+
+    def test_code_review_scene_pre_exec_scan_pr(self):
+        """Test code-review preExec scan_pr has correct repo and label."""
+        scene = BUILTIN_SCENES["code-review"]
+        pre = scene.default_actions.pre_exec[0]
+        assert pre.type == "scan_pr"
+        assert pre.repo == "{{repo}}"
+        assert pre.label == "zima:needs-review"
+        assert pre.condition == "always"
 
     def test_custom_scene_has_no_default_actions(self):
         """Test custom scene has no default actions."""
