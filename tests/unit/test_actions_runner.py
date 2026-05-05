@@ -527,6 +527,21 @@ class TestActionsRunnerPreExecSkipLogic:
             mock_provider.scan_prs.assert_not_called()
             assert "repo resolved to empty" in str(exc_info.value)
 
+    def test_empty_label_raises_skip_action(self):
+        """Empty label after substitution raises SkipAction."""
+        from zima.models.actions import PreExecAction
+
+        runner = ActionsRunner()
+        actions = ActionsConfig(
+            pre_exec=[PreExecAction(type="scan_pr", repo="owner/repo", label="{{label}}")]
+        )
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with pytest.raises(SkipAction) as exc_info:
+                runner.run_pre(actions, {"label": ""})
+            mock_provider.scan_prs.assert_not_called()
+            assert "label resolved to empty" in str(exc_info.value)
+
     def test_different_repo_not_skipped(self):
         """A failed PR on a different repo does not cause skipping."""
         mock_history = MagicMock()

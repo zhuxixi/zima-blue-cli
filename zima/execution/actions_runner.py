@@ -197,6 +197,11 @@ class ActionsRunner:
                         f"preExec scan_pr skipped — repo resolved to empty "
                         f"(pjob={self._pjob_code or '?'}, original='{action.repo}')"
                     )
+                if not label or not label.strip():
+                    raise SkipAction(
+                        f"preExec scan_pr skipped — label resolved to empty "
+                        f"(pjob={self._pjob_code or '?'}, original='{action.label}')"
+                    )
                 prs = provider.scan_prs(repo, label)
                 if not prs:
                     raise SkipAction(f"No PRs found with label '{label}' in {repo}")
