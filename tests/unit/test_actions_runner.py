@@ -496,6 +496,37 @@ class TestActionsRunnerPreExecSkipLogic:
             result = runner.run_pre(actions, {})
         assert result["pr_number"] == "10"
 
+    def test_empty_repo_raises_skip_action(self):
+        """Empty repo after substitution raises SkipAction instead of crashing."""
+        from zima.models.actions import PreExecAction
+
+        runner = ActionsRunner(pjob_code="my-reviewer")
+        actions = ActionsConfig(
+            pre_exec=[PreExecAction(type="scan_pr", repo="{{repo}}", label="zima:needs-review")]
+        )
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with pytest.raises(SkipAction) as exc_info:
+                runner.run_pre(actions, {"repo": ""})
+            mock_provider.scan_prs.assert_not_called()
+            assert "repo resolved to empty" in str(exc_info.value)
+            assert "my-reviewer" in str(exc_info.value)
+
+    def test_whitespace_repo_raises_skip_action(self):
+        """Whitespace-only repo raises SkipAction."""
+        from zima.models.actions import PreExecAction
+
+        runner = ActionsRunner()
+        actions = ActionsConfig(
+            pre_exec=[PreExecAction(type="scan_pr", repo="{{repo}}", label="zima:needs-review")]
+        )
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with pytest.raises(SkipAction) as exc_info:
+                runner.run_pre(actions, {"repo": "   "})
+            mock_provider.scan_prs.assert_not_called()
+            assert "repo resolved to empty" in str(exc_info.value)
+
     def test_different_repo_not_skipped(self):
         """A failed PR on a different repo does not cause skipping."""
         mock_history = MagicMock()
