@@ -17,7 +17,10 @@ class TestQuickstartCommand(TestIsolator):
         runner = CliRunner()
 
         with patch("zima.commands.quickstart._detect_git_repo", return_value="/tmp/workspace"):
-            with patch("zima.commands.quickstart._scan_with_command", return_value=[]):
+            with patch(
+                "zima.commands.quickstart._detect_repo_slug",
+                return_value="owner/repo",
+            ):
                 with patch("zima.commands.quickstart.typer.prompt", return_value="1"):
                     with patch("zima.commands.quickstart.typer.confirm", return_value=True):
                         result = runner.invoke(
