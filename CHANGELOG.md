@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.1] - 2026-05-06
+
+### Fixes
+- **execution**: guard empty repo in preExec scan_pr (#96)
+- **quickstart**: code-review scene preExec, variables, repo detection (#95)
+
+### Changes
+- add implementation plan for issue #83 quickstart scene fix
+- add spec for issue #83 quickstart scene fix design
+- add implementation plan for issue #80 multi-PR queue
+- add spec for issue #80 multi-PR queue scan_pr design
+
+[0.5.1]: https://github.com/zhuxixi/zima-blue-cli/compare/v0.5.0...v0.5.1
+
 ## [0.5.0] - 2026-05-05
 
 ### Features
