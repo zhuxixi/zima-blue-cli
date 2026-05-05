@@ -77,6 +77,30 @@ class TestDetectRepoSlug(TestIsolator):
             result = _detect_repo_slug()
             assert result == "owner/repo"
 
+    def test_detect_repo_slug_trailing_slash(self):
+        """Test detection handles trailing slash in URL."""
+        from zima.commands.quickstart import _detect_repo_slug
+
+        with patch("zima.commands.quickstart.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0, stdout="https://github.com/owner/repo.git/\n", stderr=""
+            )
+            result = _detect_repo_slug()
+            assert result == "owner/repo"
+
+    def test_detect_repo_slug_uses_work_dir(self):
+        """Test detection runs git in the specified work_dir."""
+        from zima.commands.quickstart import _detect_repo_slug
+
+        with patch("zima.commands.quickstart.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0, stdout="https://github.com/zhuxixi/zima-blue-cli.git\n", stderr=""
+            )
+            result = _detect_repo_slug("/tmp/my-repo")
+            mock_run.assert_called_once()
+            assert mock_run.call_args.kwargs.get("cwd") == "/tmp/my-repo"
+            assert result == "zhuxixi/zima-blue-cli"
+
 
 class TestGenerateUniqueCode(TestIsolator):
     """Test unique code generation."""

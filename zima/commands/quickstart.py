@@ -42,7 +42,7 @@ def _detect_git_repo() -> Optional[str]:
         return None
 
 
-def _detect_repo_slug() -> str:
+def _detect_repo_slug(work_dir: str = "") -> str:
     """Detect owner/repo slug from git remote URL. Returns '' if not detected."""
     try:
         result = subprocess.run(
@@ -51,6 +51,7 @@ def _detect_repo_slug() -> str:
             text=True,
             check=True,
             timeout=_SUBPROCESS_TIMEOUT,
+            cwd=work_dir or None,
         )
         url = result.stdout.strip()
     except Exception:
@@ -60,15 +61,13 @@ def _detect_repo_slug() -> str:
     # SSH:   git@github.com:owner/repo.git
     # Plain: owner/repo
     if url.startswith("git@"):
-        # git@host:owner/repo.git
         path = url.split(":", 1)[-1]
     elif "://" in url:
-        # https://host/owner/repo.git
         path = url.split("://", 1)[-1].split("/", 1)[-1]
     else:
         path = url
 
-    path = path.removesuffix(".git")
+    path = path.strip("/").removesuffix(".git")
     parts = path.split("/")
     if len(parts) >= 2:
         return f"{parts[-2]}/{parts[-1]}"
@@ -346,7 +345,7 @@ def quickstart(
     resolved_work_dir = _resolve_work_dir(preselected=work_dir)
 
     # Step 5: Detect repo from git remote
-    detected_repo = _detect_repo_slug()
+    detected_repo = _detect_repo_slug(resolved_work_dir)
     scene = scenes[scene_key]
 
     # Step 6: Select env
