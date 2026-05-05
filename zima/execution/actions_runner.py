@@ -192,6 +192,16 @@ class ActionsRunner:
             if action.type == "scan_pr":
                 repo = self._substitute_env_str(action.repo, env)
                 label = self._substitute_env_str(action.label, env)
+                if not repo or not repo.strip():
+                    raise SkipAction(
+                        f"preExec scan_pr skipped — repo resolved to empty "
+                        f"(pjob={self._pjob_code or '?'}, original='{action.repo}')"
+                    )
+                if not label or not label.strip():
+                    raise SkipAction(
+                        f"preExec scan_pr skipped — label resolved to empty "
+                        f"(pjob={self._pjob_code or '?'}, original='{action.label}')"
+                    )
                 prs = provider.scan_prs(repo, label)
                 if not prs:
                     raise SkipAction(f"No PRs found with label '{label}' in {repo}")
