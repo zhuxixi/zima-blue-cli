@@ -172,6 +172,44 @@ class TestActionsConfig:
         assert len(errors) == 2
         assert "Action[1]" in errors[0]
 
+    def test_default_provider_uses_env_var(self, monkeypatch):
+        """ActionsConfig() resolves provider from ZIMA_GIT_REPO_PROVIDER."""
+        monkeypatch.setenv("ZIMA_GIT_REPO_PROVIDER", "gitlab")
+        config = ActionsConfig()
+        assert config.provider == "gitlab"
+
+    def test_default_provider_github_without_env(self, monkeypatch):
+        """ActionsConfig() defaults to 'github' without env var."""
+        monkeypatch.delenv("ZIMA_GIT_REPO_PROVIDER", raising=False)
+        config = ActionsConfig()
+        assert config.provider == "github"
+
+    def test_to_dict_omits_provider_when_env_default(self, monkeypatch):
+        """to_dict omits provider when it matches the env-configured default."""
+        monkeypatch.setenv("ZIMA_GIT_REPO_PROVIDER", "gitlab")
+        config = ActionsConfig()
+        d = config.to_dict()
+        assert "provider" not in d
+
+    def test_to_dict_includes_provider_when_not_default(self, monkeypatch):
+        """to_dict includes provider when it differs from the env default."""
+        monkeypatch.setenv("ZIMA_GIT_REPO_PROVIDER", "gitlab")
+        config = ActionsConfig(provider="github")
+        d = config.to_dict()
+        assert d["provider"] == "github"
+
+    def test_from_dict_resolves_default_provider(self, monkeypatch):
+        """from_dict with no provider key resolves to env default."""
+        monkeypatch.setenv("ZIMA_GIT_REPO_PROVIDER", "gitlab")
+        d = {"postExec": [{"condition": "success", "type": "add_label"}]}
+        config = ActionsConfig.from_dict(d)
+        assert config.provider == "gitlab"
+
+    def test_explicit_provider_not_overridden(self):
+        """Explicitly passed provider is never overridden by __post_init__."""
+        config = ActionsConfig(provider="bitbucket")
+        assert config.provider == "bitbucket"
+
 
 class TestPreExecAction:
     def test_default_action(self):
