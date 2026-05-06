@@ -9,30 +9,25 @@ from typing import Optional
 import yaml
 
 from zima.models.actions import ActionsConfig, PostExecAction, PreExecAction
+from zima.providers.defaults import get_default_provider_name
 from zima.utils import get_zima_home
 
 
 @dataclass
 class Scene:
-    """A quickstart scene template with rendering variables and provider config.
-
-    Attributes:
-        name: Display name for the scene.
-        description: Short description shown in the quickstart wizard.
-        workflow_template: Jinja2 template string rendered into the agent prompt.
-        variables: Default variable values for the template.
-        provider: Action provider name (default ``"github"``).
-        scan_command: Optional CLI command to scan for items (e.g. PRs/MRs).
-        default_actions: Optional default actions (postExec label transitions, etc.).
-    """
+    """A quickstart scene template with rendering variables and provider config."""
 
     name: str
     description: str
     workflow_template: str
     variables: dict[str, str]
-    provider: str = "github"
+    provider: str | None = None
     scan_command: Optional[list[str]] = None
     default_actions: Optional[ActionsConfig] = None
+
+    def __post_init__(self):
+        if self.provider is None:
+            self.provider = get_default_provider_name()
 
 
 BUILTIN_SCENES: dict[str, Scene] = {

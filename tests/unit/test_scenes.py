@@ -46,6 +46,28 @@ class TestSceneDataclass:
         )
         assert scene.default_actions is None
 
+    def test_scene_default_provider_from_env(self, monkeypatch):
+        """Scene() resolves provider from ZIMA_GIT_REPO_PROVIDER."""
+        monkeypatch.setenv("ZIMA_GIT_REPO_PROVIDER", "gitlab")
+        scene = Scene(
+            name="Test",
+            description="Test",
+            workflow_template="hi",
+            variables={},
+        )
+        assert scene.provider == "gitlab"
+
+    def test_scene_default_provider_github_without_env(self, monkeypatch):
+        """Scene() defaults to 'github' without env var."""
+        monkeypatch.delenv("ZIMA_GIT_REPO_PROVIDER", raising=False)
+        scene = Scene(
+            name="Test",
+            description="Test",
+            workflow_template="hi",
+            variables={},
+        )
+        assert scene.provider == "github"
+
 
 class TestBuiltinScenes:
     """Test BUILTIN_SCENES structure."""
