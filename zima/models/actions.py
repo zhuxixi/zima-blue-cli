@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from zima.models.serialization import YamlSerializable, omit_empty
+from zima.providers.defaults import get_default_provider_name, is_default_provider
 
 VALID_ACTION_CONDITIONS = {"success", "failure", "always"}
 VALID_POST_ACTION_TYPES = {"add_label", "add_comment"}
@@ -116,20 +117,25 @@ class ActionsConfig(YamlSerializable):
     """Collection of actions for a PJob.
 
     Attributes:
-        provider: The action provider to use (default: "github").
+        provider: The action provider to use. Defaults to ZIMA_GIT_REPO_PROVIDER
+            env var, or "github" if unset.
         pre_exec: List of PreExecAction instances to run before the agent starts.
         post_exec: List of PostExecAction instances to run after agent exits.
     """
 
     FIELD_ALIASES = {"pre_exec": "preExec", "post_exec": "postExec"}
 
-    provider: str = "github"
+    provider: str | None = None
     pre_exec: list[PreExecAction] = field(default_factory=list)
     post_exec: list[PostExecAction] = field(default_factory=list)
 
+    def __post_init__(self):
+        if self.provider is None:
+            self.provider = get_default_provider_name()
+
     def to_dict(self) -> dict:
         d = omit_empty(super().to_dict())
-        if self.provider == "github":
+        if is_default_provider(self.provider):
             d.pop("provider", None)
         return d
 

@@ -101,6 +101,45 @@ class TestDetectRepoSlug(TestIsolator):
             assert mock_run.call_args.kwargs.get("cwd") == "/tmp/my-repo"
             assert result == "zhuxixi/zima-blue-cli"
 
+    def test_detect_repo_slug_gitlab_nested_group(self):
+        """Test GitLab nested group path is preserved in full."""
+        from zima.commands.quickstart import _detect_repo_slug
+
+        with patch("zima.commands.quickstart.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="git@gitlab.com:group/sub/proj.git\n",
+                stderr="",
+            )
+            result = _detect_repo_slug()
+            assert result == "group/sub/proj"
+
+    def test_detect_repo_slug_gitlab_nested_group_https(self):
+        """Test GitLab nested group via HTTPS preserves full path."""
+        from zima.commands.quickstart import _detect_repo_slug
+
+        with patch("zima.commands.quickstart.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="https://gitlab.com/group/sub/proj.git\n",
+                stderr="",
+            )
+            result = _detect_repo_slug()
+            assert result == "group/sub/proj"
+
+    def test_detect_repo_slug_deeply_nested(self):
+        """Test deeply nested group with 4+ segments."""
+        from zima.commands.quickstart import _detect_repo_slug
+
+        with patch("zima.commands.quickstart.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                returncode=0,
+                stdout="git@gitlab.com:a/b/c/d/proj.git\n",
+                stderr="",
+            )
+            result = _detect_repo_slug()
+            assert result == "a/b/c/d/proj"
+
 
 class TestGenerateUniqueCode(TestIsolator):
     """Test unique code generation."""
