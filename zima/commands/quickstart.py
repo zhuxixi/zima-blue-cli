@@ -68,9 +68,8 @@ def _detect_repo_slug(work_dir: str = "") -> str:
         path = url
 
     path = path.strip("/").removesuffix(".git")
-    parts = path.split("/")
-    if len(parts) >= 2:
-        return f"{parts[-2]}/{parts[-1]}"
+    if "/" in path:
+        return path
     return ""
 
 
