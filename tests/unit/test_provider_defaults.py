@@ -1,9 +1,5 @@
 """Tests for zima/providers/defaults.py — default provider resolver."""
 
-import os
-
-import pytest
-
 
 class TestGetDefaultProviderName:
     def test_returns_github_by_default(self, monkeypatch):
