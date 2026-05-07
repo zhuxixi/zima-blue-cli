@@ -34,7 +34,7 @@ BUILTIN_SCENES: dict[str, Scene] = {
     "code-review": Scene(
         name="Code Review",
         description="Review PRs/MRs with AI agent",
-        workflow_template="review pr {{ pr_url }}",
+        workflow_template="batch review pr {{ pr_url }}",
         variables={"pr_url": "", "repo": "", "pr_number": ""},
         provider="github",
         default_actions=ActionsConfig(
