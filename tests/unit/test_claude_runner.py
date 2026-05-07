@@ -19,10 +19,9 @@ class TestClaudeAgentConfig:
 
         assert "model" not in config.parameters
         assert config.parameters["maxTurns"] == 100
-        assert config.parameters["permissionMode"] == "plan"
-        assert config.parameters["outputFormat"] == "stream-json"
-        assert config.parameters["allowedTools"] == []
-        assert config.parameters["disallowedTools"] == []
+        assert config.parameters["permissionMode"] == "bypassPermissions"
+        assert config.parameters["outputFormat"] == "text"
+        assert config.parameters["allowedTools"] == ["Bash", "Agent", "Read", "Glob", "Grep"]
 
     def test_claude_cli_template(self):
         """Test Claude CLI template uses -p, not --print."""
@@ -56,9 +55,9 @@ class TestClaudeAgentConfig:
         assert "--max-turns" in cmd
         assert "100" in cmd
         assert "--permission-mode" in cmd
-        assert "plan" in cmd
+        assert "bypassPermissions" in cmd
         assert "--output-format" in cmd
-        assert "stream-json" in cmd
+        assert "text" in cmd
         # Claude CLI has no --work-dir or --cwd flag; cwd is set via subprocess
         assert "--work-dir" not in cmd
         assert "--cwd" not in cmd
@@ -122,14 +121,14 @@ class TestClaudeAgentConfig:
         assert "./src" in cmd
         assert "./tests" in cmd
 
-    def test_claude_build_command_empty_tools_lists(self):
-        """Test that empty allowed/disallowed tools lists are not added."""
+    def test_claude_build_command_default_tools(self):
+        """Test that default allowedTools are included in command."""
         config = AgentConfig.create("test-claude", "Test Claude", "claude")
 
         cmd = config.build_command()
 
-        assert "--allowedTools" not in cmd
-        assert "--disallowedTools" not in cmd
+        assert "--allowedTools" in cmd
+        assert "Bash,Agent,Read,Glob,Grep" in cmd
 
     def test_claude_build_command_verbose(self):
         """Test Claude command with verbose flag."""
