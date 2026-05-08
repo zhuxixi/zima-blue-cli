@@ -225,6 +225,39 @@ docs/
 
 ---
 
+## AI Coding Pipeline
+
+Zima automates the issue-driven AI coding pipeline — from code review through deployment — using configurable PJob compositions.
+
+### Pipeline Stages
+
+```
+issue → brainstorm/spec → plan → impl → create-PR → CR → post-fix → post-merge → integration-test → deploy-prod
+```
+
+### Automation Coverage
+
+| Stage | Status | PJob |
+|-------|--------|------|
+| brainstorm/spec | ❌ Manual (by design) | — |
+| plan | ❌ Not implemented | — |
+| impl | ❌ Not implemented | — |
+| create-PR | ❌ Not implemented | — |
+| CR | ⚠️ Partial | `jfox-kc-code-review-job`, `jfox-zc-code-review-job` |
+| post-fix | ❌ Not implemented | — |
+| post-merge | ❌ Not implemented | — |
+| integration-test | ❌ Not implemented | — |
+| deploy-prod | ❌ Not implemented | — |
+
+### Supported PJobs
+
+| PJob Code | Description | Stage |
+|-----------|-------------|-------|
+| `jfox-kc-code-review-job` | Code review via Kimi CLI | CR |
+| `jfox-zc-code-review-job` | Code review via Zhipu-driven Claude Code | CR |
+
+---
+
 ## Development
 
 See [`AGENTS.md`](AGENTS.md) for development conventions, coding style, and design principles.
