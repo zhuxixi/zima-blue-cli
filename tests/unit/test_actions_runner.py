@@ -438,7 +438,7 @@ class TestActionsRunnerPreExec:
         assert result == {}
 
     def test_git_pull_failure_continues(self, capsys):
-        """Test git_pull with non-zero returncode logs warning and continues."""
+        """Test git_pull with non-zero returncode logs warning without stderr."""
         runner = ActionsRunner()
         actions = ActionsConfig(pre_exec=[PreExecAction(type="git_pull")])
         mock_provider = MagicMock()
@@ -448,7 +448,8 @@ class TestActionsRunnerPreExec:
                 result = runner.run_pre(actions, {}, workdir="/path/to/repo")
         captured = capsys.readouterr()
         assert "Warning" in captured.out
-        assert "merge conflict" in captured.out
+        assert "rc=1" in captured.out
+        assert "merge conflict" not in captured.out
         assert result == {}
 
     def test_git_pull_timeout(self, capsys):

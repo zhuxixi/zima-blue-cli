@@ -230,8 +230,7 @@ class ActionsRunner:
                         )
                         if pull_result.returncode != 0:
                             print(
-                                f"Warning: git pull failed in {workdir}: "
-                                f"{pull_result.stderr.strip()}"
+                                f"Warning: git pull failed in {workdir} (rc={pull_result.returncode})"
                             )
                     except subprocess.TimeoutExpired:
                         print(f"Warning: git pull timed out in {workdir}")
