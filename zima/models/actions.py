@@ -9,7 +9,7 @@ from zima.providers.defaults import get_default_provider_name, is_default_provid
 
 VALID_ACTION_CONDITIONS = {"success", "failure", "always"}
 VALID_POST_ACTION_TYPES = {"add_label", "add_comment"}
-VALID_PRE_ACTION_TYPES = {"scan_pr"}
+VALID_PRE_ACTION_TYPES = {"scan_pr", "git_pull"}
 
 
 @dataclass
