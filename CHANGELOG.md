@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.2] - 2026-05-10
+
+### Fixes
+- **agent**: update Claude template defaults for unattended daemon execution (#107)
+- **workflow**: update code-review scene to use batch review skill trigger
+- **providers**: configurable default provider via ZIMA_GIT_REPO_PROVIDER (#102)
+
+### Changes
+- **readme**: add AI coding pipeline coverage tracker (#103)
+- **plan**: add implementation plan for issue #103 README pipeline tracker
+- **spec**: add design for issue #103 README pipeline coverage tracker
+
+[0.5.2]: https://github.com/zhuxixi/zima-blue-cli/compare/v0.5.1...v0.5.2
+
 ## [0.5.1] - 2026-05-06
 
 ### Fixes
