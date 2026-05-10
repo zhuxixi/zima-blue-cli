@@ -214,7 +214,9 @@ class PJobExecutor:
                     for k, v in bundle.get_variable_values().items():
                         if v is not None:
                             pre_env.setdefault(k, str(v))
-                    dynamic_vars = self._actions_runner.run_pre(pjob.spec.actions, pre_env)
+                    dynamic_vars = self._actions_runner.run_pre(
+                        pjob.spec.actions, pre_env, workdir=bundle.work_dir
+                    )
                     # Merge discovered vars into env (for postExec substitution)
                     # Skip keys that already exist in runtime overrides (higher priority)
                     for key, value in dynamic_vars.items():

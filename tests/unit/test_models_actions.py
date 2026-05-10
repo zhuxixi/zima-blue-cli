@@ -239,6 +239,11 @@ class TestPreExecAction:
         assert d["repo"] == "o/r"
         assert d["label"] == "x"
 
+    def test_git_pull_valid_type(self):
+        """Test git_pull is accepted as a valid preExec action type."""
+        action = PreExecAction(type="git_pull")
+        assert action.validate() == []
+
 
 class TestActionsConfigPreExec:
     def test_pre_exec_field(self):
