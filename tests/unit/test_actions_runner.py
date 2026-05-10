@@ -428,11 +428,12 @@ class TestActionsRunnerPreExec:
                 mock_run.return_value = MagicMock(returncode=0)
                 result = runner.run_pre(actions, {}, workdir="/path/to/repo")
         mock_run.assert_called_once_with(
-            ["git", "pull"],
+            ["git", "pull", "--no-verify"],
             cwd="/path/to/repo",
             stdin=_subprocess.DEVNULL,
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=60,
         )
         assert result == {}

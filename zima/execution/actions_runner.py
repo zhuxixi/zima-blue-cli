@@ -221,11 +221,12 @@ class ActionsRunner:
                 else:
                     try:
                         pull_result = subprocess.run(
-                            ["git", "pull"],
+                            ["git", "pull", "--no-verify"],
                             cwd=workdir,
                             stdin=subprocess.DEVNULL,
                             capture_output=True,
                             text=True,
+                            errors="replace",
                             timeout=60,
                         )
                         if pull_result.returncode != 0:
