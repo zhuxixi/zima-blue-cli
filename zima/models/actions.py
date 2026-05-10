@@ -78,7 +78,7 @@ class PreExecAction(YamlSerializable):
 
     Attributes:
         condition: When to run — "always", "success", or "failure".
-        type: Action type — "scan_pr".
+        type: Action type — "scan_pr" or "git_pull".
         repo: Repository slug in "owner/repo" format (for scan_pr).
         label: Label to scan for (for scan_pr).
         command: Reserved for future use.

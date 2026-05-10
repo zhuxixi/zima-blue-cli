@@ -418,6 +418,8 @@ class TestActionsRunnerPreExec:
 
     def test_git_pull_success(self):
         """Test git_pull runs git pull in workdir and returns empty dict."""
+        import subprocess as _subprocess
+
         runner = ActionsRunner()
         actions = ActionsConfig(pre_exec=[PreExecAction(type="git_pull")])
         mock_provider = MagicMock()
@@ -428,6 +430,7 @@ class TestActionsRunnerPreExec:
         mock_run.assert_called_once_with(
             ["git", "pull"],
             cwd="/path/to/repo",
+            stdin=_subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=60,
@@ -476,6 +479,20 @@ class TestActionsRunnerPreExec:
         assert "Warning" in captured.out
         assert "no workdir" in captured.out
         mock_run.assert_not_called()
+        assert result == {}
+
+    def test_git_pull_file_not_found(self, capsys):
+        """Test git_pull with FileNotFoundError (git not on PATH) logs warning."""
+        runner = ActionsRunner()
+        actions = ActionsConfig(pre_exec=[PreExecAction(type="git_pull")])
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with patch("zima.execution.actions_runner.subprocess.run") as mock_run:
+                mock_run.side_effect = FileNotFoundError("git not found")
+                result = runner.run_pre(actions, {}, workdir="/path/to/repo")
+        captured = capsys.readouterr()
+        assert "Warning" in captured.out
+        assert "git not found" in captured.out
         assert result == {}
 
 

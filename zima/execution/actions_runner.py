@@ -223,6 +223,7 @@ class ActionsRunner:
                         pull_result = subprocess.run(
                             ["git", "pull"],
                             cwd=workdir,
+                            stdin=subprocess.DEVNULL,
                             capture_output=True,
                             text=True,
                             timeout=60,
@@ -234,6 +235,8 @@ class ActionsRunner:
                             )
                     except subprocess.TimeoutExpired:
                         print(f"Warning: git pull timed out in {workdir}")
+                    except (FileNotFoundError, OSError) as e:
+                        print(f"Warning: git pull failed in {workdir}: {e}")
             else:
                 print(f"Warning: Unknown preExec action type '{action.type}', skipping")
 
