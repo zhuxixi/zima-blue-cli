@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from typing import Optional
 
 from zima.actions.base import ActionProvider
@@ -168,12 +169,15 @@ class ActionsRunner:
 
         raise SkipAction(f"All {len(prs)} PR(s) recently attempted, skipping")
 
-    def run_pre(self, actions: ActionsConfig, env: dict[str, str]) -> dict[str, str]:
+    def run_pre(
+        self, actions: ActionsConfig, env: dict[str, str], workdir: Optional[str] = None
+    ) -> dict[str, str]:
         """Execute all preExec actions, return discovered variables.
 
         Args:
             actions: Actions configuration from PJob.
             env: Environment dict for {{VAR}} substitution in action fields.
+            workdir: Working directory for git_pull action (agent's workDir).
 
         Returns:
             Dictionary of discovered variables (e.g., pr_number, pr_url, pr_diff).
@@ -211,6 +215,28 @@ class ActionsRunner:
                 discovered["pr_title"] = pr.get("title") or ""
                 discovered["pr_url"] = pr.get("url") or ""
                 discovered["pr_diff"] = provider.fetch_diff(repo, discovered["pr_number"])
+            elif action.type == "git_pull":
+                if not workdir:
+                    print("Warning: git_pull skipped, no workdir configured")
+                else:
+                    try:
+                        pull_result = subprocess.run(
+                            ["git", "pull", "--no-verify"],
+                            cwd=workdir,
+                            stdin=subprocess.DEVNULL,
+                            capture_output=True,
+                            text=True,
+                            errors="replace",
+                            timeout=60,
+                        )
+                        if pull_result.returncode != 0:
+                            print(
+                                f"Warning: git pull failed in {workdir} (rc={pull_result.returncode})"
+                            )
+                    except subprocess.TimeoutExpired:
+                        print(f"Warning: git pull timed out in {workdir}")
+                    except (FileNotFoundError, OSError) as e:
+                        print(f"Warning: git pull failed in {workdir}: {e}")
             else:
                 print(f"Warning: Unknown preExec action type '{action.type}', skipping")
 

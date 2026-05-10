@@ -4,7 +4,7 @@ import pytest
 
 from zima.actions.exceptions import ProviderNotFoundError
 from zima.execution.actions_runner import ActionsRunner, SkipAction, _matches_condition
-from zima.models.actions import ActionsConfig, PostExecAction
+from zima.models.actions import ActionsConfig, PostExecAction, PreExecAction
 
 
 class TestMatchesCondition:
@@ -328,8 +328,6 @@ class TestActionsRunnerErrorPropagation:
 class TestActionsRunnerPreExec:
     def test_run_pre_exec_scan_pr(self):
         """Test running preExec scan_pr action returns discovered variables."""
-        from zima.models.actions import PreExecAction
-
         runner = ActionsRunner()
         actions = ActionsConfig(
             pre_exec=[
@@ -361,8 +359,6 @@ class TestActionsRunnerPreExec:
 
     def test_run_pre_exec_empty_result(self):
         """Test preExec scan_pr with no results raises SkipAction."""
-        from zima.models.actions import PreExecAction
-
         runner = ActionsRunner()
         actions = ActionsConfig(
             pre_exec=[PreExecAction(type="scan_pr", repo="owner/repo", label="x")]
@@ -376,8 +372,6 @@ class TestActionsRunnerPreExec:
 
     def test_run_pre_provider_not_found(self, capsys):
         """Test run_pre warns and returns empty dict when provider is not found."""
-        from zima.models.actions import PreExecAction
-
         runner = ActionsRunner()
         actions = ActionsConfig(
             provider="nonexistent",
@@ -398,8 +392,6 @@ class TestActionsRunnerPreExec:
 
     def test_run_pre_exec_env_substitution(self):
         """Test env variable substitution in run_pre before calling scan_prs."""
-        from zima.models.actions import PreExecAction
-
         runner = ActionsRunner()
         actions = ActionsConfig(
             pre_exec=[
@@ -424,11 +416,90 @@ class TestActionsRunnerPreExec:
             assert result["pr_number"] == "7"
             assert result["pr_diff"] == "diff data"
 
+    def test_git_pull_success(self):
+        """Test git_pull runs git pull in workdir and returns empty dict."""
+        import subprocess as _subprocess
+
+        runner = ActionsRunner()
+        actions = ActionsConfig(pre_exec=[PreExecAction(type="git_pull")])
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with patch("zima.execution.actions_runner.subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=0)
+                result = runner.run_pre(actions, {}, workdir="/path/to/repo")
+        mock_run.assert_called_once_with(
+            ["git", "pull", "--no-verify"],
+            cwd="/path/to/repo",
+            stdin=_subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=60,
+        )
+        assert result == {}
+
+    def test_git_pull_failure_continues(self, capsys):
+        """Test git_pull with non-zero returncode logs warning without stderr."""
+        runner = ActionsRunner()
+        actions = ActionsConfig(pre_exec=[PreExecAction(type="git_pull")])
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with patch("zima.execution.actions_runner.subprocess.run") as mock_run:
+                mock_run.return_value = MagicMock(returncode=1, stderr="merge conflict")
+                result = runner.run_pre(actions, {}, workdir="/path/to/repo")
+        captured = capsys.readouterr()
+        assert "Warning" in captured.out
+        assert "rc=1" in captured.out
+        assert "merge conflict" not in captured.out
+        assert result == {}
+
+    def test_git_pull_timeout(self, capsys):
+        """Test git_pull timeout logs warning and continues."""
+        import subprocess as _subprocess
+
+        runner = ActionsRunner()
+        actions = ActionsConfig(pre_exec=[PreExecAction(type="git_pull")])
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with patch("zima.execution.actions_runner.subprocess.run") as mock_run:
+                mock_run.side_effect = _subprocess.TimeoutExpired(cmd="git pull", timeout=60)
+                result = runner.run_pre(actions, {}, workdir="/path/to/repo")
+        captured = capsys.readouterr()
+        assert "Warning" in captured.out
+        assert "timed out" in captured.out
+        assert result == {}
+
+    def test_git_pull_no_workdir(self, capsys):
+        """Test git_pull skipped with warning when no workdir configured."""
+        runner = ActionsRunner()
+        actions = ActionsConfig(pre_exec=[PreExecAction(type="git_pull")])
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with patch("zima.execution.actions_runner.subprocess.run") as mock_run:
+                result = runner.run_pre(actions, {})
+        captured = capsys.readouterr()
+        assert "Warning" in captured.out
+        assert "no workdir" in captured.out
+        mock_run.assert_not_called()
+        assert result == {}
+
+    def test_git_pull_file_not_found(self, capsys):
+        """Test git_pull with FileNotFoundError (git not on PATH) logs warning."""
+        runner = ActionsRunner()
+        actions = ActionsConfig(pre_exec=[PreExecAction(type="git_pull")])
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with patch("zima.execution.actions_runner.subprocess.run") as mock_run:
+                mock_run.side_effect = FileNotFoundError("git not found")
+                result = runner.run_pre(actions, {}, workdir="/path/to/repo")
+        captured = capsys.readouterr()
+        assert "Warning" in captured.out
+        assert "git not found" in captured.out
+        assert result == {}
+
 
 class TestActionsRunnerPreExecSkipLogic:
     def _make_actions(self, repo="owner/repo", label="zima:needs-review"):
-        from zima.models.actions import PreExecAction
-
         return ActionsConfig(pre_exec=[PreExecAction(type="scan_pr", repo=repo, label=label)])
 
     def test_no_history_falls_back_to_first_pr(self):
@@ -498,8 +569,6 @@ class TestActionsRunnerPreExecSkipLogic:
 
     def test_empty_repo_raises_skip_action(self):
         """Empty repo after substitution raises SkipAction instead of crashing."""
-        from zima.models.actions import PreExecAction
-
         runner = ActionsRunner(pjob_code="my-reviewer")
         actions = ActionsConfig(
             pre_exec=[PreExecAction(type="scan_pr", repo="{{repo}}", label="zima:needs-review")]
@@ -514,8 +583,6 @@ class TestActionsRunnerPreExecSkipLogic:
 
     def test_whitespace_repo_raises_skip_action(self):
         """Whitespace-only repo raises SkipAction."""
-        from zima.models.actions import PreExecAction
-
         runner = ActionsRunner()
         actions = ActionsConfig(
             pre_exec=[PreExecAction(type="scan_pr", repo="{{repo}}", label="zima:needs-review")]
@@ -529,8 +596,6 @@ class TestActionsRunnerPreExecSkipLogic:
 
     def test_empty_label_raises_skip_action(self):
         """Empty label after substitution raises SkipAction."""
-        from zima.models.actions import PreExecAction
-
         runner = ActionsRunner()
         actions = ActionsConfig(
             pre_exec=[PreExecAction(type="scan_pr", repo="owner/repo", label="{{label}}")]
