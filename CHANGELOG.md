@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.5.3] - 2026-05-13
+
+### Features
+- **actions**: add git-pull preExec action type
+
+### Changes
+- **plan**: add implementation plan for issue #110 git-pull preExec action
+- **spec**: add design for issue #110 git-pull preExec action
+
+[0.5.3]: https://github.com/zhuxixi/zima-blue-cli/compare/v0.5.2...v0.5.3
+
 ## [0.5.2] - 2026-05-10
 
 ### Fixes
