@@ -115,7 +115,26 @@ zima run my-agent
 zima logs my-agent
 ```
 
+### Quickstart Wizard
+
+The fastest way to get started. One command creates all configs interactively:
+
+```bash
+zima quickstart
+```
+
+The wizard walks you through picking a task template, naming your setup, selecting an AI agent (Kimi / Claude), and auto-detects your git repo.
+
+When done, run the generated PJob:
+
+```bash
+zima pjob run <generated-code> --dry-run  # preview
+zima pjob run <generated-code>            # execute
+```
+
 ### Advanced Usage: Composed Configuration
+
+> **Tip:** `zima quickstart` is the recommended entry point. The steps below are the manual config-by-config approach for power users.
 
 ```bash
 # 1. Create an Agent
