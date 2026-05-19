@@ -16,7 +16,6 @@ import sys
 LABELS = [
     {"name": "zima:needs-review", "color": "0969DA", "description": "等待 code review"},
     {"name": "zima:needs-fix", "color": "CF222E", "description": "CR 发现问题，需要修复"},
-    {"name": "zima:needs-re-review", "color": "BC4C00", "description": "fix 后等待重新 review"},
     {
         "name": "zima:wait-human-merge",
         "color": "2DA44E",
