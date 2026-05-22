@@ -6,8 +6,37 @@ This module is invoked as a detached subprocess to run a PJob in the background.
 from __future__ import annotations
 
 import json
+import signal
 import sys
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from zima.execution.executor import PJobExecutor
+
+
+def _create_sigterm_handler(
+    executor: PJobExecutor,
+) -> tuple[callable, callable]:
+    """Create a SIGTERM handler that cancels the executor's agent subprocess.
+
+    Args:
+        executor: The PJobExecutor running the current job.
+
+    Returns:
+        Tuple of (handler_function, is_cancelled_function).
+    """
+    cancelled = False
+
+    def handler(signum: int, frame) -> None:
+        nonlocal cancelled
+        cancelled = True
+        executor.cancel()
+
+    def is_cancelled() -> bool:
+        return cancelled
+
+    return handler, is_cancelled
 
 
 def run_pjob_in_background(
@@ -40,6 +69,12 @@ def run_pjob_in_background(
 
     executor = PJobExecutor()
     started_at = datetime.now(timezone.utc).astimezone().isoformat()
+
+    # Install SIGTERM handler so daemon's kill signal propagates to the agent
+    # subprocess, allowing the finally block (postExec) to run before exit.
+    if sys.platform != "win32":
+        sigterm_handler, is_cancelled = _create_sigterm_handler(executor)
+        signal.signal(signal.SIGTERM, sigterm_handler)
 
     # Ensure state file exists (CLI should have created it, but be defensive)
     history = ExecutionHistory()
