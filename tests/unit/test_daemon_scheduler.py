@@ -49,7 +49,7 @@ class TestStageTransitions:
         sched._kill_all_pjobs("rest")
 
         mock_proc.terminate.assert_called_once()
-        mock_proc.wait.assert_called_once_with(timeout=5)
+        mock_proc.wait.assert_called_once_with(timeout=30)
 
         # Check history file
         history_file = tmp_path / "history"

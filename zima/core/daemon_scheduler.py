@@ -237,7 +237,7 @@ class DaemonScheduler:
         try:
             proc.terminate()
             try:
-                proc.wait(timeout=5)
+                proc.wait(timeout=30)
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait(timeout=5)
