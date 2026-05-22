@@ -27,6 +27,7 @@ def _create_sigterm_handler(
     Returns:
         Signal handler function.
     """
+
     def handler(signum: int, frame) -> None:
         executor.cancel()
 
