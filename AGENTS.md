@@ -197,4 +197,3 @@ PR reviews use three independent APIs. Different CR tools submit via different e
 - `docs/history/` — Deprecated designs (reference only)
 - `docs/decisions/` — ADRs; ADR-004 (single execution) is the current model
 - `docs/design/` — Feature design documents (PJob design, API interface, etc.)
-- `SESSION.md` — Development session history
