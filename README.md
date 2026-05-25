@@ -23,6 +23,7 @@ Define Prompt Template → Configure Parameters → Execute → Get Results
 - [Quick Start](#quick-start)
 - [CLI Commands](#cli-commands)
 - [Documentation](#documentation)
+- [Claude Code Marketplace](#claude-code-marketplace)
 - [Development](#development)
 - [Naming Origin](#naming-origin)
 - [License](#license)
@@ -260,6 +261,27 @@ issue → brainstorm/spec → plan → impl → create-PR → CR → post-fix �
 |-----------|-------------|-------|
 | `jfox-kc-code-review-job` | Code review via Kimi CLI | CR |
 | `jfox-zc-code-review-job` | Code review via Zhipu-driven Claude Code | CR |
+
+---
+
+## Claude Code Marketplace
+
+This repository doubles as a **Claude Code plugin marketplace** named `zima-blue`. The plugins here are the Claude Code-side counterparts of zima daemon's automation — install them in your Claude Code session and zima can drive them via scheduled prompts.
+
+### Install
+
+```
+/plugin marketplace add zhuxixi/zima-blue-cli
+/plugin install pr-automation@zima-blue
+```
+
+### Plugins
+
+| Plugin | Purpose | Skills |
+|---|---|---|
+| [`pr-automation`](plugins/pr-automation/) | GitHub PR automation driven by zima daemon | `github-code-review-batch` |
+
+More plugins (e.g. `pr-monitor`) will be added under the same marketplace as zima's automation surface grows.
 
 ---
 
