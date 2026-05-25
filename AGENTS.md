@@ -77,6 +77,7 @@ The core design is composability through seven YAML-based configuration types:
 - **`zima/providers/__init__.py`** — `BUILTIN_PROVIDERS` dict.
 - **`zima/providers/github.py`** — `GitHubProvider`: wraps `gh` CLI for label/comment/diff/scan_prs operations.
 - **`zima/models/actions.py`** — `PreExecAction` / `PostExecAction` / `ActionsConfig`: dataclasses for PJob pre-execution and post-execution automation.
+- **`zima/review/parser.py`** — `ReviewParser`: parses `<zima-review>` XML blocks from agent stdout into structured review results.
 - **`zima/scenes.py`** — `Scene` dataclass, `load_scenes()` merges built-in scenes with user-defined `~/.zima/scenes.yaml`.
 - **`zima/daemon_runner.py`** — Entry point for detached daemon process (`python -m zima.daemon_runner`).
 - **`zima/core/daemon_scheduler.py`** — `DaemonScheduler`: 32-cycle PJob scheduling with stage timers, PJob spawn/kill, JSONL history.
@@ -97,6 +98,11 @@ zima pjob run <code>
   → Captures output, stores execution history centrally
   → Returns ExecutionResult
 ```
+
+**Post-exec actions** run unconditionally in the `finally` block:
+- On success (returncode=0): `condition: success` actions fire
+- On failure/timeout/cancel: `condition: failure` actions fire, `action_errors` recorded
+- Reviewer PJobs: `<zima-review>` XML in stdout is parsed, verdict maps to effective returncode
 
 ### Data Layout
 
@@ -150,9 +156,10 @@ Customizable via `ZIMA_HOME` env var.
 
 ## CI Pipeline
 
-- **GitHub Actions** on push/PR to `master`
-- **Lint job**: `uv run ruff check` + `uv run black --check`
-- **Test job**: `uv run pytest --cov=zima --cov-fail-under=60` (Python 3.13)
+- **GitHub Actions** on push/PR to `main` (workflow accepts `master` too, see `.github/workflows/integration-test.yml`)
+- Lint: `uv run ruff check zima/ tests/` + `uv run black --check zima/ tests/ --line-length 100`
+- Test: `uv run pytest tests/ -m "not slow" --cov=zima --cov-fail-under=60` (Python 3.10/3.13 matrix)
+- Publish: `.github/workflows/publish.yml` triggers on tag push
 
 ## Extension Points
 

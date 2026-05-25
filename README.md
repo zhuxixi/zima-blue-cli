@@ -2,7 +2,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![CI](https://github.com/zhuxixi/zima-blue-cli/workflows/CI/badge.svg)](https://github.com/zhuxixi/zima-blue-cli/actions)
+[![CI](https://github.com/zhuxixi/zima-blue-cli/actions/workflows/integration-test.yml/badge.svg)](https://github.com/zhuxixi/zima-blue-cli/actions/workflows/integration-test.yml)
 
 > "I chose blue. That intense blue." — *Zima Blue*
 
@@ -31,7 +31,7 @@ Define Prompt Template → Configure Parameters → Execute → Get Results
 
 ## Features
 
-- **🤖 Multi-Agent Support** — Supports Kimi, Claude, Gemini, and other AI executors
+- **🤖 Multi-Agent Support** — Pluggable AI executors (currently Kimi and Claude)
 - **📋 Configuration Entities** — Layered config design: Agent + Workflow + Variable + Env + PMG
 - **🚀 PJob Execution Layer** — Declarative task configuration, one-command composition and execution
 - **📝 Jinja2 Templates** — Flexible Prompt templates with variable substitution
@@ -49,12 +49,13 @@ Zima uses a layered configuration design, enabling flexible task execution throu
 
 | Entity | Purpose | Example |
 |--------|---------|---------|
-| **Agent** | AI executor config (kimi/claude/gemini) | `code-reviewer` |
+| **Agent** | AI executor config (kimi/claude) | `code-reviewer` |
 | **Workflow** | Prompt template (Jinja2) | `code-review-template` |
 | **Variable** | Template variable values | `review-vars` |
 | **Env** | Environment variables and secrets | `prod-env` |
 | **PMG** | Dynamic parameter groups | `build-params` |
 | **PJob** | Execution config (composes all above) | `daily-review-task` |
+| **Schedule** | Daemon scheduling (32-cycle stages) | `weekday-review` |
 
 ### Directory Structure
 
@@ -66,21 +67,19 @@ Zima uses a layered configuration design, enabling flexible task execution throu
 │   ├── variables/        # Variable configurations
 │   ├── envs/             # Environment configurations
 │   ├── pmgs/             # Parameter groups
-│   └── pjobs/            # Execution task configurations
-└── agents/               # Agent runtime directories
-    └── <agent-code>/
-        ├── logs/         # Execution logs
-        ├── prompts/      # Runtime prompts
-        └── workspace/    # Working directory
+│   ├── pjobs/            # Execution task configurations
+│   └── schedules/        # Daemon scheduling configurations
+├── daemon/               # Daemon runtime (PID, state, logs, JSONL history)
+├── temp/pjobs/           # Ephemeral PJob working directories
+├── history/pjobs.json    # Per-PJob execution history (max 100 each)
+├── logs/                 # Execution logs
+└── scenes.yaml           # Optional user-defined quickstart scenes
 ```
 
 ### Execution Flow
 
 ```bash
-# Quick execution (shorthand)
-zima run my-agent
-
-# Composed execution (recommended)
+# Composed execution
 zima pjob run my-task    # Combines Agent + Workflow + Variable + Env
 ```
 
@@ -99,20 +98,20 @@ git clone https://github.com/zhuxixi/zima-blue-cli.git
 cd zima-blue-cli
 
 # Install dependencies
-pip install -e "."
+uv sync
 ```
 
 ### Basic Usage
 
 ```bash
 # Create an Agent
-zima create my-agent
+zima agent create --name "My Agent" --code my-agent --type kimi
 
-# Run the Agent
-zima run my-agent
+# Run a PJob (after composing one)
+zima pjob run <pjob-code>
 
-# View logs
-zima logs my-agent
+# Inspect execution history
+zima pjob history <pjob-code>
 ```
 
 ### Quickstart Wizard
@@ -163,31 +162,18 @@ zima pjob history review-task
 ### Cleanup
 
 ```bash
-# Unix / Linux / macOS
-./cleanup.sh --auto
-
-# Windows
-cleanup.bat --auto
+# Cleanup temp and history (cross-platform)
+uv run python scripts/cleanup.py --auto
 ```
 
 ---
 
 ## CLI Commands
 
-### Shorthand Commands
+### Command Groups
 
 ```bash
-zima create <name>          # Create an Agent
-zima run <name>             # Execute once
-zima list                   # List all Agents
-zima show <name>            # Show configuration
-zima logs <name>            # View logs
-```
-
-### Full Command Groups
-
-```bash
-# Agent management (supports kimi/claude/gemini)
+# Agent management (supports kimi/claude)
 zima agent create --name "My Agent" --code my-agent --type kimi
 zima agent list --type kimi
 zima agent show my-agent
@@ -227,12 +213,12 @@ See [`docs/API-INTERFACE.md`](docs/API-INTERFACE.md) for the complete interface 
 docs/
 ├── vision/           # Project vision and story
 ├── architecture/     # Latest architecture design ⭐ authoritative
+├── design/           # Feature design documents (PJob, API interface, etc.)
+├── guides/           # User-facing guides
 ├── history/          # Historical designs (reference only)
-└── decisions/        # Architecture Decision Records (ADR)
-    ├── 001-use-subprocess.md
-    ├── 002-15min-cycle.md (deprecated)
-    ├── 003-early-completion.md (deprecated)
-    └── 004-single-execution.md ⭐ current
+├── decisions/        # Architecture Decision Records (ADR; 004-single-execution ⭐ current)
+├── reports/          # Generated reports
+└── API-INTERFACE.md  # Complete CLI interface reference
 ```
 
 ### Use Cases

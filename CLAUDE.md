@@ -71,9 +71,13 @@ The core design is composability through seven YAML-based configuration types:
 - **`zima/execution/background_runner.py`** — Background PJob execution in detached process.
 - **`zima/execution/history.py`** — Execution history tracking with PID recording.
 - **`zima/execution/actions_runner.py`** — `ActionsRunner`: executes postExec actions (GitHub label/comment) after agent exit.
+- **`zima/actions/base.py`** — `ActionProvider` ABC: interface providers implement (add_label, remove_label, post_comment, fetch_diff, scan_prs).
+- **`zima/actions/registry.py`** — `ProviderRegistry`: loads built-ins + auto-discovers external providers via `importlib.metadata.entry_points`.
+- **`zima/providers/defaults.py`** — Default provider config.
 - **`zima/review/parser.py`** — `ReviewParser`: parses `<zima-review>` XML blocks from agent stdout into structured review results.
 - **`zima/providers/github.py`** — `GitHubProvider`: wraps `gh` CLI for label add/remove, comment post, PR diff fetch.
 - **`zima/models/actions.py`** — `PostExecAction` / `ActionsConfig`: dataclasses for PJob post-execution automation.
+- **`zima/scenes.py`** — `Scene` dataclass + `load_scenes()`: merges built-in scenes with user-defined `~/.zima/scenes.yaml` for quickstart wizard.
 - **`zima/daemon_runner.py`** — Entry point for detached daemon process (`python -m zima.daemon_runner`).
 - **`zima/core/daemon_scheduler.py`** — `DaemonScheduler`: 32-cycle PJob scheduling with stage timers, PJob spawn/kill, JSONL history.
 - **`zima/utils.py`** — Shared utilities (`ensure_dir`, etc.).
@@ -86,6 +90,7 @@ zima pjob run <code>
   → Resolves referenced Agent/Workflow/Variable/Env/PMG
   → Renders Workflow template with Variables
   → Builds CLI command from Agent parameters
+  → Runs preExec actions (e.g., scan_prs); SkipAction → ExecutionResult(status=SKIPPED)
   → Executes subprocess (kimi/claude)
   → Runs postExec actions (e.g. GitHub label transition) in finally block
   → Captures output, stores execution history centrally
@@ -148,9 +153,10 @@ Customizable via `ZIMA_HOME` env var.
 
 ## CI Pipeline
 
-- **GitHub Actions** on push/PR to `master`
-- **Lint job**: `uv run ruff check` + `uv run black --check`
-- **Test job**: `uv run pytest --cov=zima --cov-fail-under=60` (Python 3.13)
+- **GitHub Actions** on push/PR to `main` (workflow accepts `master` too, see `.github/workflows/integration-test.yml`)
+- Lint: `uv run ruff check zima/ tests/` + `uv run black --check zima/ tests/ --line-length 100`
+- Test: `uv run pytest tests/ -m "not slow" --cov=zima --cov-fail-under=60` (Python 3.10/3.13 matrix)
+- Publish: `.github/workflows/publish.yml` triggers on tag push
 
 ## Extension Points
 
