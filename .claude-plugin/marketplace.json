@@ -1,0 +1,17 @@
+{
+  "name": "zima-blue",
+  "owner": {
+    "name": "zhuxixi"
+  },
+  "description": "Zima Blue 系列 Claude Code 插件 — PR 自动化、CR 调度等",
+  "plugins": [
+    {
+      "name": "pr-automation",
+      "source": "./plugins/pr-automation",
+      "description": "GitHub PR 自动化（批量 CR、调度式审查、双 Agent 交叉验证）",
+      "version": "0.1.0",
+      "category": "automation",
+      "keywords": ["github", "pull-request", "code-review", "automation", "zima"]
+    }
+  ]
+}
