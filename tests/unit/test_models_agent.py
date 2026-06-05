@@ -218,7 +218,7 @@ class TestAgentConfigCommandBuilding(TestIsolator):
         config = AgentConfig.create("test", "Test", "kimi")
         template = config.get_cli_command_template()
 
-        assert "kimi" in template
+        assert "kimi-cli" in template
         assert "--print" in template
         assert "--yolo" in template
 
@@ -238,7 +238,7 @@ class TestAgentConfigCommandBuilding(TestIsolator):
 
         cmd = config.build_command(prompt_file="/tmp/prompt.md", work_dir="/tmp/workspace")
 
-        assert "kimi" in cmd
+        assert "kimi-cli" in cmd
         assert "--prompt" in cmd
         assert "/tmp/prompt.md" in cmd
         assert "--work-dir" in cmd

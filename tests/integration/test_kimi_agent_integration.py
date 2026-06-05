@@ -81,7 +81,7 @@ class TestKimiAgentConfigLayer:
         cmd = agent.build_command(prompt_file=prompt_file, work_dir=work_dir)
 
         # Verify command structure
-        assert cmd[0] == "kimi"
+        assert cmd[0] == "kimi-cli"
         assert "--print" in cmd
         assert "--yolo" in cmd
         assert "--prompt" in cmd
@@ -138,7 +138,7 @@ class TestKimiAgentConfigLayer:
         claude_cmd = claude_agent.get_cli_command_template()
 
         # Verify command differences
-        assert kimi_cmd == ["kimi", "--print", "--yolo"]
+        assert kimi_cmd == ["kimi-cli", "--print", "--yolo"]
         assert claude_cmd == ["claude", "-p"]
 
         # Verify work-dir parameter differences
