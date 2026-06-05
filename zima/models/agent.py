@@ -168,7 +168,7 @@ class AgentConfig(BaseConfig):
             return cmd if isinstance(cmd, list) else [str(cmd)]
 
         templates = {
-            "kimi": ["kimi", "--print", "--yolo"],
+            "kimi": ["kimi-cli", "--print", "--yolo"],
             "claude": ["claude", "-p"],
         }
         return templates.get(self.type, [])
