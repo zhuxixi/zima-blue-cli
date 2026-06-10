@@ -249,7 +249,7 @@ issue → brainstorm/spec → plan → impl → create-PR → CR → post-fix �
 | plan | ❌ Not implemented | — |
 | impl | ❌ Not implemented | — |
 | create-PR | ❌ Not implemented | — |
-| CR | ⚠️ Partial | `jfox-kc-code-review-job`, `jfox-zc-code-review-job` |
+| CR | ✅ Active | `jfox-kc-code-review-job`, `jfox-zc-code-review-job` |
 | post-fix | ❌ Not implemented | — |
 | post-merge | ❌ Not implemented | — |
 | integration-test | ❌ Not implemented | — |
