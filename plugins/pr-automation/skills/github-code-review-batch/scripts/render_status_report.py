@@ -38,7 +38,6 @@ Total open issues: {open_count}
 Status: {status}
 Critical issues: {critical_count}
 Verdict: {verdict}
-================================
 """
 
 
@@ -71,7 +70,7 @@ def render(d: dict) -> str:
         sys.exit(2)
     open_count = d.get("open_count", 0)
     critical_count = d.get("critical_count", 0)
-    return TEMPLATE.format(
+    block = TEMPLATE.format(
         pr_number=d.get("pr_number", ""),
         round=d.get("round", ""),
         head_sha=d.get("head_sha", ""),
@@ -87,6 +86,16 @@ def render(d: dict) -> str:
         critical_count=critical_count,
         verdict=_verdict(status, critical_count, open_count),
     )
+    # Optional partial-coverage lines (#120) — only when the caller provides
+    # them. Keeps the report backward-compatible when compress_diff meta is absent.
+    total_files = d.get("total_files")
+    if d.get("diff_truncated") or total_files is not None:
+        block += f"Diff truncated: {'yes' if d.get('diff_truncated') else 'no'}\n"
+        if total_files is not None:
+            covered = d.get("covered_files", total_files)
+            block += f"Coverage: {covered}/{total_files} files\n"
+    block += "================================\n"
+    return block
 
 
 def main() -> int:

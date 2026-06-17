@@ -454,3 +454,98 @@ class TestSeverityRender:
         proc = _run(_script("build_review_body.py"), json.dumps(minimal))
         assert proc.returncode == 0, proc.stderr
         assert "(bug, medium)" in proc.stdout
+
+
+# ---------------------------------------------------------------------------
+# #120: diff truncation visibility (compress_diff --meta-file + status report)
+# ---------------------------------------------------------------------------
+
+
+class TestTruncationMeta:
+    """compress_diff must emit structured coverage meta when asked (#120)."""
+
+    def test_meta_no_truncation(self, tmp_path):
+        diff = "diff --git a/foo.py b/foo.py\n+keep()\n"
+        meta_path = tmp_path / "meta.json"
+        proc = _run(_script("compress_diff.py"), diff, "--meta-file", str(meta_path))
+        assert proc.returncode == 0
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        assert meta["diff_truncated"] is False
+        assert meta["total_files"] == 1
+        assert meta["covered_files"] == 1
+        assert meta["dropped_test_files"] == []
+
+    def test_meta_truncation_within_file(self, tmp_path):
+        # Single file whose content exceeds max-len: header survives, content cut.
+        diff = "diff --git a/big.py b/big.py\n" + "+added\n" * 300
+        meta_path = tmp_path / "meta.json"
+        proc = _run(
+            _script("compress_diff.py"), diff, "--max-len", "100", "--meta-file", str(meta_path)
+        )
+        assert proc.returncode == 0
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        assert meta["diff_truncated"] is True
+        assert meta["total_files"] == 1
+        assert meta["covered_files"] == 1  # header present, body truncated
+
+    def test_meta_truncation_drops_tail_file(self, tmp_path):
+        # First file huge (truncation cuts inside it); tail file dropped entirely.
+        diff = (
+            "diff --git a/big.py b/big.py\n"
+            + "+x\n" * 200
+            + "diff --git a/tail.py b/tail.py\n+tail()\n"
+        )
+        meta_path = tmp_path / "meta.json"
+        proc = _run(
+            _script("compress_diff.py"), diff, "--max-len", "100", "--meta-file", str(meta_path)
+        )
+        assert proc.returncode == 0
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        assert meta["diff_truncated"] is True
+        assert meta["total_files"] == 2
+        assert "tail.py" in meta["truncated_dropped_files"]
+
+    def test_meta_filter_tests_drops_test_files(self, tmp_path):
+        diff = (
+            "diff --git a/src/app.py b/src/app.py\n+keep()\n"
+            "diff --git a/tests/test_app.py b/tests/test_app.py\n+drop()\n"
+        )
+        meta_path = tmp_path / "meta.json"
+        proc = _run(
+            _script("compress_diff.py"), diff, "--filter-tests", "--meta-file", str(meta_path)
+        )
+        assert proc.returncode == 0
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        assert meta["filter_tests"] is True
+        assert meta["total_files"] == 2
+        assert meta["kept_files"] == 1
+        assert "tests/test_app.py" in meta["dropped_test_files"]
+
+    def test_no_meta_file_is_backward_compatible(self, tmp_path):
+        # Omitting --meta-file must not change stdout or write anything.
+        diff = "diff --git a/foo.py b/foo.py\n+keep()\n"
+        proc = _run(_script("compress_diff.py"), diff)
+        assert proc.returncode == 0
+        assert "keep()" in proc.stdout
+        assert not list(tmp_path.iterdir())
+
+
+class TestCoverageLines:
+    """Status report surfaces partial-coverage when the caller provides it (#120)."""
+
+    def test_coverage_lines_when_truncated(self):
+        inp = _status_input_sev("NEEDS_FIX", critical_count=1, open_count=3)
+        inp["diff_truncated"] = True
+        inp["total_files"] = 10
+        inp["covered_files"] = 7
+        out = _run_json(_script("render_status_report.py"), inp)
+        assert "Diff truncated: yes" in out
+        assert "Coverage: 7/10 files" in out
+        assert "Status: NEEDS_FIX" in out
+
+    def test_coverage_lines_omitted_by_default(self):
+        out = _run_json(_script("render_status_report.py"), _status_input("PASS"))
+        assert "Diff truncated" not in out
+        assert "Coverage" not in out
+        # footer still last
+        assert out.splitlines()[-1] == "================================"

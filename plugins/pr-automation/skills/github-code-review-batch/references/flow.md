@@ -140,16 +140,20 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 **按 agent 类型过滤 diff**：
 - CLAUDE.md checker ×2、AGENTS.md checker：接收**完整 diff**（规范检查需要完整上下文），仅应用长度兜底
   ```bash
-  gh pr diff <PR> | python scripts/compress_diff.py --max-len 4000
+  gh pr diff <PR> | python scripts/compress_diff.py --max-len 4000 \
+      --meta-file /tmp/cc-cr-diff-meta.json > /tmp/cc-cr-diff.txt
   ```
 - Bug scanner、Logic analyzer：接收**过滤后的 diff**，排除测试相关文件
   ```bash
-  gh pr diff <PR> | python scripts/compress_diff.py --filter-tests --max-len 4000
+  gh pr diff <PR> | python scripts/compress_diff.py --filter-tests --max-len 4000 \
+      --meta-file /tmp/cc-cr-diff-meta.json > /tmp/cc-cr-diff.txt
   ```
+
+`--meta-file`（#120）写一份覆盖 meta（`diff_truncated`、`covered_files`/`total_files`、被丢弃文件等）到 sidecar JSON，供 [Step 10](#step-10) 在状态报告中显式提示部分覆盖；各 agent 改为读取 `/tmp/cc-cr-diff.txt` 作为 diff 输入。
 
 **脚本内部规则**：
 1. `--filter-tests` 排除：`tests/`、`test/` 目录下的文件；`*_test.py`、`*_spec.py`、`*_tests.py`；`.test.`、`.spec.` 等测试文件
-2. `--max-len N`：超长时先压缩为 hunk-only（保留 +/- 行及前后各 2 行上下文）；仍超长则截断至 N 字符并附 `... (diff truncated)`
+2. `--max-len N`：超长时先压缩为 hunk-only（保留 +/- 行及前后各 2 行上下文）；仍超长则截断至 N 字符并附 `... (diff truncated)`，并在 meta 中置 `diff_truncated: true`（#120）
 
 **效果**：过滤后 diff 长度通常减少 60-70%（测试文件往往占据大比例 diff）。
 
@@ -384,6 +388,15 @@ Verdict: {verdict}
   - `MERGE_WITH_CAUTION` — 其余（有 open 但无 critical）
 
 `critical_count` 由 Step 6 汇总后的 open issues 中 severity=critical 的个数得出，作为 `critical_count` 字段传入 `render_status_report.py`。
+
+**部分覆盖提示（#120）**：若 [Step 3.5](#step-3-5) 的 `--meta-file` 指示 `diff_truncated: true`，把 `diff_truncated` / `covered_files` / `total_files` 传入 `render_status_report.py`，报告会在 `Verdict:` 之后追加：
+
+```
+Diff truncated: yes
+Coverage: 7/10 files
+```
+
+调度器据此识别"本轮 0 issue 但 diff 被截断、覆盖不全"，不会把截断导致的空结果误读为"全量审查通过"。未提供这些字段时省略（向后兼容）。
 
 ### 用途
 

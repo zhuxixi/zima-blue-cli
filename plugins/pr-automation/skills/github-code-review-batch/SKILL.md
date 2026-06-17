@@ -137,7 +137,7 @@ gh pr review <PR> --comment --body-file /tmp/cc-cr-{pr}.md      # 发布 review 
 
 1. 仅支持 GitHub 仓库（不支持 GitLab、Bitbucket）
 2. 依赖 `gh` CLI 与 Python 3
-3. 极大 PR（>1000 行）的审查可能不够全面
+3. 大 PR 审查可能不够全面：单 agent 的 diff 经 `compress_diff.py` 压缩到 4000 字符上限，超长会截断尾部；自 #120 起截断通过状态报告的 `Diff truncated` / `Coverage` 行显式提示（不再静默）
 4. 不能替代完整的测试套件和人工代码审查
 5. 非代码文件变更（图片、二进制）无法有效审查
 6. 仅静态分析，不执行代码或运行测试
