@@ -176,12 +176,24 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
     "reason": "问题类别，如 'CLAUDE.md' / 'AGENTS.md' / 'bug' / 'logic' / 'security'",
     "file": "相对仓库根目录的文件路径",
     "lines": "行号范围，格式如 '45-52'",
-    "suggestion": "可选的修复建议"
+    "suggestion": "可选的修复建议",
+    "severity": "critical | high | medium | low（#119）"
   }
 ]
 ```
 
 如果未发现任何问题，输出空列表 `[]`。
+
+**severity 判定口径（#119）**：每个 issue 必须给出 `severity`，供状态报告计算 `Critical issues` 计数与 `Verdict`：
+
+| severity | 适用 |
+|----------|------|
+| `critical` | 数据损坏、安全漏洞、崩溃/不可恢复错误、阻塞主流程 |
+| `high` | 资源泄漏、错误处理缺失、很可能触发的边界 bug |
+| `medium` | 偶发边界、逻辑健壮性、规范硬性违规 |
+| `low` | 命名/风格类规范、轻微不一致 |
+
+issue-validator 验证时若 agent 未给 severity，按 `medium` 兜底。`build_review_body.py` 渲染时按 severity 降序排列（critical 在前），metadata `issues[]` 保留原始顺序。
 
 **为什么 CLAUDE.md checker 跑两次**：两个独立 checker 通过交叉验证提高规范检查的召回率和准确率，减少漏检和误报。这与"双 CR Agent 交叉验证体系"（Claude Code vs Kimi CLI）是两个不同层次的冗余——前者在同一 skill 内部，后者跨 agent。
 
@@ -208,11 +220,11 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 
 1. **丢弃无效 issue**：移除所有 `valid: false` 的 issue
 2. **去重**：如果多个 issue 的 `file`、`lines`、`reason` 相同或高度相似，合并为一个
-3. **排序优先级**：
-   1. CLAUDE.md 合规问题
-   2. AGENTS.md 合规问题
-   3. bug 问题
-   4. logic / security 问题
+3. **排序优先级**（#119：severity 优先）：
+   1. 先按 `severity` 降序（critical → high → medium → low）
+   2. 再按 reason 类别：CLAUDE.md → AGENTS.md → bug → logic / security
+
+   最终渲染顺序由 `build_review_body.py` 保证（见 [output-examples.md](output-examples.md)）。
 
 去重规则：
 - 如果两个 issue 指向同一个文件、同一行范围、且原因相同，视为重复
@@ -243,7 +255,7 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 
 Found N issues:
 
-1. {description} ({reason})
+1. {description} ({reason}, {severity})
 
 https://github.com/owner/repo/blob/{full-sha}/{file}#L{start}-L{end}
 ```
@@ -279,7 +291,7 @@ No issues found. Checked for bugs, CLAUDE.md and AGENTS.md compliance.
 调用 [scripts/build_review_body.py](../scripts/build_review_body.py)，输入 JSON 包括：
 - `round`, `pr_number`, `head_sha`, `previous_head_sha`
 - `repo_owner`, `repo_name`
-- `issues`（含 status / resolution / committer_note）
+- `issues`（含 status / resolution / committer_note / severity）
 - 分类计数：`resolved_count`, `acknowledged_count`, `new_count`, `total_issues`
 - `timestamp`（ISO 8601）
 
@@ -302,7 +314,7 @@ No issues found. Checked for bugs, CLAUDE.md and AGENTS.md compliance.
 - `resolved_count`: 本轮标记为 resolved 的问题数（Round-1 为 0）
 - `new_count`: 本轮新发现的问题数
 - `acknowledged_count`: 本轮标记为 acknowledged / wontfix 的问题数
-- `issues`: 问题数组，每个元素含 `status`（"open"/"resolved"）、`resolution`（"acknowledged"/"wontfix"/"resolved"/null）、`committer_note`（string 或 null）
+- `issues`: 问题数组，每个元素含 `status`（"open"/"resolved"）、`resolution`（"acknowledged"/"wontfix"/"resolved"/null）、`committer_note`（string 或 null）、`severity`（"critical"/"high"/"medium"/"low"，#119，缺省 medium）
 - `timestamp`: ISO 8601 格式时间戳
 
 **Part B: Markdown 人类可读部分**
@@ -353,15 +365,25 @@ Total open issues: {open_count}
 - Resolved this round: {resolved_count}
 - Acknowledged / Won't Fix: {acknowledged_count}
 Status: {status}
+Critical issues: {critical_count}
+Verdict: {verdict}
 ================================
 ```
 
 字段说明：
 - `Total open issues`：当前仍 open 的问题总数（不含 acknowledged）
-- `Status` 枚举三态：
+- `Critical issues`：当前 open issues 中 `severity=critical` 的数量（#119，向后兼容：未提供视为 0）
+- `Status` 枚举三态（不变，zima daemon 仍 grep 此行）：
   - `NEEDS_FIX` — 仍有 open issues 需要修复
   - `PASS` — 无 open issues（可能仍有 acknowledged）
   - `NO_NEW_COMMITS` — Step 0 检测到无新 commit
+- `Verdict`（#119 新增，由 `Status` + `critical_count` + `open_count` 派生，不替换三态）：
+  - `SKIP` — NO_NEW_COMMITS
+  - `BLOCK_MERGE` — critical_count > 0
+  - `READY_TO_MERGE` — open_count == 0
+  - `MERGE_WITH_CAUTION` — 其余（有 open 但无 critical）
+
+`critical_count` 由 Step 6 汇总后的 open issues 中 severity=critical 的个数得出，作为 `critical_count` 字段传入 `render_status_report.py`。
 
 ### 用途
 
@@ -369,5 +391,6 @@ Status: {status}
   - `NEEDS_FIX` → 调度 fix agent 修复 open issues
   - `PASS` → 当前 PR 无需进一步 action
   - `NO_NEW_COMMITS` → 本轮跳过，等待下次调度
+  - 可选：消费 `Verdict` 行优先处理 `BLOCK_MERGE`（有 critical）的 PR
 - **fix agent**：快速获取当前 open issues 列表，无需重新解析 metadata
 - **人工查看**：一目了然了解当前审查状态
