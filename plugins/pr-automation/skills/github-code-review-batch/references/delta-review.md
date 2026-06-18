@@ -35,6 +35,20 @@
 - `current_head_sha`
 - 相关规范文件内容
 
+### Step Δ2a: 并行扫描新增 hunk（#123，防回归）
+
+delta-reviewer 专注旧 issues 的 resolved / acknowledged / unresolved 对比（需连贯上下文）；但**修复 commit 是回归高发区**，单 agent 易因"确认偏误"漏报新引入的问题。因此对本次新增/修改的 hunk 额外**并行**启动 bug-scanner + logic-analyzer 各 1 个（复用 [subagent-prompts.md](subagent-prompts.md) 的现成 prompt）：
+
+使用 `Bash` 取增量 diff（`previous_head_sha..current_head_sha`）：
+```bash
+git -C <repo> diff <previous_head_sha> <current_head_sha> -- . ':(exclude)tests' ':(exclude)test'
+# 或 gh api repos/{owner}/{repo}/compare/{previous}...{current}
+```
+
+把该 delta-diff（经 [Step 3.5](flow.md#step-3-5) 的 `compress_diff.py --filter-tests` 预处理）分别喂给 bug-scanner 与 logic-analyzer。它们产出的 issue 与 delta-reviewer 自身的 `new_issues` 合并（见 [Step Δ4](#step-Δ4)）。新增 hunk 为空（纯删除/revert）时返回空列表，优雅降级。
+
+> delta-reviewer 仍保留"扫新问题"职责：它对比旧 issue 修复状态时本就读新代码，顺手报告明显新问题仍有价值；Δ2a 的并行 scanner 是**补充**（多视角防回归），不是替代。
+
 ### Step Δ3: 收集 delta-reviewer 结果
 
 delta-reviewer 输出 JSON：
@@ -90,7 +104,7 @@ delta-reviewer 输出 JSON：
 - `resolved_issues` → 保留原 `id`，标记 `status="resolved"`，`resolution="resolved"`
 - `acknowledged_issues` → 保留原 `id`，标记 `status="open"`，`resolution="acknowledged"`，保留 `committer_note`
 - `unresolved_issues` → 保留原 `id`，标记 `status="open"`，`resolution=null`
-- `new_issues` → 生成新 `id`（如 `"issue-{max_id+1}"`），标记 `status="open"`，`first_round = current_round`
+- `new_issues` → 合并 [Step Δ2a](#step-Δ2a) 的 bug-scanner / logic-analyzer 结果（沿用 [Step 6](flow.md#step-6) 去重：相同 file+lines+reason 合并），统一生成新 `id`（如 `"issue-{max_id+1}"`），标记 `status="open"`，`first_round = current_round`
 
 ### Step Δ5: 继续至 Step 6
 
@@ -105,8 +119,8 @@ delta-reviewer 输出 JSON：
 | 步骤 | 完整流程 | 增量流程 |
 |------|---------|---------|
 | Step 3 | summarizer + 5 个审查 Agent | delta-reviewer 1 个 Agent |
-| Step 4 | 5 个并行审查 Agent | 由 delta-reviewer 替代 |
+| Step 4 | 5 个并行审查 Agent | delta-reviewer（旧 issue 对比）+ Δ2a 并行 bug/logic scanner（新 hunk，#123） |
 | Step 5 | 每个 issue 单独验证 | 由 delta-reviewer 内部完成对比验证 |
 | 输出 | 全新问题列表 | resolved + acknowledged + new + unresolved 分类 |
 
-**为什么用单 agent 替代 5 agent**：增量审查需要在"对比上一轮 issues 与新 diff"和"扫描新 commit 中的新问题"两件事之间做交叉判断，分散到多个独立 agent 后再合并会丢失上下文。delta-reviewer 在一个 agent 内完成这两件事，更连贯。
+**为什么增量轮仍用多 agent（#123）**：旧 issues 的 resolved/acknowledged/unresolved 对比需要连贯上下文 → 仍由 delta-reviewer 单 agent 完成（它不可替代的部分）。但**修复 commit 是回归高发区**，单 agent 易因"确认偏误"漏报新引入的问题 → 对新增 hunk 额外并行 bug-scanner + logic-analyzer（[Step Δ2a](#step-Δ2a)）。这消除了"最高风险阶段反而审查最弱"的矛盾（原先增量轮从 5 agent 坍缩为 1）。
