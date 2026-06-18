@@ -27,6 +27,7 @@
 | committer 评论中无明确信号 | 分类为 null，按原有流程处理 |
 | committer 回应与代码实际不符 | delta-reviewer 结合 diff 判断，**以代码为准** |
 | 所有 open issues 被标记 acknowledged | 输出状态报告，Status: `PASS`（无真正 open issues） |
+| `.claude/cr-suppressions.json` 缺失或损坏 | 视为无抑制，正常审查（#126，默认 off） |
 
 ---
 
