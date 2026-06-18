@@ -101,10 +101,12 @@ zima daemon 通过 grep `Status: <state>` 决策下一步动作（可选消费 `
 | summarizer | 摘要 PR 变更意图 | 1 |
 | claude-compliance-checker | 检查 CLAUDE.md 合规（显式规则 + 隐含约定两种 framing） | 2（差异化，#122） |
 | agents-compliance-checker | 检查 AGENTS.md 合规 | 1 |
-| bug-scanner | 扫描 bug、缺失导入、未解析引用 | 1 |
+| bug-scanner | 扫描 bug（导入/引用由 tool-layer 覆盖，#121） | 1 |
 | logic-analyzer | 逻辑/安全分析、资源泄漏、竞态 | 1 |
 | issue-validator | 验证 issue 是否值得保留 | 每个候选 issue 1 个 |
 | delta-reviewer | 增量审查（替代上述 Step 3-5） | 1（仅增量模式） |
+
+> 此外，Step 4 先运行脚本 `run_tool_layer.py`（`ruff`/`mypy`/`tsc`/`eslint`，确定性、零误报、缺失降级，#121），产出 `lint`/`typecheck` 类 issue 与 agent 结果合并。
 
 每个 agent 的输入契约、输出 schema、prompt 模板：[subagent-prompts.md](references/subagent-prompts.md)。
 
@@ -140,7 +142,7 @@ gh pr review <PR> --comment --body-file /tmp/cc-cr-{pr}.md      # 发布 review 
 3. 大 PR 审查可能不够全面：单 agent 的 diff 经 `compress_diff.py` 压缩到 4000 字符上限，超长会截断尾部；自 #120 起截断通过状态报告的 `Diff truncated` / `Coverage` 行显式提示（不再静默）
 4. 不能替代完整的测试套件和人工代码审查
 5. 非代码文件变更（图片、二进制）无法有效审查
-6. 仅静态分析，不执行代码或运行测试
+6. 静态分析为主；#121 起 tool-layer 会运行仓库自带的 linter/typecheck（确定性、零误报、缺失降级），但仍不运行完整测试套件/build
 7. 非监听模式：多轮修复依赖外部调度器交替调度 CR agent 和 fix agent
 
 ## 设计原理

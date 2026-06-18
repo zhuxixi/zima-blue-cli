@@ -9,7 +9,7 @@
       "name": "pr-automation",
       "source": "./plugins/pr-automation",
       "description": "GitHub PR 自动化（批量 CR、调度式审查、双 Agent 交叉验证）",
-      "version": "0.3.1",
+      "version": "0.4.0",
       "category": "automation",
       "keywords": ["github", "pull-request", "code-review", "automation", "zima"]
     }
