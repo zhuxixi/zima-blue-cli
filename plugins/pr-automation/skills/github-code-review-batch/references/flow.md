@@ -163,6 +163,8 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 
 ## Step 4: 5 个并行审查 Agent {#step-4}
 
+**确定性 tool-layer（#121）**：启动 LLM agent 之前，先运行 [scripts/run_tool_layer.py](../scripts/run_tool_layer.py)——按仓库 manifest 自动探测并执行 `ruff` / `mypy` / `tsc` / `eslint`（缺失则静默降级，不报错）。它用零误报工具吃掉"缺失导入 / 未解析引用 / 类型错误 / 语法错误"，产出 reason 为 `lint` / `typecheck` 的 issue，与下面 agent 的结果一起进入 [Step 5](#step-5) / [Step 6](#step-6)。bug-scanner 不再重复这些类别。
+
 启动 5 个并行 `Agent`，每个接收经过 [Step 3.5](#step-3-5) 预处理的输入包：
 - **CLAUDE.md checker ×2、AGENTS.md checker**：完整 diff（或截断后的）+ 变更摘要 + PR 标题和描述 + 相关规范文件内容
 - **Bug scanner、Logic analyzer**：过滤掉测试文件的 diff（或截断后的）+ 变更摘要 + PR 标题和描述
