@@ -2,6 +2,8 @@
 
 本文件定义 7 个 sub-agent 的输入契约、输出 schema、任务要求和推荐 prompt 模板。
 
+> **severity（#119）**：所有产出 issue 的 agent（claude-compliance-checker / agents-compliance-checker / bug-scanner / logic-analyzer，以及 delta-reviewer 的 `new_issues`）必须为每个 issue 给出 `severity: critical | high | medium | low`，判定口径见 [flow.md Step 4](flow.md#step-4)。下游 `build_review_body.py` 按 severity 排序，状态报告据此计算 `Critical issues` 与 `Verdict`。
+
 ---
 
 ## summarizer {#summarizer}
@@ -37,7 +39,7 @@
 ## claude-compliance-checker {#claude-compliance-checker}
 
 **输入**：PR diff、PR 摘要、相关 CLAUDE.md 文件内容
-**输出**：JSON 问题列表 `[{description, reason, file, lines, suggestion}]`
+**输出**：JSON 问题列表 `[{description, reason, file, lines, suggestion, severity}]`
 
 ### 任务
 
@@ -69,7 +71,7 @@
 1. 只关注 PR 修改的代码，忽略原有代码
 2. 尽量引用 CLAUDE.md 中的规则原文，但不要求一字不差；对于逻辑/安全问题，无需强制引用规范
 3. 不报告纯主观判断，但值得关注的逻辑缺陷和安全问题应当报告
-4. 输出 JSON 数组，每个元素包含 description、reason（必须包含 "CLAUDE.md"）、file、lines、suggestion
+4. 输出 JSON 数组，每个元素包含 description、reason（必须包含 "CLAUDE.md"）、file、lines、suggestion、severity（critical/high/medium/low）
 5. 如果没有发现违规，输出空数组 []
 ```
 
@@ -78,7 +80,7 @@
 ## agents-compliance-checker {#agents-compliance-checker}
 
 **输入**：PR diff、PR 摘要、相关 AGENTS.md 文件内容
-**输出**：JSON 问题列表 `[{description, reason, file, lines, suggestion}]`
+**输出**：JSON 问题列表 `[{description, reason, file, lines, suggestion, severity}]`
 
 ### 任务
 
@@ -106,7 +108,7 @@
 1. 只关注 PR 修改的代码，忽略原有代码
 2. 区分适用于代码审查的规则 vs 仅适用于编码行为的规则
 3. 尽量引用 AGENTS.md 中的规则原文，但不要求一字不差；对于逻辑/安全问题，无需强制引用规范
-4. 输出 JSON 数组，每个元素包含 description、reason（必须包含 "AGENTS.md"）、file、lines、suggestion
+4. 输出 JSON 数组，每个元素包含 description、reason（必须包含 "AGENTS.md"）、file、lines、suggestion、severity（critical/high/medium/low）
 5. 如果没有发现违规，输出空数组 []
 ```
 
@@ -115,7 +117,7 @@
 ## bug-scanner {#bug-scanner}
 
 **输入**：经过 [Step 3.5](flow.md#step-3-5) 过滤测试文件后的 PR diff
-**输出**：JSON 问题列表 `[{description, reason, file, lines, suggestion}]`
+**输出**：JSON 问题列表 `[{description, reason, file, lines, suggestion, severity}]`
 
 ### 任务
 
@@ -141,7 +143,7 @@
 2. 报告所有潜在问题：编译错误、缺失导入、未解析引用、逻辑错误、空值处理、竞态条件、边界条件
 3. 忽略纯风格问题，但关注可能导致运行时错误的设计问题
 4. 对于不确定的问题仍然报告，在 description 中用 "Potential:" 或 "Possible:" 标注
-5. 输出 JSON 数组，每个元素包含 description、reason（必须为 "bug"）、file、lines、suggestion
+5. 输出 JSON 数组，每个元素包含 description、reason（必须为 "bug"）、file、lines、suggestion、severity（critical/high/medium/low）
 6. 如果没有发现 Bug，输出空数组 []
 ```
 
@@ -150,7 +152,7 @@
 ## logic-analyzer {#logic-analyzer}
 
 **输入**：经过 [Step 3.5](flow.md#step-3-5) 过滤测试文件后的 PR diff、PR 摘要
-**输出**：JSON 问题列表 `[{description, reason, file, lines, suggestion}]`
+**输出**：JSON 问题列表 `[{description, reason, file, lines, suggestion, severity}]`
 
 ### 任务
 
@@ -178,7 +180,7 @@
 2. 关注资源泄漏、错误处理缺失、安全漏洞、竞态条件、边界条件、异常路径
 3. 对于依赖输入的潜在问题，如果代码没有做任何防御性处理，仍然值得报告
 4. 忽略纯风格问题和无明确对错的主观建议
-5. 输出 JSON 数组，每个元素包含 description、reason（"logic" 或 "security"）、file、lines、suggestion
+5. 输出 JSON 数组，每个元素包含 description、reason（"logic" 或 "security"）、file、lines、suggestion、severity（critical/high/medium/low）
 6. 如果没有发现问题，输出空数组 []
 ```
 
@@ -273,7 +275,8 @@
       "reason": "logic",
       "file": "src/auth.ts",
       "lines": "100-105",
-      "suggestion": "Add mutex lock"
+      "suggestion": "Add mutex lock",
+      "severity": "high"
     }
   ],
   "unresolved_issues": [
@@ -296,6 +299,7 @@
 - 对于 acknowledged 的问题，保留 `committer_note`
 - 对于未修复的问题，保持原描述不变
 - 新问题使用新的 `id`，不影响原有 issue 编号
+- 新发现的 issue（`new_issues`）必须含 `severity`（critical/high/medium/low，#119）
 
 ### 推荐 prompt
 

@@ -137,6 +137,59 @@ def _status_input(status: str) -> dict:
     }
 
 
+def _status_input_sev(status: str, critical_count: int = 0, open_count: int = 1) -> dict:
+    """Status-report input carrying the #119 critical_count field."""
+    base = _status_input(status)
+    base["open_count"] = open_count
+    base["critical_count"] = critical_count
+    return base
+
+
+# Round-1 input with mixed severities, ordered low -> critical -> medium on
+# purpose so the sort-under-test is observable.
+SEV_ROUND1_INPUT = {
+    "round": 1,
+    "pr_number": 55,
+    "head_sha": HEAD_SHA_A,
+    "previous_head_sha": None,
+    "repo_owner": "owner",
+    "repo_name": "repo",
+    "timestamp": "2026-06-18T10:00:00Z",
+    "issues": [
+        {
+            "id": "issue-1",
+            "description": "Low-severity naming nit",
+            "reason": "CLAUDE.md",
+            "file": "src/a.py",
+            "lines": "1-2",
+            "status": "open",
+            "first_round": 1,
+            "severity": "low",
+        },
+        {
+            "id": "issue-2",
+            "description": "Critical null-deref crash",
+            "reason": "bug",
+            "file": "src/b.py",
+            "lines": "3-4",
+            "status": "open",
+            "first_round": 1,
+            "severity": "critical",
+        },
+        {
+            "id": "issue-3",
+            "description": "Medium edge case",
+            "reason": "logic",
+            "file": "src/c.py",
+            "lines": "5-6",
+            "status": "open",
+            "first_round": 1,
+            "severity": "medium",
+        },
+    ],
+}
+
+
 # ---------------------------------------------------------------------------
 # Contract 1: trigger phrases (literal external contract with zima daemon)
 # ---------------------------------------------------------------------------
@@ -324,3 +377,175 @@ class TestBackwardCompat:
         out = _run(_script("compress_diff.py"), diff, "--filter-tests", "--max-len", "4000").stdout
         assert "keep_me" in out
         assert "drop_me" not in out
+
+
+# ---------------------------------------------------------------------------
+# #119: severity ranking + verdict (added on top of the baseline gate)
+# ---------------------------------------------------------------------------
+
+
+class TestSeverityVerdict:
+    """Status report must surface critical count + a merge verdict (#119)."""
+
+    def test_block_merge_when_critical(self):
+        out = _run_json(
+            _script("render_status_report.py"),
+            _status_input_sev("NEEDS_FIX", critical_count=2, open_count=3),
+        )
+        assert "Status: NEEDS_FIX" in out
+        assert "Critical issues: 2" in out
+        assert "Verdict: BLOCK_MERGE" in out
+
+    def test_ready_to_merge_on_pass(self):
+        out = _run_json(
+            _script("render_status_report.py"),
+            _status_input_sev("PASS", critical_count=0, open_count=0),
+        )
+        assert "Verdict: READY_TO_MERGE" in out
+
+    def test_merge_with_caution(self):
+        out = _run_json(
+            _script("render_status_report.py"),
+            _status_input_sev("NEEDS_FIX", critical_count=0, open_count=2),
+        )
+        assert "Verdict: MERGE_WITH_CAUTION" in out
+
+    def test_skip_on_no_new_commits(self):
+        out = _run_json(
+            _script("render_status_report.py"),
+            _status_input_sev("NO_NEW_COMMITS", critical_count=0, open_count=1),
+        )
+        assert "Verdict: SKIP" in out
+
+    def test_critical_count_backward_compat(self):
+        """Old callers that omit critical_count must still get a valid block."""
+        out = _run_json(_script("render_status_report.py"), _status_input("NEEDS_FIX"))
+        assert "Critical issues: 0" in out
+        assert "Status: NEEDS_FIX" in out
+        assert "Verdict: MERGE_WITH_CAUTION" in out
+
+
+class TestSeverityRender:
+    """Review body sorts issues by severity and annotates it (#119)."""
+
+    def test_round1_sorted_critical_first_and_annotated(self):
+        out = _run_json(_script("build_review_body.py"), SEV_ROUND1_INPUT)
+        # Skip the metadata block — it deliberately preserves input order; the
+        # rendered body is what gets severity-sorted.
+        body = out.split("-->", 1)[1]
+        crit_pos = body.index("Critical null-deref crash")
+        low_pos = body.index("Low-severity naming nit")
+        assert crit_pos < low_pos  # critical sorts above low
+        assert "(bug, critical)" in body
+        assert "(CLAUDE.md, low)" in body
+
+    def test_missing_severity_falls_back_to_medium(self):
+        minimal = {
+            "round": 1,
+            "pr_number": 1,
+            "head_sha": HEAD_SHA_A,
+            "repo_owner": "o",
+            "repo_name": "r",
+            "timestamp": "2026-06-18T10:00:00Z",
+            "issues": [
+                {"description": "no sev field", "reason": "bug", "file": "a.py", "lines": "1-2"}
+            ],
+        }
+        proc = _run(_script("build_review_body.py"), json.dumps(minimal))
+        assert proc.returncode == 0, proc.stderr
+        assert "(bug, medium)" in proc.stdout
+
+
+# ---------------------------------------------------------------------------
+# #120: diff truncation visibility (compress_diff --meta-file + status report)
+# ---------------------------------------------------------------------------
+
+
+class TestTruncationMeta:
+    """compress_diff must emit structured coverage meta when asked (#120)."""
+
+    def test_meta_no_truncation(self, tmp_path):
+        diff = "diff --git a/foo.py b/foo.py\n+keep()\n"
+        meta_path = tmp_path / "meta.json"
+        proc = _run(_script("compress_diff.py"), diff, "--meta-file", str(meta_path))
+        assert proc.returncode == 0
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        assert meta["diff_truncated"] is False
+        assert meta["total_files"] == 1
+        assert meta["covered_files"] == 1
+        assert meta["dropped_test_files"] == []
+
+    def test_meta_truncation_within_file(self, tmp_path):
+        # Single file whose content exceeds max-len: header survives, content cut.
+        diff = "diff --git a/big.py b/big.py\n" + "+added\n" * 300
+        meta_path = tmp_path / "meta.json"
+        proc = _run(
+            _script("compress_diff.py"), diff, "--max-len", "100", "--meta-file", str(meta_path)
+        )
+        assert proc.returncode == 0
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        assert meta["diff_truncated"] is True
+        assert meta["total_files"] == 1
+        assert meta["covered_files"] == 1  # header present, body truncated
+
+    def test_meta_truncation_drops_tail_file(self, tmp_path):
+        # First file huge (truncation cuts inside it); tail file dropped entirely.
+        diff = (
+            "diff --git a/big.py b/big.py\n"
+            + "+x\n" * 200
+            + "diff --git a/tail.py b/tail.py\n+tail()\n"
+        )
+        meta_path = tmp_path / "meta.json"
+        proc = _run(
+            _script("compress_diff.py"), diff, "--max-len", "100", "--meta-file", str(meta_path)
+        )
+        assert proc.returncode == 0
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        assert meta["diff_truncated"] is True
+        assert meta["total_files"] == 2
+        assert "tail.py" in meta["truncated_dropped_files"]
+
+    def test_meta_filter_tests_drops_test_files(self, tmp_path):
+        diff = (
+            "diff --git a/src/app.py b/src/app.py\n+keep()\n"
+            "diff --git a/tests/test_app.py b/tests/test_app.py\n+drop()\n"
+        )
+        meta_path = tmp_path / "meta.json"
+        proc = _run(
+            _script("compress_diff.py"), diff, "--filter-tests", "--meta-file", str(meta_path)
+        )
+        assert proc.returncode == 0
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        assert meta["filter_tests"] is True
+        assert meta["total_files"] == 2
+        assert meta["kept_files"] == 1
+        assert "tests/test_app.py" in meta["dropped_test_files"]
+
+    def test_no_meta_file_is_backward_compatible(self, tmp_path):
+        # Omitting --meta-file must not change stdout or write anything.
+        diff = "diff --git a/foo.py b/foo.py\n+keep()\n"
+        proc = _run(_script("compress_diff.py"), diff)
+        assert proc.returncode == 0
+        assert "keep()" in proc.stdout
+        assert not list(tmp_path.iterdir())
+
+
+class TestCoverageLines:
+    """Status report surfaces partial-coverage when the caller provides it (#120)."""
+
+    def test_coverage_lines_when_truncated(self):
+        inp = _status_input_sev("NEEDS_FIX", critical_count=1, open_count=3)
+        inp["diff_truncated"] = True
+        inp["total_files"] = 10
+        inp["covered_files"] = 7
+        out = _run_json(_script("render_status_report.py"), inp)
+        assert "Diff truncated: yes" in out
+        assert "Coverage: 7/10 files" in out
+        assert "Status: NEEDS_FIX" in out
+
+    def test_coverage_lines_omitted_by_default(self):
+        out = _run_json(_script("render_status_report.py"), _status_input("PASS"))
+        assert "Diff truncated" not in out
+        assert "Coverage" not in out
+        # footer still last
+        assert out.splitlines()[-1] == "================================"

@@ -19,7 +19,7 @@
 | 当前分支无关联 PR | 提示用户提供 PR 编号 |
 | 提取不到完整 SHA | 使用 `gh pr view <PR> --json headRefOid` 获取 head SHA，失败则报错 |
 | Agent 返回格式错误的 JSON | 尝试解析，失败则忽略该 Agent 的输出 |
-| diff 过大无法完整处理 | [Step 3.5](flow.md#step-3-5) 预处理：过滤测试文件 + 4000 字符硬限制（hunk-only 压缩 + 截断），不再丢弃整个分析 |
+| diff 过大无法完整处理 | [Step 3.5](flow.md#step-3-5) 预处理：过滤测试文件 + 4000 字符硬限制（hunk-only 压缩 + 截断）；自 #120 起截断经 `--meta-file` 输出覆盖 meta，并在状态报告 `Diff truncated` / `Coverage` 行显式提示（不再静默丢尾部） |
 | 无新 commit（调度器轮询） | [Step 0](flow.md#step-0-3) 检测 → 输出状态报告（含仍 open 的 issues），Status: `NO_NEW_COMMITS` |
 | Metadata 部分损坏（能拿到 round） | 以读到的 round 为底线，本轮 round+1，其余 fallback 默认值，输出警告 |
 | Metadata 完全无法解析 | 报错并停止；**不再静默 fallback 到 Round-1**（避免破坏外部调度器状态机） |

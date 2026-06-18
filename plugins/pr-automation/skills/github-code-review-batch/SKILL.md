@@ -90,8 +90,9 @@ PR 编号提取规则（依次尝试）：
    - `NEEDS_FIX` — 仍有 open issues 需要修复
    - `PASS` — 无 open issues（可能有 acknowledged）
    - `NO_NEW_COMMITS` — Step 0 检测到无新 commit，本轮跳过
+   - 状态报告还含 `Critical issues:` 计数与派生的 `Verdict:`（#119：SKIP / BLOCK_MERGE / READY_TO_MERGE / MERGE_WITH_CAUTION），均追加在 `Status:` 行之后，不影响 grep
 
-zima daemon 通过 grep `Status: <state>` 决策下一步动作。
+zima daemon 通过 grep `Status: <state>` 决策下一步动作（可选消费 `Verdict:` 优先处理含 critical 的 PR）。
 
 ## SubAgent 概览
 
@@ -136,7 +137,7 @@ gh pr review <PR> --comment --body-file /tmp/cc-cr-{pr}.md      # 发布 review 
 
 1. 仅支持 GitHub 仓库（不支持 GitLab、Bitbucket）
 2. 依赖 `gh` CLI 与 Python 3
-3. 极大 PR（>1000 行）的审查可能不够全面
+3. 大 PR 审查可能不够全面：单 agent 的 diff 经 `compress_diff.py` 压缩到 4000 字符上限，超长会截断尾部；自 #120 起截断通过状态报告的 `Diff truncated` / `Coverage` 行显式提示（不再静默）
 4. 不能替代完整的测试套件和人工代码审查
 5. 非代码文件变更（图片、二进制）无法有效审查
 6. 仅静态分析，不执行代码或运行测试
