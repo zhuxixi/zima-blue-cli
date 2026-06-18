@@ -239,6 +239,17 @@ issue-validator 验证时若 agent 未给 severity，按 `medium` 兜底。`buil
 - 如果描述内容高度相似（超过 80% 相似度），也视为重复
 - 合并时保留描述更详细、建议更具体的一个
 
+**可选：跨 PR suppress（#126，默认 off）**：若仓库根存在 `.claude/cr-suppressions.json`，去重后调用 [scripts/apply_suppressions.py](../scripts/apply_suppressions.py) 把命中的 issue 降级为 `suppressed`——不计入 open、不触发 fix-agent，但仍出现在终端输出供人工核验。条目格式：
+
+```json
+[
+  {"reason": "CLAUDE.md", "pattern": "naming", "expires": "2026-12-31", "rationale": "wontfix on #12,#18"},
+  {"pattern": "ci 配置", "expires": null, "rationale": "by design"}
+]
+```
+
+匹配规则：`reason` 精确匹配 AND `pattern`（描述子串、不区分大小写）命中；`expires` 过期则忽略该条。无文件 = 无抑制。**宁可漏抑不可误抑**：条目应窄；committer 仍可在 PR 评论 override。
+
 ---
 
 ## Step 7: 最终资格审查 {#step-7}
