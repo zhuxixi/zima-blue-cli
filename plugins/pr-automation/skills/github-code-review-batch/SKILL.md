@@ -99,7 +99,7 @@ zima daemon 通过 grep `Status: <state>` 决策下一步动作（可选消费 `
 | Agent | 职责 | 并发数 |
 |-------|------|--------|
 | summarizer | 摘要 PR 变更意图 | 1 |
-| claude-compliance-checker | 检查 CLAUDE.md 合规 | 2（独立运行交叉验证） |
+| claude-compliance-checker | 检查 CLAUDE.md 合规（显式规则 + 隐含约定两种 framing） | 2（差异化，#122） |
 | agents-compliance-checker | 检查 AGENTS.md 合规 | 1 |
 | bug-scanner | 扫描 bug、缺失导入、未解析引用 | 1 |
 | logic-analyzer | 逻辑/安全分析、资源泄漏、竞态 | 1 |
@@ -146,7 +146,7 @@ gh pr review <PR> --comment --body-file /tmp/cc-cr-{pr}.md      # 发布 review 
 ## 设计原理
 
 1. **多 Agent 并行**：从不同角度独立审查，避免单一视角的盲区
-2. **冗余检查**：两个 CLAUDE.md checker 独立运行交叉验证
+2. **冗余检查**：两个 CLAUDE.md checker 用**不同 framing**（显式规则 + 隐含约定）互补运行（#122）
 3. **Issue 验证**：每个发现的问题都经过独立验证，大幅降低误报率
 4. **HIGH SIGNAL**：只报告高置信度的问题，避免噪音淹没真正重要的问题
 5. **终端与 PR 同步**：终端输出和 PR 评论完全一致，确保透明性

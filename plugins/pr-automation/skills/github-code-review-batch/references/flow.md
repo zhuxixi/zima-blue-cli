@@ -199,7 +199,7 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 
 issue-validator 验证时若 agent 未给 severity，按 `medium` 兜底。`build_review_body.py` 渲染时按 severity 降序排列（critical 在前），metadata `issues[]` 保留原始顺序。
 
-**为什么 CLAUDE.md checker 跑两次**：两个独立 checker 通过交叉验证提高规范检查的召回率和准确率，减少漏检和误报。这与"双 CR Agent 交叉验证体系"（Claude Code vs Kimi CLI）是两个不同层次的冗余——前者在同一 skill 内部，后者跨 agent。
+**为什么 CLAUDE.md checker 跑两次（#122：差异化而非复跑）**：两个 checker 使用**不同 framing**（Checker-1 显式规则、Checker-2 隐含约定/反模式），让召回增益来自视角互补而非采样噪声。两者的 `reason` 都为 `"CLAUDE.md"`、schema 不变，下游无需改动。这与"双 CR Agent 交叉验证体系"（Claude Code vs Kimi CLI）是两个不同层次的冗余——前者在同一 skill 内部，后者跨 agent。
 
 ---
 
@@ -214,7 +214,7 @@ issue-validator 验证时若 agent 未给 severity，按 `medium` 兜底。`buil
 
 验证 agent 输出 JSON `{valid: boolean, explanation: string}`。只有 `valid: true` 的 issue 才会进入下一步。`valid: false` 的 issue 被直接丢弃。
 
-**核心原则**：issue 验证用于评估审查 agent 发现的问题。验证 agent 的职责是确认问题不是明显的误读，并补充说明问题的严重程度。**不要过度过滤**——宁可保留一个值得讨论的问题，也不要漏掉一个真实缺陷。只有当 issue 明显是误读代码、或问题在变更前就已存在且 PR 并未触及、或规则引用完全不相关时，才标记 `valid: false`。
+**核心原则（#124：按 reason 差异化精度）**：验证 agent 确认问题不是明显误读。对 `bug`/`logic`/`security` 保持宽松（宁纵不枉，只有明显误读/变更前已存在/完全假设性才标 `valid: false`）；对 `CLAUDE.md`/`AGENTS.md`（规范类，主观误报高发区）收紧——必须能在规范中**定位到具体规则**，否则标 `valid: false`，且 explanation 含 `rule_quote`/`rule_location`。这样在不损失真实缺陷召回的前提下降低喂给 fix-agent 的噪声。
 
 ---
 

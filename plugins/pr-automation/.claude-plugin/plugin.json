@@ -1,7 +1,7 @@
 {
   "name": "pr-automation",
   "displayName": "PR Automation",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "GitHub PR 自动化技能集 — 批量代码审查、调度式 CR、双 Agent 交叉验证。配合 zima daemon 实现端到端 PR 处理。",
   "author": {
     "name": "zhuxixi"

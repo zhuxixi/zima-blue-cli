@@ -53,14 +53,23 @@
 
 `reason` 字段应包含 "CLAUDE.md"。
 
-### 调用次数
+### 调用次数与差异化（#122）
 
-启动两次（独立运行），通过交叉验证提高规范检查的召回率和准确率。
+启动两次，但两次使用**不同的 framing**（而非同一 prompt 复跑），让"交叉验证"的增益来自视角互补而非采样噪声：
+
+- **Checker-1（显式规则违反）**：严格逐条核对 CLAUDE.md 的**明文规则**，引用规则原文，聚焦"是否违反了写出来的约束"。
+- **Checker-2（隐含约定 / 反模式）**：不逐条核对明文，而是基于 CLAUDE.md 表达的**意图与约定**，识别 PR 是否引入与之相悖的反模式、是否破坏 CLAUDE.md 暗示的设计意图（一致性、可维护性）。
+
+两个 checker 的 `reason` 字段都包含 `"CLAUDE.md"`，输出 schema 不变，因此 issue-validator 与 Step 6 去重/优先级排序无需改动。
 
 ### 推荐 prompt
 
+两次启动分别使用以下两份 prompt（#122：差异化 framing）。
+
+**Checker-1（显式规则违反）**：
+
 ```
-你是一个代码规范审查员。你的任务是检查 PR 变更是否违反了 CLAUDE.md 中的规则。
+你是一个代码规范审查员（显式规则视角）。逐条核对 PR 变更是否违反了 CLAUDE.md 中的**明文规则**。
 
 输入：
 - PR 摘要：{summary}
@@ -69,10 +78,28 @@
 
 要求：
 1. 只关注 PR 修改的代码，忽略原有代码
-2. 尽量引用 CLAUDE.md 中的规则原文，但不要求一字不差；对于逻辑/安全问题，无需强制引用规范
-3. 不报告纯主观判断，但值得关注的逻辑缺陷和安全问题应当报告
-4. 输出 JSON 数组，每个元素包含 description、reason（必须包含 "CLAUDE.md"）、file、lines、suggestion、severity（critical/high/medium/low）
-5. 如果没有发现违规，输出空数组 []
+2. 仅报告违反 CLAUDE.md **明文规则**的变更，并在 description 中引用规则原文
+3. 不报告纯主观判断；CLAUDE.md 未写明的偏好不属于违规
+4. 输出 JSON 数组，每个元素含 description、reason（必须包含 "CLAUDE.md"）、file、lines、suggestion、severity（critical/high/medium/low）
+5. 无违规输出空数组 []
+```
+
+**Checker-2（隐含约定 / 反模式）**：
+
+```
+你是一个代码规范审查员（隐含约定视角）。不逐条核对明文规则，而是基于 CLAUDE.md 表达的**意图与约定**，识别 PR 是否引入与之相悖的反模式或破坏设计意图（一致性、可维护性）。
+
+输入：
+- PR 摘要：{summary}
+- PR diff：{diff}
+- 相关 CLAUDE.md 内容：{claude_md_content}
+
+要求：
+1. 只关注 PR 修改的代码，忽略原有代码
+2. 聚焦 CLAUDE.md **暗示的约定**（分层、命名一致性、错误处理风格等）被本次变更破坏的情况；纯风格 nit 不报
+3. 识别反模式时，说明它与 CLAUDE.md 哪条意图/约定相悖
+4. 输出 JSON 数组，每个元素含 description、reason（必须包含 "CLAUDE.md"）、file、lines、suggestion、severity（critical/high/medium/low）
+5. 无问题输出空数组 []
 ```
 
 ---
@@ -194,15 +221,15 @@
 ### 任务
 
 1. 重新审查 issue 对应的目标代码
-2. 判断问题是否真实存在于代码中（**只有明显误读代码才标记 invalid**）
-3. 对于规范类 issue：检查规则是否在规范文件中被表述，且适用于当前变更（规则不必一字不差引用）
-4. 对于 bug 类 issue：检查代码逻辑是否确实有问题，是否是 PR 引入的或 PR 未修复的（**不要因为不够"确定性"就过滤掉**）
-5. 只有当 issue 明显是误读代码、或问题在变更前就已存在且 PR 并未触及、或规则引用完全不相关时，才标记 `valid: false`
-6. 返回验证结果和解释
+2. 判断问题是否真实存在于代码中
+3. **按 reason 分类采用不同精度（#124）**：
+   - `bug` / `logic` / `security`：保持宽松——只有明显误读代码、问题在变更前已存在且 PR 未触及、或完全假设性场景，才标记 `valid: false`（不要因不够"确定性"过滤掉真实缺陷）
+   - `CLAUDE.md` / `AGENTS.md`（规范类）：收紧——issue 必须能在规范文件中**定位到具体规则**（原文片段或文件:章节）。无法定位到具体规则表述的（如纯主观"命名不够好"、规则未在规范中写明），标记 `valid: false`
+4. 返回验证结果和解释；规范类 issue 的 `explanation` 须包含 `rule_quote`（规则原文片段）或 `rule_location`（文件:章节）
 
 ### 核心原则
 
-不要过度过滤——宁可保留一个值得讨论的问题，也不要漏掉一个真实缺陷。
+按 reason 差异化精度（#124）：`bug`/`logic`/`security` 宽松（宁纵不枉）；`CLAUDE.md`/`AGENTS.md` 收紧（必须可定位到具体规则，否则过滤）。规范类问题是主观误报高发区，收紧它们能在不损失真实缺陷召回的前提下显著降低下游 fix-agent 噪声。
 
 ### 推荐 prompt
 
@@ -216,10 +243,11 @@
 
 要求：
 1. 重新审视 issue 对应的目标代码
-2. 只有当 issue 明显是误读代码、或问题在变更前就已存在且 PR 并未触及、或规则引用完全不相关时，才标记 `"valid": false`
-3. 对于规范类 issue：规则不必一字不差引用，大意匹配即可
-4. 对于 bug 类 issue：不要因为不够"确定性"就过滤掉，只有完全假设性的场景才标记 invalid
-5. 输出 JSON：{"valid": boolean, "explanation": "string"}
+2. 按 reason 分类（#124）：
+   - reason=bug/logic/security：只有明显误读、变更前已存在且 PR 未触及、或完全假设性场景才标记 `"valid": false`
+   - reason=CLAUDE.md/AGENTS.md：必须能定位到具体规则；无法定位（主观、规则未写明）则标记 `"valid": false`
+3. 规范类 issue 的 explanation 须含 rule_quote（规则原文片段）或 rule_location（文件:章节）
+4. 输出 JSON：{"valid": boolean, "explanation": "string"}
 ```
 
 ---
