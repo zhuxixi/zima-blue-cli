@@ -48,7 +48,9 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
    - `resolution`: `"acknowledged"` / `"wontfix"` / `"resolved"` / `null`
    - `committer_note`: committer 评论中的相关原文片段
 
-**为什么不脚本化这一步**：分类是启发式的，"前 10 个单词"匹配本身需要 NLP 直觉。脚本化容易因边界情况失真。不确定时，优先分类为 `clarified` 而非 `wontfix`，以保留人工判断空间。
+**为什么不完全脚本化这一步**：分类是启发式的，"前 10 个单词"匹配本身需要 NLP 直觉，完全脚本化容易因边界情况失真。不确定时，优先分类为 `clarified` 而非 `wontfix`，以保留人工判断空间。
+
+**可脚本化的核心（#125）**：关键词表与三种匹配键（`issue-{id}` / `file:lines` / 描述前若干 token）已固化在 [scripts/match_committer_response.py](../scripts/match_committer_response.py)，作为可单测的确定性参考实现（优先级 resolved > clarified > wontfix）。LLM 可把它当作"候选匹配 + 初步分类"的预筛，再对歧义做最终裁决；该脚本的关键词表是单一事实来源，本节表格与之保持一致。
 
 ### 0.3 判断分支 {#step-0-3}
 
