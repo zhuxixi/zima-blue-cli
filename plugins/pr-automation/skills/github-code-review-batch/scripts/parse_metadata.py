@@ -2,8 +2,9 @@
 """Extract latest cc-cr-meta JSON from PR review comments.
 
 Input (stdin): JSON output of `gh pr view <PR> --json reviews`.
-  Either the full object {"reviews": [...]} or a stream of {body, submitted_at}
-  records (one per line) as produced by the --jq filter.
+  Either the full object {"reviews": [...]} (gh-native `submittedAt` key)
+  or a stream of {body, submitted_at} records (one per line) as produced by
+  the --jq filter. Both key spellings are accepted when ordering by timestamp.
 
 Output (stdout): Latest cc-cr-meta JSON object, or {} if not found.
 Exit codes:
@@ -53,7 +54,8 @@ def load_reviews(raw: str) -> list[dict]:
 
 def extract_latest_meta(reviews: list[dict]) -> dict:
     candidates = [
-        r for r in reviews
+        r
+        for r in reviews
         if isinstance(r, dict)
         and isinstance(r.get("body"), str)
         and CC_MARKER in r["body"]
@@ -61,7 +63,15 @@ def extract_latest_meta(reviews: list[dict]) -> dict:
     ]
     if not candidates:
         return {}
-    candidates.sort(key=lambda r: r.get("submitted_at", ""), reverse=True)
+    # gh emits `submittedAt` (camelCase) on full `--json reviews` objects; the
+    # --jq stream variant renames it to `submitted_at`. Accept both spellings,
+    # and coerce missing/null to "" so the stable sort doesn't silently collapse
+    # every candidate to an equal key (which would return the OLDEST, not the
+    # latest, review).
+    candidates.sort(
+        key=lambda r: r.get("submittedAt") or r.get("submitted_at") or "",
+        reverse=True,
+    )
     for review in candidates:
         match = META_RE.search(review["body"])
         if not match:

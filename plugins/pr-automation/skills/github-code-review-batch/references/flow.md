@@ -12,7 +12,7 @@
 
 使用 `Bash` 执行：
 ```bash
-gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .submitted_at}'
+gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .submittedAt}'
 ```
 
 把 JSON 通过 stdin 传给 `scripts/parse_metadata.py`，脚本返回最新一条 Claude Code 评论的 cc-cr-meta JSON（无则返回 `{}`）。详见 [scripts/parse_metadata.py](../scripts/parse_metadata.py)。
