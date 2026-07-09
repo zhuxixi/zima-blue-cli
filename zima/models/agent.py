@@ -12,11 +12,6 @@ from zima.utils import generate_timestamp, validate_code
 # Agent-specific parameters templates
 AGENT_PARAMETER_TEMPLATES = {
     "kimi": {
-        "maxStepsPerTurn": 50,
-        "maxRalphIterations": 10,
-        "maxRetriesPerStep": 3,
-        "yolo": True,
-        "workDir": "./workspace",
         "addDirs": [],
         "outputFormat": "text",
     },
@@ -168,7 +163,7 @@ class AgentConfig(BaseConfig):
             return cmd if isinstance(cmd, list) else [str(cmd)]
 
         templates = {
-            "kimi": ["kimi-cli", "--print", "--yolo"],
+            "kimi": ["kimi"],  # Kimi Code CLI
             "claude": ["claude", "-p"],
         }
         return templates.get(self.type, [])
@@ -205,34 +200,18 @@ class AgentConfig(BaseConfig):
 
         # Add prompt file - agent-type-specific handling
         # Claude Code: prompt passed via stdin pipe, not as CLI argument
-        # Kimi: uses --prompt flag
+        # Kimi Code CLI: uses --prompt flag
         if prompt_file:
             if self.type == "kimi":
                 cmd.extend(["--prompt", str(prompt_file)])
             # Claude: prompt_file is passed via stdin pipe by the executor, not added to cmd
 
-        # Add working directory flag — only for agents that support it.
-        # Claude Code does not have a --work-dir or --cwd CLI flag; the
-        # working directory is handled by subprocess.Popen(cwd=...) in the
-        # executor. Kimi CLI supports --work-dir.
-        if work_dir and self.type == "kimi":
-            cmd.extend(["--work-dir", str(work_dir)])
-
         return cmd
 
     def _build_kimi_command(self, cmd: list[str], params: dict) -> list[str]:
-        """Build Kimi-specific command arguments."""
+        """Build Kimi Code CLI-specific command arguments."""
         if params.get("model"):
             cmd.extend(["--model", str(params["model"])])
-
-        if params.get("maxStepsPerTurn"):
-            cmd.extend(["--max-steps-per-turn", str(params["maxStepsPerTurn"])])
-
-        if params.get("maxRalphIterations"):
-            cmd.extend(["--max-ralph-iterations", str(params["maxRalphIterations"])])
-
-        if params.get("maxRetriesPerStep"):
-            cmd.extend(["--max-retries-per-step", str(params["maxRetriesPerStep"])])
 
         # Handle addDirs
         for add_dir in params.get("addDirs", []):
