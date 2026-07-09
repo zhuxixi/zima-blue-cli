@@ -34,6 +34,20 @@ class TestTriggerPjobs:
         assert "--set-var=pr=42" in calls[0]
         assert "--set-var=head_sha=abc" in calls[0]
 
+    def test_trigger_pjobs_survives_missing_zima(self, monkeypatch, capsys):
+        """trigger_pjobs logs spawn errors but does not raise."""
+
+        def fake_popen(args, **kwargs):
+            raise FileNotFoundError("zima not found")
+
+        monkeypatch.setattr("zima.webhook.server.subprocess.Popen", fake_popen)
+        event = PullRequestLabeledEvent(
+            "labeled", "zima:needs-review", "owner/repo", 42, "abc", False, "open"
+        )
+        trigger_pjobs(event, ["claude-cr"])
+        captured = capsys.readouterr()
+        assert "failed to spawn zima" in captured.err
+
 
 class TestWebhookRequestHandler:
     """Tests for HTTP handler."""

@@ -81,6 +81,10 @@ The core design is composability through seven YAML-based configuration types:
 - **`zima/scenes.py`** — `Scene` dataclass, `load_scenes()` merges built-in scenes with user-defined `~/.zima/scenes.yaml`.
 - **`zima/daemon_runner.py`** — Entry point for detached daemon process (`python -m zima.daemon_runner`).
 - **`zima/core/daemon_scheduler.py`** — `DaemonScheduler`: 32-cycle PJob scheduling with stage timers, PJob spawn/kill, JSONL history.
+- **`zima/commands/webhook.py`** — `webhook-server` command: runs the HTTP receiver and optionally connects to smee.io.
+- **`zima/webhook/server.py`** — `run_server`: local HTTP server that receives GitHub `pull_request` webhooks and triggers PJobs.
+- **`zima/webhook/smee.py`** — `run_smee_client`: smee.io SSE client that forwards public webhook events to the local server.
+- **`zima/webhook/payload.py`** — Webhook payload parsing and `X-Hub-Signature-256` verification.
 - **`zima/utils.py`** — Shared utilities (`ensure_dir`, etc.).
 
 ### Execution Flow
@@ -103,6 +107,15 @@ zima pjob run <code>
 - On success (returncode=0): `condition: success` actions fire
 - On failure/timeout/cancel: `condition: failure` actions fire, `action_errors` recorded
 - Reviewer PJobs: `<zima-review>` XML in stdout is parsed, verdict maps to effective returncode
+
+### Webhook Server
+
+`zima webhook-server` is a webhook-driven alternative to the 45-minute daemon schedule. Instead of polling, it receives GitHub `pull_request` events (e.g., `labeled`) and immediately triggers the configured PJobs.
+
+- **`zima webhook-server --pjob <code> [--smee-url <url>] [--secret <secret>]`** runs a local HTTP server on `--port` (default `8765`).
+- When `--smee-url` is provided, a background thread connects to smee.io via SSE and forwards events to `http://127.0.0.1:<port>/webhook`.
+- The server verifies `X-Hub-Signature-256` when `--secret` is set, filters for `zima:needs-review` labels, and spawns `zima pjob run <code> --set-var=repo=... --set-var=pr=... --set-var=head_sha=...` for each configured PJob.
+- Example configs are in `examples/webhook/`, including sample agents, workflows, variables, envs, and PJobs for both Claude and Kimi code review.
 
 ### Data Layout
 

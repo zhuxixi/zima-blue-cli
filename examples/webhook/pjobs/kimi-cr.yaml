@@ -18,5 +18,5 @@ spec:
       - condition: success
         type: add_comment
         repo: "{{repo}}"
-        issue: "{{pr_number}}"
+        issue: "{{pr}}"
         body: "Code review completed by Kimi."

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Callable, ClassVar, Optional
 
@@ -27,12 +28,20 @@ def trigger_pjobs(event: PullRequestLabeledEvent, pjob_codes: list[str]) -> None
             f"--set-var=pr={event.pr_number}",
             f"--set-var=head_sha={event.head_sha}",
         ]
-        subprocess.Popen(
-            args,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        try:
+            subprocess.Popen(
+                args,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except (FileNotFoundError, OSError) as exc:
+            # Keep returning HTTP 200 to GitHub to avoid retry storms, but make
+            # the failure observable in server logs.
+            print(
+                f"[webhook] failed to spawn zima for pjob {code}: {exc}",
+                file=sys.stderr,
+            )
 
 
 class WebhookRequestHandler(BaseHTTPRequestHandler):
