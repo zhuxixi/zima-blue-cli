@@ -367,4 +367,4 @@ class TestValidAgentTypes(TestIsolator):
         for agent_type in VALID_AGENT_TYPES:
             assert agent_type in AGENT_PARAMETER_TEMPLATES
             assert "outputFormat" in AGENT_PARAMETER_TEMPLATES[agent_type]
-        assert "workDir" in AGENT_PARAMETER_TEMPLATES["kimi"]
+        assert {"workDir", "outputFormat"} <= set(AGENT_PARAMETER_TEMPLATES["kimi"])

@@ -29,7 +29,7 @@ class KimiRunner:
 
     def run_cycle(self, prompt: str, cycle_num: int, task_name: str = "") -> CycleResult:
         """
-        Run a single cycle with kimi-cli
+        Run a single cycle with Kimi Code CLI.
 
         Args:
             prompt: The prompt to send to kimi
