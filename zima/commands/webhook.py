@@ -16,7 +16,7 @@ app = typer.Typer(
     help="Run GitHub webhook receiver for automatic PJob triggers",
     invoke_without_command=True,
 )
-console = Console(legacy_windows=False, force_terminal=True)
+console = Console(legacy_windows=False)
 
 
 @app.callback()
@@ -25,7 +25,12 @@ def serve(
     pjob: List[str] = typer.Option([], "--pjob", help="PJob code to trigger (can be repeated)"),
     smee_url: Optional[str] = typer.Option(None, "--smee-url", help="smee.io channel URL"),
     port: int = typer.Option(8765, "--port", help="Local HTTP port"),
-    secret: Optional[str] = typer.Option(None, "--secret", help="GitHub webhook secret"),
+    secret: Optional[str] = typer.Option(
+        None,
+        "--secret",
+        help="GitHub webhook secret (can also be set via the ZIMA_WEBHOOK_SECRET env var)",
+        envvar="ZIMA_WEBHOOK_SECRET",
+    ),
     skip_draft: bool = typer.Option(True, "--skip-draft/--no-skip-draft", help="Skip draft PRs"),
 ):
     """Run webhook server and optionally connect to smee.io."""

@@ -12,6 +12,9 @@ import requests
 # Keys that smee.io mixes into the event object but are not original HTTP headers.
 _SMEE_METADATA_KEYS = {"body", "headers", "query", "timestamp"}
 
+_INITIAL_BACKOFF = 1.0
+_MAX_BACKOFF = 60.0
+
 
 def parse_smee_event(line: str) -> Optional[dict]:
     """Parse a single SSE data line from smee.io."""
@@ -27,39 +30,54 @@ def parse_smee_event(line: str) -> Optional[dict]:
         return None
 
 
-def extract_smee_payload(event: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
+def extract_smee_payload(
+    event: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, str], Optional[str]]:
     """Extract original webhook body and headers from a smee.io event.
 
-    smee.io forwards webhooks as SSE events whose JSON payload mixes the original
-    request body under a ``body`` key, query parameters under ``query``, and the
-    original HTTP headers as sibling keys. This function separates the body from
-    the headers so the local webhook server can verify signatures such as
-    ``X-Hub-Signature-256``.
+    smee.io forwards webhooks as SSE events whose JSON payload contains the
+    original request body under a ``body`` key, the original HTTP headers under
+    a ``headers`` dict, and the raw signed request bytes under ``rawBody``.
+    Older/simple payloads may mix headers as sibling keys and omit ``rawBody``;
+    this function falls back to those layouts when necessary.
+
+    Returns a tuple of ``(body, headers, raw_body)``. ``raw_body`` is ``None``
+    when the event did not provide the original signed bytes.
     """
     # The original webhook payload. Some older/simple payloads may not wrap the
     # body under a "body" key; fall back to the whole event in that case.
     has_body = isinstance(event, dict) and "body" in event
     body = event["body"] if has_body else event
 
+    # Prefer the nested headers dict added by real smee.io events.
+    nested_headers = event.get("headers") if isinstance(event.get("headers"), dict) else None
+
     headers: dict[str, str] = {}
-    if has_body:
+    if nested_headers is not None:
+        headers = {
+            str(key): str(value) if value is not None else ""
+            for key, value in nested_headers.items()
+        }
+    elif has_body:
         for key, value in event.items():
             if key in _SMEE_METADATA_KEYS:
                 continue
             # Forward header values as strings.
             headers[key] = str(value) if value is not None else ""
 
-    # The local server expects JSON; requests.post(json=...) will set these, but
-    # make sure we do not keep stale values from the smee event.
+    # The local server expects JSON; requests will set these, but make sure we
+    # do not keep stale values from the smee event.
     headers.pop("host", None)
     headers.pop("content-length", None)
     headers.pop("content-type", None)
 
-    return body, headers
+    raw_body = event.get("rawBody")
+    return body, headers, raw_body
 
 
 def run_smee_client(smee_url: str, target_url: str) -> None:
     """Connect to smee.io and forward events to local target URL."""
+    delay = _INITIAL_BACKOFF
     while True:
         try:
             response = requests.get(
@@ -69,6 +87,8 @@ def run_smee_client(smee_url: str, target_url: str) -> None:
                 timeout=(10, 60),
             )
             response.raise_for_status()
+            # Successful connection: reset backoff.
+            delay = _INITIAL_BACKOFF
             for raw_line in response.iter_lines():
                 if not raw_line:
                     continue
@@ -76,9 +96,21 @@ def run_smee_client(smee_url: str, target_url: str) -> None:
                 event = parse_smee_event(line)
                 if event is None:
                     continue
-                body, headers = extract_smee_payload(event)
+                body, headers, raw_body = extract_smee_payload(event)
                 try:
-                    requests.post(target_url, json=body, headers=headers, timeout=10)
+                    if isinstance(raw_body, str):
+                        # Forward the original signed bytes so that HMAC
+                        # verification on the local server stays valid.
+                        forward_headers = headers.copy()
+                        forward_headers["Content-Type"] = "application/json"
+                        requests.post(
+                            target_url,
+                            data=raw_body.encode("utf-8"),
+                            headers=forward_headers,
+                            timeout=10,
+                        )
+                    else:
+                        requests.post(target_url, json=body, headers=headers, timeout=10)
                 except requests.RequestException as exc:
                     print(
                         f"[smee] failed to forward event to {target_url}: {exc}",
@@ -87,10 +119,11 @@ def run_smee_client(smee_url: str, target_url: str) -> None:
                     continue
         except requests.RequestException as exc:
             print(
-                f"[smee] connection lost ({exc}); reconnecting in 5s",
+                f"[smee] connection lost ({exc}); reconnecting in {delay}s",
                 file=sys.stderr,
             )
-            time.sleep(5)
+            time.sleep(delay)
+            delay = min(delay * 2, _MAX_BACKOFF)
             continue
         except KeyboardInterrupt:
             break

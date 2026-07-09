@@ -15,6 +15,9 @@ from zima.webhook.payload import (
     verify_signature,
 )
 
+# Maximum request body size accepted by the webhook server (1 MB).
+_MAX_CONTENT_LENGTH = 1_048_576
+
 
 def trigger_pjobs(event: PullRequestLabeledEvent, pjob_codes: list[str]) -> dict[str, str]:
     """Trigger configured PJobs for a labeled event.
@@ -26,6 +29,8 @@ def trigger_pjobs(event: PullRequestLabeledEvent, pjob_codes: list[str]) -> dict
     statuses: dict[str, str] = {}
     for code in pjob_codes:
         args = [
+            sys.executable,
+            "-m",
             "zima",
             "pjob",
             "run",
@@ -74,7 +79,16 @@ class WebhookRequestHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": "not found"})
             return
 
-        content_length = int(self.headers.get("Content-Length", "0"))
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self._send_json(400, {"error": "invalid content-length"})
+            return
+
+        if content_length > _MAX_CONTENT_LENGTH:
+            self._send_json(413, {"error": "payload too large"})
+            return
+
         payload = self.rfile.read(content_length)
 
         if self.secret:

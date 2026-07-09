@@ -1,6 +1,7 @@
 """End-to-end integration test for webhook-driven review trigger."""
 
 import json
+import sys
 import threading
 from http.client import HTTPConnection
 
@@ -49,7 +50,7 @@ def test_labeled_event_triggers_both_pjobs(webhook_server, monkeypatch):
                 "state": "open",
                 "draft": False,
                 "head": {"sha": "deadbeef"},
-                "base": {"repo": {"full_name": "zhuxixi/jfox"}},
+                "base": {"repo": {"full_name": "owner/repo"}},
             },
         }
     ).encode()
@@ -60,8 +61,10 @@ def test_labeled_event_triggers_both_pjobs(webhook_server, monkeypatch):
     assert response.status == 200
 
     assert len(calls) == 2
-    assert calls[0][:4] == ["zima", "pjob", "run", "claude-cr"]
-    assert calls[1][:4] == ["zima", "pjob", "run", "kimi-cr"]
-    assert "--set-var=repo=zhuxixi/jfox" in calls[0]
+    assert calls[0][:5] == [sys.executable, "-m", "zima", "pjob", "run"]
+    assert calls[1][:5] == [sys.executable, "-m", "zima", "pjob", "run"]
+    assert calls[0][5] == "claude-cr"
+    assert calls[1][5] == "kimi-cr"
+    assert "--set-var=repo=owner/repo" in calls[0]
     assert "--set-var=pr=99" in calls[0]
     assert "--set-var=head_sha=deadbeef" in calls[0]

@@ -1,6 +1,7 @@
 """Tests for webhook HTTP server."""
 
 import json
+import sys
 import threading
 from http.client import HTTPConnection
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -8,14 +9,19 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 
 from zima.webhook.payload import PullRequestLabeledEvent
-from zima.webhook.server import WebhookRequestHandler, make_handler, trigger_pjobs
+from zima.webhook.server import (
+    _MAX_CONTENT_LENGTH,
+    WebhookRequestHandler,
+    make_handler,
+    trigger_pjobs,
+)
 
 
 class TestTriggerPjobs:
     """Tests for triggering PJobs from an event."""
 
     def test_trigger_pjobs_invokes_cli(self, monkeypatch):
-        """trigger_pjobs calls zima pjob run for each pjob code."""
+        """trigger_pjobs calls sys.executable -m zima pjob run for each pjob code."""
         calls = []
 
         def fake_popen(args, **kwargs):
@@ -28,8 +34,8 @@ class TestTriggerPjobs:
         )
         trigger_pjobs(event, ["claude-cr", "kimi-cr"])
         assert len(calls) == 2
-        assert calls[0][:3] == ["zima", "pjob", "run"]
-        assert calls[1][:3] == ["zima", "pjob", "run"]
+        assert calls[0][:6] == [sys.executable, "-m", "zima", "pjob", "run", "claude-cr"]
+        assert calls[1][:6] == [sys.executable, "-m", "zima", "pjob", "run", "kimi-cr"]
         assert "--set-var=repo=owner/repo" in calls[0]
         assert "--set-var=pr=42" in calls[0]
         assert "--set-var=head_sha=abc" in calls[0]
@@ -96,7 +102,8 @@ class TestWebhookRequestHandler:
         response = conn.getresponse()
         assert response.status == 200
         assert len(calls) == 1
-        assert calls[0][:4] == ["zima", "pjob", "run", "claude-cr"]
+        assert calls[0][:5] == [sys.executable, "-m", "zima", "pjob", "run"]
+        assert calls[0][5] == "claude-cr"
         assert "--set-var=repo=owner/repo" in calls[0]
 
     def test_ignores_non_labeled(self, server, monkeypatch):
@@ -152,3 +159,34 @@ class TestWebhookRequestHandler:
             assert response.status == 400
         finally:
             httpd.shutdown()
+
+    def test_payload_too_large_returns_413(self, server):
+        """Requests with Content-Length above 1 MB are rejected."""
+        host, port = server
+        conn = HTTPConnection(host, port)
+        conn.request(
+            "POST",
+            "/webhook",
+            body=b"",
+            headers={
+                "Content-Type": "application/json",
+                "Content-Length": str(_MAX_CONTENT_LENGTH + 1),
+            },
+        )
+        response = conn.getresponse()
+        assert response.status == 413
+        body = json.loads(response.read().decode("utf-8"))
+        assert body["error"] == "payload too large"
+
+    def test_invalid_content_length_returns_400(self, server):
+        """Non-integer Content-Length is rejected."""
+        host, port = server
+        conn = HTTPConnection(host, port)
+        conn.request(
+            "POST",
+            "/webhook",
+            body=b"",
+            headers={"Content-Type": "application/json", "Content-Length": "huge"},
+        )
+        response = conn.getresponse()
+        assert response.status == 400

@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Features
+
+- **webhook**: add `webhook-server` command for GitHub webhook-driven code review triggers (#29)
+
+### Breaking Changes
+
+- **agent**: Kimi agent now uses the Kimi Code CLI (`kimi`) instead of the legacy `kimi-cli`. Existing Kimi agent configurations may generate different commands and should be recreated or updated.
+
 ## [0.5.3] - 2026-05-13
 
 ### Features
