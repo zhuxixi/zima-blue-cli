@@ -4,7 +4,8 @@ metadata:
   code: github-env
   name: GitHub Env
 spec:
-  vars:
+  forType: kimi
+  secrets:
     - name: GITHUB_TOKEN
       source: cmd
-      value: gh auth token
+      command: gh auth token

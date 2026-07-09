@@ -6,16 +6,17 @@ metadata:
 spec:
   agent: kimi
   workflow: cr-kimi
-  variables: cr-vars
+  variable: cr-vars
   env: github-env
   actions:
+    provider: github
     preExec:
-      - provider: github
-        action: scan_pr
-        args:
-          repo: "{{ repo }}"
-          pr: "{{ pr }}"
+      - type: scan_pr
+        repo: "{{repo}}"
+        label: "zima:needs-review"
     postExec:
-      - provider: github
-        action: add_comment
-        condition: always
+      - condition: always
+        type: add_comment
+        repo: "{{repo}}"
+        issue: "{{pr_number}}"
+        body: "Code review completed by Kimi."
