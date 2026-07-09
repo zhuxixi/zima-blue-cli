@@ -1,4 +1,4 @@
-"""Kimi CLI runner - executes kimi-cli via subprocess"""
+"""Kimi Code CLI runner - executes Kimi Code CLI via subprocess"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from zima.utils import icon, safe_print
 
 
 class KimiRunner:
-    """Runs kimi-cli via subprocess"""
+    """Runs Kimi Code CLI via subprocess"""
 
     def __init__(self, config: AgentConfig, agent_dir: Path):
         self.config = config

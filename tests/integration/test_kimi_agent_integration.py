@@ -45,7 +45,7 @@ class TestKimiAgentConfigLayer:
         assert "maxRalphIterations" not in agent.parameters
         assert "maxRetriesPerStep" not in agent.parameters
         assert "yolo" not in agent.parameters
-        assert "workDir" not in agent.parameters
+        assert agent.parameters["workDir"] == "./workspace"
         assert agent.parameters["outputFormat"] == "text"
 
     def test_kimi_agent_custom_parameters_override(self):

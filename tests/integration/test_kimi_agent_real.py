@@ -44,7 +44,7 @@ pytestmark = pytest.mark.skipif(
 
 
 class TestKimiAgentRealCommands:
-    """Test with real kimi-cli calls (lightweight operations only)."""
+    """Test with real Kimi Code CLI calls (lightweight operations only)."""
 
     @pytest.fixture(autouse=True)
     def setup_isolation(self, monkeypatch, tmp_path):

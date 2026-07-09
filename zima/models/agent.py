@@ -14,6 +14,7 @@ AGENT_PARAMETER_TEMPLATES = {
     "kimi": {
         "addDirs": [],
         "outputFormat": "text",
+        "workDir": "./workspace",
     },
     "claude": {
         "maxTurns": 100,
@@ -155,7 +156,7 @@ class AgentConfig(BaseConfig):
         template.
 
         Returns:
-            Base command list (e.g., ["kimi", "--print", "--yolo"])
+            Base command list (e.g., ["kimi"])
         """
         # Mock override: if mockCommand is set, use it instead of real CLI
         if self.parameters.get("mockCommand"):
