@@ -1,0 +1,21 @@
+apiVersion: zima.io/v1
+kind: PJob
+metadata:
+  code: kimi-cr
+  name: Kimi Code Review
+spec:
+  agent: kimi
+  workflow: cr-kimi
+  variables: cr-vars
+  env: github-env
+  actions:
+    preExec:
+      - provider: github
+        action: scan_pr
+        args:
+          repo: "{{ repo }}"
+          pr: "{{ pr }}"
+    postExec:
+      - provider: github
+        action: add_comment
+        condition: always

@@ -1,0 +1,11 @@
+apiVersion: zima.io/v1
+kind: Agent
+metadata:
+  code: kimi
+  name: Kimi Code
+  description: Kimi Code CLI reviewer
+spec:
+  type: kimi
+  parameters:
+    maxStepsPerTurn: 50
+    outputFormat: text

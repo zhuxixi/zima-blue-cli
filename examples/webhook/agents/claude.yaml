@@ -1,0 +1,12 @@
+apiVersion: zima.io/v1
+kind: Agent
+metadata:
+  code: claude
+  name: Claude Code
+  description: Claude Code reviewer
+spec:
+  type: claude
+  parameters:
+    maxTurns: 100
+    permissionMode: bypassPermissions
+    outputFormat: text

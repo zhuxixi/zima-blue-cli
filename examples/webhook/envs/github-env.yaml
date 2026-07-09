@@ -1,0 +1,10 @@
+apiVersion: zima.io/v1
+kind: Env
+metadata:
+  code: github-env
+  name: GitHub Env
+spec:
+  vars:
+    - name: GITHUB_TOKEN
+      source: cmd
+      value: gh auth token
