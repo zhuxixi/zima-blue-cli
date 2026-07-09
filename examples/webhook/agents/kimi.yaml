@@ -7,5 +7,4 @@ metadata:
 spec:
   type: kimi
   parameters:
-    maxStepsPerTurn: 50
     outputFormat: text

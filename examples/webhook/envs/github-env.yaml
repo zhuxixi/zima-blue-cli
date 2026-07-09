@@ -4,7 +4,7 @@ metadata:
   code: github-env
   name: GitHub Env
 spec:
-  forType: kimi
+  # 此 env 被 claude-cr 与 kimi-cr 两个 PJob 共用
   secrets:
     - name: GITHUB_TOKEN
       source: cmd

@@ -15,7 +15,7 @@ spec:
         repo: "{{repo}}"
         label: "zima:needs-review"
     postExec:
-      - condition: always
+      - condition: success
         type: add_comment
         repo: "{{repo}}"
         issue: "{{pr_number}}"
