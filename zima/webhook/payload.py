@@ -54,11 +54,16 @@ def parse_pull_request_labeled(payload: dict) -> Optional[PullRequestLabeledEven
     if not repo:
         return None
 
+    try:
+        pr_number = int(pr.get("number", 0))
+    except ValueError:
+        return None
+
     return PullRequestLabeledEvent(
         action="labeled",
         label_name="zima:needs-review",
         repo=repo,
-        pr_number=int(pr.get("number", 0)),
+        pr_number=pr_number,
         head_sha=str(pr.get("head", {}).get("sha", "")),
         draft=bool(pr.get("draft", False)),
         state=str(pr.get("state", "")),

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+import sys
 import time
 from typing import Any, Optional
 
 import requests
 
 # Keys that smee.io mixes into the event object but are not original HTTP headers.
-_SMEE_METADATA_KEYS = {"body", "query", "timestamp"}
+_SMEE_METADATA_KEYS = {"body", "headers", "query", "timestamp"}
 
 
 def parse_smee_event(line: str) -> Optional[dict]:
@@ -61,7 +62,12 @@ def run_smee_client(smee_url: str, target_url: str) -> None:
     """Connect to smee.io and forward events to local target URL."""
     while True:
         try:
-            response = requests.get(smee_url, stream=True, headers={"Accept": "text/event-stream"})
+            response = requests.get(
+                smee_url,
+                stream=True,
+                headers={"Accept": "text/event-stream"},
+                timeout=(10, 60),
+            )
             response.raise_for_status()
             for raw_line in response.iter_lines():
                 if not raw_line:
@@ -73,10 +79,17 @@ def run_smee_client(smee_url: str, target_url: str) -> None:
                 body, headers = extract_smee_payload(event)
                 try:
                     requests.post(target_url, json=body, headers=headers, timeout=10)
-                except requests.RequestException:
-                    # Local server unavailable; log and continue
+                except requests.RequestException as exc:
+                    print(
+                        f"[smee] failed to forward event to {target_url}: {exc}",
+                        file=sys.stderr,
+                    )
                     continue
-        except requests.RequestException:
+        except requests.RequestException as exc:
+            print(
+                f"[smee] connection lost ({exc}); reconnecting in 5s",
+                file=sys.stderr,
+            )
             time.sleep(5)
             continue
         except KeyboardInterrupt:

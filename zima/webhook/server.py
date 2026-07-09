@@ -16,8 +16,14 @@ from zima.webhook.payload import (
 )
 
 
-def trigger_pjobs(event: PullRequestLabeledEvent, pjob_codes: list[str]) -> None:
-    """Trigger configured PJobs for a labeled event."""
+def trigger_pjobs(event: PullRequestLabeledEvent, pjob_codes: list[str]) -> dict[str, str]:
+    """Trigger configured PJobs for a labeled event.
+
+    Returns a mapping from PJob code to status string ("ok" or an error
+    message). Failures are logged to stderr so they remain observable while
+    the HTTP handler still returns 200 to GitHub to avoid retry storms.
+    """
+    statuses: dict[str, str] = {}
     for code in pjob_codes:
         args = [
             "zima",
@@ -35,19 +41,20 @@ def trigger_pjobs(event: PullRequestLabeledEvent, pjob_codes: list[str]) -> None
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
+            statuses[code] = "ok"
         except (FileNotFoundError, OSError) as exc:
-            # Keep returning HTTP 200 to GitHub to avoid retry storms, but make
-            # the failure observable in server logs.
+            statuses[code] = f"error: {exc}"
             print(
                 f"[webhook] failed to spawn zima for pjob {code}: {exc}",
                 file=sys.stderr,
             )
+    return statuses
 
 
 class WebhookRequestHandler(BaseHTTPRequestHandler):
     """Handle GitHub webhook POST requests."""
 
-    pjob_codes: ClassVar[list[str]] = []
+    pjob_codes: ClassVar[Optional[list[str]]] = None
     secret: ClassVar[Optional[str]] = None
     skip_draft: ClassVar[bool] = True
     on_event: ClassVar[Optional[Callable[[PullRequestLabeledEvent], None]]] = None
@@ -78,7 +85,7 @@ class WebhookRequestHandler(BaseHTTPRequestHandler):
 
         try:
             data = json.loads(payload.decode("utf-8"))
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             self._send_json(400, {"error": "invalid json"})
             return
 
@@ -93,8 +100,12 @@ class WebhookRequestHandler(BaseHTTPRequestHandler):
 
         if self.on_event:
             self.on_event(event)
-        trigger_pjobs(event, self.pjob_codes)
-        self._send_json(200, {"triggered": self.pjob_codes})
+        codes = self.pjob_codes or []
+        statuses = trigger_pjobs(event, codes)
+        body: dict = {"triggered": list(codes)}
+        if statuses:
+            body["statuses"] = statuses
+        self._send_json(200, body)
 
 
 def make_handler(
