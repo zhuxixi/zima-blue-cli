@@ -19,8 +19,8 @@ class TestAgentConfigCreation(TestIsolator):
         assert config.metadata.name == "Kimi Agent"
         assert config.type == "kimi"
         assert "model" not in config.parameters
-        assert config.parameters["yolo"] is True
-        assert config.parameters["maxStepsPerTurn"] == 50
+        assert "outputFormat" in config.parameters
+        assert "yolo" not in config.parameters
 
     def test_create_claude_agent(self):
         """Test creating Claude agent."""
@@ -40,10 +40,9 @@ class TestAgentConfigCreation(TestIsolator):
         )
 
         assert config.parameters["model"] == "kimi-custom"
-        assert config.parameters["yolo"] is False
         assert config.parameters["customParam"] == "value"
         # Other defaults still present
-        assert "maxStepsPerTurn" in config.parameters
+        assert "outputFormat" in config.parameters
 
     def test_create_with_defaults(self):
         """Test creating with default references."""
@@ -218,9 +217,9 @@ class TestAgentConfigCommandBuilding(TestIsolator):
         config = AgentConfig.create("test", "Test", "kimi")
         template = config.get_cli_command_template()
 
-        assert "kimi-cli" in template
-        assert "--print" in template
-        assert "--yolo" in template
+        assert template[0] == "kimi"
+        assert "kimi-cli" not in template
+        assert "--print" not in template
 
     def test_get_cli_template_claude(self):
         """Test getting Claude command template."""
@@ -232,21 +231,18 @@ class TestAgentConfigCommandBuilding(TestIsolator):
 
     def test_build_kimi_command(self):
         """Test building Kimi command."""
-        config = AgentConfig.create(
-            "test", "Test", "kimi", parameters={"model": "kimi-custom", "maxStepsPerTurn": 100}
-        )
+        config = AgentConfig.create("test", "Test", "kimi", parameters={"model": "kimi-custom"})
 
         cmd = config.build_command(prompt_file="/tmp/prompt.md", work_dir="/tmp/workspace")
 
-        assert "kimi-cli" in cmd
+        assert "kimi" in cmd
+        assert "kimi-cli" not in cmd
         assert "--prompt" in cmd
         assert "/tmp/prompt.md" in cmd
-        assert "--work-dir" in cmd
-        assert "/tmp/workspace" in cmd
         assert "--model" in cmd
         assert "kimi-custom" in cmd
-        assert "--max-steps-per-turn" in cmd
-        assert "100" in cmd
+        # Kimi Code CLI does not support --work-dir; cwd is handled by subprocess
+        assert "--work-dir" not in cmd
 
     def test_build_claude_command(self):
         """Test building Claude command."""
@@ -346,6 +342,17 @@ class TestAgentConfigDefaults(TestIsolator):
         assert config.updated_at != old_timestamp
 
 
+class TestKimiCodeCLI(TestIsolator):
+    """Tests for Kimi Code CLI command template."""
+
+    def test_kimi_command_template(self):
+        """Kimi agent uses Kimi Code CLI command."""
+        agent = AgentConfig.create(code="test", name="Test", agent_type="kimi")
+        cmd = agent.get_cli_command_template()
+        assert cmd[0] == "kimi"
+        assert "kimi-cli" not in cmd
+
+
 class TestValidAgentTypes(TestIsolator):
     """Test valid agent types constant."""
 
@@ -359,4 +366,4 @@ class TestValidAgentTypes(TestIsolator):
         """Test that parameter templates exist for all valid types."""
         for agent_type in VALID_AGENT_TYPES:
             assert agent_type in AGENT_PARAMETER_TEMPLATES
-            assert "workDir" in AGENT_PARAMETER_TEMPLATES[agent_type]
+            assert "outputFormat" in AGENT_PARAMETER_TEMPLATES[agent_type]

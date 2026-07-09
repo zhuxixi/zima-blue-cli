@@ -1,8 +1,8 @@
 """
-Real integration tests for Kimi Agent - actually calls kimi-cli.
+Real integration tests for Kimi Agent - actually calls Kimi Code CLI.
 
 These tests require:
-- kimi-cli installed and authenticated
+- Kimi Code CLI (kimi) installed and authenticated
 - Network connection to Kimi API
 - Sufficient API quota
 
@@ -27,7 +27,7 @@ runner = CliRunner()
 
 
 def check_kimi_available():
-    """Check if kimi-cli is available and working."""
+    """Check if Kimi Code CLI is available and working."""
     try:
         result = subprocess.run(
             ["kimi", "--version"], capture_output=True, text=True, encoding="utf-8", timeout=5
@@ -39,7 +39,7 @@ def check_kimi_available():
 
 # Skip all tests in this file if kimi is not available
 pytestmark = pytest.mark.skipif(
-    not check_kimi_available(), reason="kimi-cli not available or not authenticated"
+    not check_kimi_available(), reason="Kimi Code CLI not available or not authenticated"
 )
 
 
@@ -48,10 +48,12 @@ class TestKimiAgentRealCommands:
 
     @pytest.fixture(autouse=True)
     def setup_isolation(self, monkeypatch, tmp_path):
-        """Set up isolated test environment."""
+        """Set up isolated test environment.
+
+        Note: HOME is intentionally NOT monkeypatched so that the real Kimi
+        Code CLI can locate its config.toml and default model.
+        """
         monkeypatch.setenv("ZIMA_HOME", str(tmp_path))
-        # Also set a temporary home for any config files
-        monkeypatch.setenv("HOME", str(tmp_path))
         self.temp_dir = tmp_path
         self.agent_dir = tmp_path / "agents" / "test-kimi-real"
         self.agent_dir.mkdir(parents=True, exist_ok=True)
@@ -60,10 +62,6 @@ class TestKimiAgentRealCommands:
             code="test-kimi-real",
             name="Real Test Kimi Agent",
             agent_type="kimi",
-            parameters={
-                "maxStepsPerTurn": 1,  # Limit to 1 step for fast tests
-                "maxRalphIterations": 1,
-            },
         )
         self.manager = ConfigManager()
 
@@ -83,7 +81,7 @@ class TestKimiAgentRealCommands:
         print(f"✅ Kimi CLI version info: {result.stdout[:200]}")
 
     def test_kimi_cli_simple_print_mode(self):
-        """Test 2: Test kimi --print mode with a simple prompt."""
+        """Test 2: Test kimi prompt mode with a simple prompt."""
         # Create a simple prompt file
         prompt_file = self.temp_dir / "simple_prompt.md"
         prompt_file.write_text(
@@ -93,23 +91,20 @@ class TestKimiAgentRealCommands:
         workspace = self.temp_dir / "workspace"
         workspace.mkdir(exist_ok=True)
 
-        # Run kimi with --print mode
+        # Run kimi with prompt mode (non-interactive)
         result = subprocess.run(
             [
                 "kimi",
-                "--print",
-                "--yolo",
                 "--prompt",
                 str(prompt_file),
-                "--work-dir",
-                str(workspace),
-                "--max-steps-per-turn",
-                "1",
+                "--output-format",
+                "text",
             ],
             capture_output=True,
             text=True,
             encoding="utf-8",
             timeout=60,  # Give it up to 60 seconds
+            cwd=str(workspace),
         )
 
         # Print output for debugging
@@ -213,9 +208,6 @@ Then output this JSON:
             name="Real Command Test",
             agent_type="kimi",
             parameters={
-                "model": "kimi-k2-072515-preview",
-                "yolo": True,
-                "maxStepsPerTurn": 1,
                 "addDirs": [str(extra_dir)],
             },
         )
@@ -251,6 +243,8 @@ class TestKimiAgentRealPJobIntegration:
     def setup_isolation(self, monkeypatch, tmp_path):
         """Set up isolated test environment."""
         monkeypatch.setenv("ZIMA_HOME", str(tmp_path))
+        # HOME is intentionally NOT monkeypatched so Kimi Code CLI can find
+        # its config and default model.
         self.temp_dir = tmp_path
         self.manager = ConfigManager()
 
@@ -264,7 +258,6 @@ class TestKimiAgentRealPJobIntegration:
             code=code,
             name="Real Test Agent",
             agent_type="kimi",
-            parameters={"maxStepsPerTurn": 1, "maxRalphIterations": 1, "yolo": True},
         )
         self.manager.save_config("agent", code, config.to_dict())
         return config
@@ -360,6 +353,8 @@ class TestKimiAgentErrorHandling:
     def setup_isolation(self, monkeypatch, tmp_path):
         """Set up isolated test environment."""
         monkeypatch.setenv("ZIMA_HOME", str(tmp_path))
+        # HOME is intentionally NOT monkeypatched so Kimi Code CLI can find
+        # its config and default model.
         self.temp_dir = tmp_path
         self.agent_dir = tmp_path / "agents" / "error-test"
         self.agent_dir.mkdir(parents=True, exist_ok=True)
@@ -368,49 +363,42 @@ class TestKimiAgentErrorHandling:
             code="error-test",
             name="Error Test Agent",
             agent_type="kimi",
-            parameters={"maxStepsPerTurn": 1},
         )
 
     def test_invalid_work_directory(self):
         """Test 7: Test behavior with invalid work directory."""
-        # Try to use a path that doesn't exist
+        # Try to use a path that doesn't exist. subprocess.run cwd must exist,
+        # so we expect a FileNotFoundError from Python rather than from kimi.
         invalid_workspace = self.temp_dir / "does_not_exist" / "nested"
 
         prompt_file = self.temp_dir / "prompt.md"
         prompt_file.write_text("Say hello", encoding="utf-8")
 
-        # This should either create the directory or fail gracefully
-        result = subprocess.run(
-            [
-                "kimi",
-                "--print",
-                "--prompt",
-                str(prompt_file),
-                "--work-dir",
-                str(invalid_workspace),
-                "--max-steps-per-turn",
-                "1",
-            ],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=30,
-        )
+        # This should fail gracefully since cwd does not exist
+        with pytest.raises(FileNotFoundError):
+            subprocess.run(
+                [
+                    "kimi",
+                    "--prompt",
+                    str(prompt_file),
+                    "--output-format",
+                    "text",
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=30,
+                cwd=str(invalid_workspace),
+            )
 
-        print("\n📊 Invalid directory test:")
-        print(f"   Return code: {result.returncode}")
-        print(f"   STDERR: {result.stderr[:300]}")
-
-        # Either it should create the directory or return an error
-        # We just verify it doesn't crash
-        assert result.returncode in [0, 1, 2]
+        print("\n📊 Invalid directory test: subprocess correctly raised FileNotFoundError")
 
 
 def pytest_configure(config):
     """Configure pytest to add custom markers."""
     config.addinivalue_line(
         "markers",
-        "real_kimi: marks tests that make real calls to kimi-cli (may be slow and use API quota)",
+        "real_kimi: marks tests that make real calls to Kimi Code CLI (may be slow and use API quota)",
     )
     config.addinivalue_line(
         "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"

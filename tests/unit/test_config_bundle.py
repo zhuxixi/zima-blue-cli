@@ -277,8 +277,9 @@ class TestConfigBundle:
             prompt_file = Path("/tmp/prompt.md")
             cmd = bundle.build_command(prompt_file)
 
-            assert "kimi-cli" in cmd
-            assert "--print" in cmd
+            assert "kimi" in cmd
+            assert "kimi-cli" not in cmd
+            assert "--print" not in cmd
             assert "--prompt" in cmd
             assert str(prompt_file) in cmd
 
