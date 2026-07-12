@@ -41,11 +41,11 @@ class TestKimiAgentConfigLayer:
 
         # Verify default parameters from template are merged (model omitted)
         assert "model" not in agent.parameters
-        assert agent.parameters["maxStepsPerTurn"] == 50
-        assert agent.parameters["maxRalphIterations"] == 10
-        assert agent.parameters["maxRetriesPerStep"] == 3
-        assert agent.parameters["yolo"] is True
-        assert agent.parameters["workDir"] == "./workspace"
+        assert "maxStepsPerTurn" not in agent.parameters
+        assert "maxRalphIterations" not in agent.parameters
+        assert "maxRetriesPerStep" not in agent.parameters
+        assert "yolo" not in agent.parameters
+        assert "workDir" not in agent.parameters
         assert agent.parameters["outputFormat"] == "text"
 
     def test_kimi_agent_custom_parameters_override(self):
@@ -54,17 +54,15 @@ class TestKimiAgentConfigLayer:
             code="test-kimi-custom",
             name="Custom Kimi Agent",
             agent_type="kimi",
-            parameters={"model": "kimi-custom-model", "maxStepsPerTurn": 100, "yolo": False},
+            parameters={"model": "kimi-custom-model", "addDirs": ["./src"]},
         )
 
         # Verify overrides
         assert agent.parameters["model"] == "kimi-custom-model"
-        assert agent.parameters["maxStepsPerTurn"] == 100
-        assert agent.parameters["yolo"] is False
+        assert agent.parameters["addDirs"] == ["./src"]
 
         # Verify non-overridden defaults remain
-        assert agent.parameters["maxRalphIterations"] == 10
-        assert agent.parameters["workDir"] == "./workspace"
+        assert agent.parameters["outputFormat"] == "text"
 
     def test_kimi_agent_build_command(self):
         """TC-2: Verify build_command generates correct Kimi CLI command."""
@@ -72,7 +70,7 @@ class TestKimiAgentConfigLayer:
             code="test-kimi-cmd",
             name="Command Test Agent",
             agent_type="kimi",
-            parameters={"model": "kimi-k2-072515-preview", "maxStepsPerTurn": 50, "yolo": True},
+            parameters={"model": "kimi-k2-072515-preview"},
         )
 
         prompt_file = Path("/tmp/test_prompt.md")
@@ -81,17 +79,17 @@ class TestKimiAgentConfigLayer:
         cmd = agent.build_command(prompt_file=prompt_file, work_dir=work_dir)
 
         # Verify command structure
-        assert cmd[0] == "kimi-cli"
-        assert "--print" in cmd
-        assert "--yolo" in cmd
+        assert cmd[0] == "kimi"
+        assert "kimi-cli" not in cmd
+        assert "--print" not in cmd
+        assert "--yolo" not in cmd
         assert "--prompt" in cmd
         assert str(prompt_file) in cmd
-        assert "--work-dir" in cmd
-        assert str(work_dir) in cmd
+        # Kimi Code CLI does not support --work-dir; cwd is handled by subprocess
+        assert "--work-dir" not in cmd
         assert "--model" in cmd
         assert "kimi-k2-072515-preview" in cmd
-        assert "--max-steps-per-turn" in cmd
-        assert "50" in cmd
+        assert "--max-steps-per-turn" not in cmd
 
     def test_kimi_agent_build_command_with_extra_args(self):
         """TC-2b: Verify extra_args can override parameters at build time."""
@@ -102,15 +100,15 @@ class TestKimiAgentConfigLayer:
             parameters={"model": "default-model"},
         )
 
-        extra_args = {"model": "runtime-model", "maxStepsPerTurn": 75}
+        extra_args = {"model": "runtime-model", "outputFormat": "stream-json"}
         cmd = agent.build_command(extra_args=extra_args)
 
         # Verify extra_args override
         model_idx = cmd.index("--model")
         assert cmd[model_idx + 1] == "runtime-model"
 
-        max_steps_idx = cmd.index("--max-steps-per-turn")
-        assert cmd[max_steps_idx + 1] == "75"
+        output_format_idx = cmd.index("--output-format")
+        assert cmd[output_format_idx + 1] == "stream-json"
 
     def test_kimi_agent_build_command_with_addDirs(self):
         """TC-2c: Verify addDirs parameter generates multiple --add-dir flags."""
@@ -138,14 +136,14 @@ class TestKimiAgentConfigLayer:
         claude_cmd = claude_agent.get_cli_command_template()
 
         # Verify command differences
-        assert kimi_cmd == ["kimi-cli", "--print", "--yolo"]
+        assert kimi_cmd == ["kimi"]
         assert claude_cmd == ["claude", "-p"]
 
-        # Verify work-dir parameter differences
+        # Verify work-dir is not emitted for Kimi (cwd handled by subprocess)
         work_dir = Path("/tmp/test")
         kimi_full = kimi_agent.build_command(work_dir=work_dir)
 
-        assert "--work-dir" in kimi_full
+        assert "--work-dir" not in kimi_full
 
 
 class TestKimiAgentRunnerLayer:
@@ -164,7 +162,7 @@ class TestKimiAgentRunnerLayer:
             code="test-kimi",
             name="Test Kimi Agent",
             agent_type="kimi",
-            parameters={"maxStepsPerTurn": 50, "maxExecutionTime": 600, "cycleInterval": 900},
+            parameters={"maxExecutionTime": 600, "cycleInterval": 900},
         )
 
     def test_kimi_runner_directory_setup(self):
@@ -461,8 +459,7 @@ class TestKimiAgentCLILayer:
         assert result.exit_code == 0
         assert "Generated Command" in result.output
         assert "kimi" in result.output
-        assert "--print" in result.output
-        assert "--yolo" in result.output
+        assert "--prompt" in result.output
         assert "test-cmd-agent" in result.output
 
     def test_agent_test_with_different_types(self):
@@ -506,9 +503,7 @@ class TestKimiAgentCLILayer:
         output = result.output
         # Check for key elements in output (handle encoding issues on Windows)
         assert "DRY RUN" in output or "dry" in output.lower()
-        assert "kimi" in output.lower() or "--print" in output
-        # Verify command structure is present
-        assert "--work-dir" in output or "work" in output.lower()
+        assert "kimi" in output.lower() or "--prompt" in output
 
 
 class TestKimiAgentEdgeCases:
