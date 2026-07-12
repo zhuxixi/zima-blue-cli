@@ -37,6 +37,21 @@ def serve(
     if ctx.invoked_subcommand is not None:
         return
 
+    if smee_url and not secret:
+        console.print(
+            "[red]✗[/red] --secret (or ZIMA_WEBHOOK_SECRET) is required when "
+            "--smee-url is set: smee.io channels are publicly readable, so "
+            "without a secret anyone who discovers the channel URL can forge "
+            "events and trigger arbitrary PJob execution."
+        )
+        raise typer.Exit(1)
+    if not secret:
+        console.print(
+            "[yellow]⚠[/yellow] Running without --secret: HMAC signature "
+            "verification is disabled. This is only safe for local loopback "
+            "testing — do NOT expose the server publicly."
+        )
+
     if not pjob:
         console.print("[red]✗[/red] At least one --pjob is required")
         raise typer.Exit(1)

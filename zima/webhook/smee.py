@@ -117,7 +117,12 @@ def run_smee_client(smee_url: str, target_url: str) -> None:
                         file=sys.stderr,
                     )
                     continue
-        except requests.RequestException as exc:
+        except KeyboardInterrupt:
+            break
+        except Exception as exc:  # noqa: BLE001 - never let the forwarder thread die
+            # Any unexpected error (e.g. UnicodeEncodeError on a malformed
+            # rawBody, JSON errors) must not kill the forwarding thread; log,
+            # back off, and reconnect instead of dying silently.
             print(
                 f"[smee] connection lost ({exc}); reconnecting in {delay}s",
                 file=sys.stderr,
@@ -125,5 +130,3 @@ def run_smee_client(smee_url: str, target_url: str) -> None:
             time.sleep(delay)
             delay = min(delay * 2, _MAX_BACKOFF)
             continue
-        except KeyboardInterrupt:
-            break

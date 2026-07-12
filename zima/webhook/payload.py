@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import hmac
+import re
 from dataclasses import dataclass
 from hashlib import sha256
 from typing import Optional
+
+# Untrusted webhook fields (repo, head_sha) flow into PJob template variables
+# via ``--set-var``. Reject anything outside these strict allow-lists so a
+# malformed/forgeable payload cannot inject template or shell metacharacters.
+_VALID_REPO = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
+_VALID_SHA = re.compile(r"^[0-9a-f]{7,40}$")
 
 
 @dataclass
@@ -51,7 +58,7 @@ def parse_pull_request_labeled(payload: dict) -> Optional[PullRequestLabeledEven
         return None
 
     repo = pr.get("base", {}).get("repo", {}).get("full_name")
-    if not repo:
+    if not repo or not _VALID_REPO.match(repo):
         return None
 
     try:
@@ -59,12 +66,16 @@ def parse_pull_request_labeled(payload: dict) -> Optional[PullRequestLabeledEven
     except ValueError:
         return None
 
+    head_sha = str(pr.get("head", {}).get("sha", ""))
+    if not _VALID_SHA.match(head_sha):
+        return None
+
     return PullRequestLabeledEvent(
         action="labeled",
         label_name="zima:needs-review",
         repo=repo,
         pr_number=pr_number,
-        head_sha=str(pr.get("head", {}).get("sha", "")),
+        head_sha=head_sha,
         draft=bool(pr.get("draft", False)),
         state=str(pr.get("state", "")),
     )

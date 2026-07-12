@@ -91,7 +91,7 @@ class TestWebhookRequestHandler:
                     "number": 42,
                     "state": "open",
                     "draft": False,
-                    "head": {"sha": "abc123"},
+                    "head": {"sha": "5fd94cc2a5c187d2854fd11b82fe6eac601e2e5a"},
                     "base": {"repo": {"full_name": "owner/repo"}},
                 },
             }

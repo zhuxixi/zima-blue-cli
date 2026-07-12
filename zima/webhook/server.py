@@ -40,12 +40,20 @@ def trigger_pjobs(event: PullRequestLabeledEvent, pjob_codes: list[str]) -> dict
             f"--set-var=head_sha={event.head_sha}",
         ]
         try:
-            subprocess.Popen(
-                args,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+            # Detach the spawned PJob so it survives the webhook request cycle,
+            # matching the detachment pattern used by the daemon/pjob runners.
+            popen_kwargs: dict = {
+                "stdin": subprocess.DEVNULL,
+                "stdout": subprocess.DEVNULL,
+                "stderr": subprocess.DEVNULL,
+            }
+            if sys.platform == "win32":
+                popen_kwargs["creationflags"] = (
+                    subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+                )
+            else:
+                popen_kwargs["start_new_session"] = True
+            subprocess.Popen(args, **popen_kwargs)
             statuses[code] = "ok"
         except (FileNotFoundError, OSError) as exc:
             statuses[code] = f"error: {exc}"

@@ -264,3 +264,32 @@ class TestRunSmeeClient:
             pass
 
         assert sleeps == [1.0, 2.0]
+
+    def test_survives_unexpected_exception(self, monkeypatch):
+        """A non-RequestException is caught, not propagated (thread must not die).
+
+        Regression: the outer try used to catch only requests.RequestException, so
+        any other exception (e.g. UnicodeEncodeError on a malformed rawBody) would
+        escape and silently kill the forwarding thread.
+        """
+        sleeps = []
+
+        def fake_get(*args, **kwargs):
+            raise ValueError("unexpected, not a RequestException")
+
+        def fake_sleep(seconds):
+            sleeps.append(seconds)
+            if len(sleeps) >= 3:
+                raise RuntimeError("stop loop")
+
+        monkeypatch.setattr("zima.webhook.smee.requests.get", fake_get)
+        monkeypatch.setattr("zima.webhook.smee.time.sleep", fake_sleep)
+
+        # Must not raise ValueError — it should be caught and retried with backoff.
+        try:
+            run_smee_client("https://smee.io/test", "http://127.0.0.1:8765/webhook")
+        except RuntimeError:
+            pass
+
+        # If the ValueError had escaped, sleep would never have been called.
+        assert sleeps == [1.0, 2.0, 4.0]

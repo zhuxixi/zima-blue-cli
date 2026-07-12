@@ -47,7 +47,7 @@ class TestParsePullRequestLabeled:
                 "number": 42,
                 "state": "open",
                 "draft": False,
-                "head": {"sha": "abc123"},
+                "head": {"sha": "5fd94cc2a5c187d2854fd11b82fe6eac601e2e5a"},
                 "base": {"repo": {"full_name": "owner/repo"}},
             },
         }
@@ -57,9 +57,39 @@ class TestParsePullRequestLabeled:
         assert event.label_name == "zima:needs-review"
         assert event.repo == "owner/repo"
         assert event.pr_number == 42
-        assert event.head_sha == "abc123"
+        assert event.head_sha == "5fd94cc2a5c187d2854fd11b82fe6eac601e2e5a"
         assert event.draft is False
         assert event.state == "open"
+
+    def test_parse_rejects_malformed_repo(self):
+        """Repo with metacharacters is rejected (injection guard)."""
+        payload = {
+            "action": "labeled",
+            "label": {"name": "zima:needs-review"},
+            "pull_request": {
+                "number": 42,
+                "state": "open",
+                "draft": False,
+                "head": {"sha": "5fd94cc2a5c187d2854fd11b82fe6eac601e2e5a"},
+                "base": {"repo": {"full_name": "owner/repo; rm -rf /"}},
+            },
+        }
+        assert parse_pull_request_labeled(payload) is None
+
+    def test_parse_rejects_malformed_head_sha(self):
+        """head_sha with non-hex/short value is rejected (injection guard)."""
+        payload = {
+            "action": "labeled",
+            "label": {"name": "zima:needs-review"},
+            "pull_request": {
+                "number": 42,
+                "state": "open",
+                "draft": False,
+                "head": {"sha": "abc; --dangerous"},
+                "base": {"repo": {"full_name": "owner/repo"}},
+            },
+        }
+        assert parse_pull_request_labeled(payload) is None
 
     def test_parse_wrong_action(self):
         """Non-labeled action returns None."""
