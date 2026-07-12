@@ -12,7 +12,6 @@ Skip with: pytest tests/integration/ --ignore=tests/integration/test_kimi_agent_
 
 import subprocess
 from datetime import datetime
-from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -25,37 +24,6 @@ from zima.models.variable import VariableConfig
 from zima.models.workflow import WorkflowConfig
 
 runner = CliRunner()
-
-
-def _setup_isolated_home(monkeypatch, tmp_path):
-    """Create an isolated HOME directory that symlinks to the real Kimi config.
-
-    Kimi Code CLI stores its configuration under ``~/.kimi-code`` (and may
-    still reference the legacy ``~/.kimi`` directory). The tests isolate
-    ``HOME`` to a temp directory and symlink the real config directories into
-    it so Kimi Code CLI can authenticate and run without writing into the
-    user's actual home directory.
-    """
-    real_home = Path.home()
-    config_dirs = [
-        real_home / ".kimi-code",
-        real_home / ".kimi",
-    ]
-    found = [p for p in config_dirs if p.exists()]
-    if not found:
-        pytest.skip("Real Kimi Code CLI config not found")
-
-    fake_home = tmp_path / "home"
-    fake_home.mkdir(parents=True, exist_ok=True)
-
-    for real_dir in found:
-        link = fake_home / real_dir.name
-        if link.exists() or link.is_symlink():
-            link.unlink()
-        link.symlink_to(real_dir, target_is_directory=True)
-
-    monkeypatch.setenv("HOME", str(fake_home))
-    return fake_home
 
 
 def check_kimi_available():
@@ -76,17 +44,15 @@ pytestmark = pytest.mark.skipif(
 
 
 class TestKimiAgentRealCommands:
-    """Test with real Kimi Code CLI calls (lightweight operations only)."""
+    """Test with real kimi-cli calls (lightweight operations only)."""
 
     @pytest.fixture(autouse=True)
     def setup_isolation(self, monkeypatch, tmp_path):
         """Set up isolated test environment.
 
-        HOME is monkeypatched to a temp directory, and the real ~/.kimi
-        configuration is symlinked into it so Kimi Code CLI can locate its
-        config and credentials without writing into the user's home directory.
+        Note: HOME is intentionally NOT monkeypatched so that the real Kimi
+        Code CLI can locate its config.toml and default model.
         """
-        _setup_isolated_home(monkeypatch, tmp_path)
         monkeypatch.setenv("ZIMA_HOME", str(tmp_path))
         self.temp_dir = tmp_path
         self.agent_dir = tmp_path / "agents" / "test-kimi-real"
@@ -104,7 +70,7 @@ class TestKimiAgentRealCommands:
             (tmp_path / "configs" / kind).mkdir(parents=True, exist_ok=True)
 
     def test_kimi_cli_basic_invocation(self):
-        """Test 1: Verify Kimi Code CLI can be invoked with --help."""
+        """Test 1: Verify kimi-cli can be invoked with --help."""
         # This is the most basic test - just verify kimi responds
         result = subprocess.run(
             ["kimi", "--help"], capture_output=True, text=True, encoding="utf-8", timeout=10
@@ -114,8 +80,8 @@ class TestKimiAgentRealCommands:
         assert "Usage:" in result.stdout or "usage:" in result.stdout.lower()
         print(f"✅ Kimi CLI version info: {result.stdout[:200]}")
 
-    def test_kimi_cli_simple_prompt_mode(self):
-        """Test 2: Test Kimi Code CLI prompt mode with a simple prompt."""
+    def test_kimi_cli_simple_print_mode(self):
+        """Test 2: Test kimi prompt mode with a simple prompt."""
         # Create a simple prompt file
         prompt_file = self.temp_dir / "simple_prompt.md"
         prompt_file.write_text(
@@ -275,13 +241,10 @@ class TestKimiAgentRealPJobIntegration:
 
     @pytest.fixture(autouse=True)
     def setup_isolation(self, monkeypatch, tmp_path):
-        """Set up isolated test environment.
-
-        HOME is monkeypatched to a temp directory with the real ~/.kimi
-        configuration symlinked in so Kimi Code CLI remains functional.
-        """
-        _setup_isolated_home(monkeypatch, tmp_path)
+        """Set up isolated test environment."""
         monkeypatch.setenv("ZIMA_HOME", str(tmp_path))
+        # HOME is intentionally NOT monkeypatched so Kimi Code CLI can find
+        # its config and default model.
         self.temp_dir = tmp_path
         self.manager = ConfigManager()
 
@@ -388,13 +351,10 @@ class TestKimiAgentErrorHandling:
 
     @pytest.fixture(autouse=True)
     def setup_isolation(self, monkeypatch, tmp_path):
-        """Set up isolated test environment.
-
-        HOME is monkeypatched to a temp directory with the real ~/.kimi
-        configuration symlinked in so Kimi Code CLI remains functional.
-        """
-        _setup_isolated_home(monkeypatch, tmp_path)
+        """Set up isolated test environment."""
         monkeypatch.setenv("ZIMA_HOME", str(tmp_path))
+        # HOME is intentionally NOT monkeypatched so Kimi Code CLI can find
+        # its config and default model.
         self.temp_dir = tmp_path
         self.agent_dir = tmp_path / "agents" / "error-test"
         self.agent_dir.mkdir(parents=True, exist_ok=True)

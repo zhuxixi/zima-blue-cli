@@ -14,7 +14,6 @@ AGENT_PARAMETER_TEMPLATES = {
     "kimi": {
         "addDirs": [],
         "outputFormat": "text",
-        "workDir": "./workspace",
     },
     "claude": {
         "maxTurns": 100,
