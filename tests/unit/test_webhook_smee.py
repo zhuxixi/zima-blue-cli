@@ -245,15 +245,19 @@ class TestRunSmeeClient:
 
         def fake_get(*args, **kwargs):
             get_calls.append(None)
-            # Succeed once, then fail twice and stop.
+            # Succeed once, then fail (reconnect) twice.
             if len(get_calls) in (2, 3):
                 raise requests.RequestException("boom")
-            if len(get_calls) > 3:
-                raise RuntimeError("stop loop")
             return FakeResponse()
 
         def fake_sleep(seconds):
             sleeps.append(seconds)
+            # Stop once the two reconnect backoffs are observed. Must terminate
+            # via sleep (raised inside the except handler, so it propagates)
+            # rather than via fake_get, because run_smee_client's outer handler
+            # catches Exception broadly to keep the forwarder thread alive.
+            if len(sleeps) >= 2:
+                raise RuntimeError("stop loop")
 
         monkeypatch.setattr("zima.webhook.smee.requests.get", fake_get)
         monkeypatch.setattr("zima.webhook.smee.time.sleep", fake_sleep)
