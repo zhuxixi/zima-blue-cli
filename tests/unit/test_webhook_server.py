@@ -17,16 +17,29 @@ from zima.webhook.server import (
 )
 
 
+class _FakeProc:
+    """Fake subprocess.Popen handle: poll() returns None (running) or a code (done)."""
+
+    def __init__(self, poll_result=None):
+        self._poll_result = poll_result
+
+    def poll(self):
+        return self._poll_result
+
+
 class TestTriggerPjobs:
     """Tests for triggering PJobs from an event."""
 
     def test_trigger_pjobs_invokes_cli(self, monkeypatch):
         """trigger_pjobs calls sys.executable -m zima pjob run for each pjob code."""
+        from zima.webhook import server as wh_server
+
+        wh_server._spawned_processes.clear()
         calls = []
 
         def fake_popen(args, **kwargs):
             calls.append(args)
-            return None
+            return _FakeProc()  # "running"
 
         monkeypatch.setattr("zima.webhook.server.subprocess.Popen", fake_popen)
         event = PullRequestLabeledEvent(
@@ -39,9 +52,39 @@ class TestTriggerPjobs:
         assert "--set-var=repo=owner/repo" in calls[0]
         assert "--set-var=pr=42" in calls[0]
         assert "--set-var=head_sha=abc" in calls[0]
+        # Both wrapper handles are retained so the reaper can poll/reap them.
+        assert len(wh_server._spawned_processes) == 2
+
+    def test_trigger_pjobs_reaps_finished_handles(self, monkeypatch):
+        """Finished wrapper handles are reaped (no zombie accumulation)."""
+        from zima.webhook import server as wh_server
+
+        wh_server._spawned_processes.clear()
+        # Seed an already-finished wrapper handle (would-be zombie).
+        finished = _FakeProc(poll_result=0)
+        wh_server._spawned_processes.append(finished)
+
+        calls = []
+
+        def fake_popen(args, **kwargs):
+            calls.append(args)
+            return _FakeProc()  # running
+
+        monkeypatch.setattr("zima.webhook.server.subprocess.Popen", fake_popen)
+        event = PullRequestLabeledEvent(
+            "labeled", "zima:needs-review", "owner/repo", 42, "abc", False, "open"
+        )
+        trigger_pjobs(event, ["claude-cr"])
+        # Finished handle reaped at the start of this trigger; only the new
+        # running handle remains.
+        assert finished not in wh_server._spawned_processes
+        assert len(wh_server._spawned_processes) == 1
 
     def test_trigger_pjobs_survives_missing_zima(self, monkeypatch, capsys):
         """trigger_pjobs logs spawn errors but does not raise."""
+        from zima.webhook import server as wh_server
+
+        wh_server._spawned_processes.clear()
 
         def fake_popen(args, **kwargs):
             raise FileNotFoundError("zima not found")
@@ -74,11 +117,14 @@ class TestWebhookRequestHandler:
 
     def test_valid_labeled_event(self, server, monkeypatch):
         """Valid labeled event returns 200 and triggers PJob."""
+        from zima.webhook import server as wh_server
+
+        wh_server._spawned_processes.clear()
         calls = []
 
         def fake_popen(args, **kwargs):
             calls.append(args)
-            return None
+            return _FakeProc()
 
         monkeypatch.setattr("zima.webhook.server.subprocess.Popen", fake_popen)
 

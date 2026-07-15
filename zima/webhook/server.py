@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Callable, ClassVar, Optional
 
@@ -18,6 +20,45 @@ from zima.webhook.payload import (
 # Maximum request body size accepted by the webhook server (1 MB).
 _MAX_CONTENT_LENGTH = 1_048_576
 
+# Spawned `zima pjob run` wrapper handles, kept so finished ones can be reaped.
+# Without this the long-running server accumulates zombies (one per trigger)
+# because the wrapper handles were previously discarded.
+_spawned_processes: list[subprocess.Popen] = []
+_REAPER_INTERVAL = 60.0
+
+
+def _reap_children() -> None:
+    """Poll spawned wrapper processes and drop finished ones (prevent zombies)."""
+    global _spawned_processes
+    remaining: list[subprocess.Popen] = []
+    for proc in _spawned_processes:
+        try:
+            if proc.poll() is None:  # still running -> keep
+                remaining.append(proc)
+        except Exception:
+            # Never let a bad handle break triggering; just drop it.
+            pass
+    _spawned_processes = remaining
+
+
+def _start_reaper_thread() -> None:
+    """Start a daemon thread that periodically reaps finished wrapper processes.
+
+    The opportunistic reap in ``trigger_pjobs`` handles the active case; this
+    covers idle periods so zombies don't accumulate between triggers on a
+    long-running server.
+    """
+
+    def _loop() -> None:
+        while True:
+            try:
+                _reap_children()
+            except Exception:
+                pass
+            time.sleep(_REAPER_INTERVAL)
+
+    threading.Thread(target=_loop, daemon=True, name="zima-webhook-reaper").start()
+
 
 def trigger_pjobs(event: PullRequestLabeledEvent, pjob_codes: list[str]) -> dict[str, str]:
     """Trigger configured PJobs for a labeled event.
@@ -26,6 +67,8 @@ def trigger_pjobs(event: PullRequestLabeledEvent, pjob_codes: list[str]) -> dict
     message). Failures are logged to stderr so they remain observable while
     the HTTP handler still returns 200 to GitHub to avoid retry storms.
     """
+    # Opportunistic reap: collect finished wrapper handles before spawning more.
+    _reap_children()
     statuses: dict[str, str] = {}
     for code in pjob_codes:
         args = [
@@ -53,7 +96,10 @@ def trigger_pjobs(event: PullRequestLabeledEvent, pjob_codes: list[str]) -> dict
                 )
             else:
                 popen_kwargs["start_new_session"] = True
-            subprocess.Popen(args, **popen_kwargs)
+            proc = subprocess.Popen(args, **popen_kwargs)
+            # Keep the handle so the reaper can poll/reap it once the wrapper
+            # exits (the wrapper returns immediately after spawning background_runner).
+            _spawned_processes.append(proc)
             statuses[code] = "ok"
         except (FileNotFoundError, OSError) as exc:
             statuses[code] = f"error: {exc}"
@@ -157,6 +203,7 @@ def run_server(
 ) -> None:
     """Run the webhook HTTP server."""
     handler = make_handler(pjob_codes=pjob_codes, secret=secret, skip_draft=skip_draft)
+    _start_reaper_thread()
     server = HTTPServer(("127.0.0.1", port), handler)
     try:
         server.serve_forever()
