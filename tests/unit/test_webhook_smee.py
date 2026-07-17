@@ -137,7 +137,7 @@ class TestRunSmeeClient:
             def iter_lines(self):
                 return [b"data: " + json.dumps(sse_payload).encode()]
 
-        def fake_get(url, stream, headers, timeout):
+        def fake_get(*args, **kwargs):
             get_calls.append(None)
             # After processing the first (and only) event, make the reconnect fail
             # so the loop exits cleanly.
@@ -192,7 +192,7 @@ class TestRunSmeeClient:
             def iter_lines(self):
                 return [b"data: " + json.dumps(sse_payload).encode()]
 
-        def fake_get(url, stream, headers, timeout):
+        def fake_get(*args, **kwargs):
             get_calls.append(None)
             if len(get_calls) > 1:
                 raise requests.RequestException("stop loop")

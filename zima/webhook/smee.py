@@ -87,6 +87,7 @@ def run_smee_client(smee_url: str, target_url: str) -> None:
                 stream=True,
                 headers={"Accept": "text/event-stream"},
                 timeout=(10, 60),
+                allow_redirects=False,
             ) as response:
                 response.raise_for_status()
                 # Successful connection: reset backoff.
@@ -113,7 +114,10 @@ def run_smee_client(smee_url: str, target_url: str) -> None:
                             )
                         else:
                             requests.post(target_url, json=body, headers=headers, timeout=10)
-                    except requests.RequestException as exc:
+                    except Exception as exc:  # noqa: BLE001 - skip the bad event, keep the stream
+                        # Broaden beyond RequestException so a malformed event
+                        # (e.g. UnicodeEncodeError on raw_body.encode) skips this
+                        # event instead of dropping the whole SSE stream/reconnecting.
                         print(
                             f"[smee] failed to forward event to {target_url}: {exc}",
                             file=sys.stderr,

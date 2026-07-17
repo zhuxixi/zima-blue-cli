@@ -263,9 +263,9 @@ def run_server(
     # ThreadingHTTPServer so a slow/malformed delivery can't block the single
     # worker and stall the whole pipeline.
     server = ThreadingHTTPServer(("127.0.0.1", port), handler)
-    if on_listening is not None:
-        on_listening()
     try:
+        if on_listening is not None:
+            on_listening()
         server.serve_forever()
     except KeyboardInterrupt:
         pass

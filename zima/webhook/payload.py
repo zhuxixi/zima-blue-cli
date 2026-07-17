@@ -80,6 +80,8 @@ def parse_pull_request_labeled(payload: dict) -> Optional[PullRequestLabeledEven
         pr_number = int(pr.get("number", 0))
     except (ValueError, TypeError):
         return None
+    if pr_number <= 0:
+        return None
 
     head = pr.get("head")
     if not isinstance(head, dict):
