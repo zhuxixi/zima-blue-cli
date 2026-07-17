@@ -65,11 +65,11 @@ def extract_smee_payload(
             # Forward header values as strings.
             headers[key] = str(value) if value is not None else ""
 
-    # The local server expects JSON; requests will set these, but make sure we
-    # do not keep stale values from the smee event.
-    headers.pop("host", None)
-    headers.pop("content-length", None)
-    headers.pop("content-type", None)
+    # The local server expects JSON; requests will set these. Drop any stale
+    # hop-by-hop / content headers from the smee event, case-insensitively —
+    # smee may forward them title-cased ("Host" / "Content-Length" / "Content-Type").
+    _HOP_BY_HOP = {"host", "content-length", "content-type"}
+    headers = {k: v for k, v in headers.items() if k.lower() not in _HOP_BY_HOP}
 
     raw_body = event.get("rawBody")
     return body, headers, raw_body
@@ -80,43 +80,45 @@ def run_smee_client(smee_url: str, target_url: str) -> None:
     delay = _INITIAL_BACKOFF
     while True:
         try:
-            response = requests.get(
+            # Use the response as a context manager so the underlying streaming
+            # connection is closed on reconnect/failure (avoids socket leaks).
+            with requests.get(
                 smee_url,
                 stream=True,
                 headers={"Accept": "text/event-stream"},
                 timeout=(10, 60),
-            )
-            response.raise_for_status()
-            # Successful connection: reset backoff.
-            delay = _INITIAL_BACKOFF
-            for raw_line in response.iter_lines():
-                if not raw_line:
-                    continue
-                line = raw_line.decode("utf-8")
-                event = parse_smee_event(line)
-                if event is None:
-                    continue
-                body, headers, raw_body = extract_smee_payload(event)
-                try:
-                    if isinstance(raw_body, str):
-                        # Forward the original signed bytes so that HMAC
-                        # verification on the local server stays valid.
-                        forward_headers = headers.copy()
-                        forward_headers["Content-Type"] = "application/json"
-                        requests.post(
-                            target_url,
-                            data=raw_body.encode("utf-8"),
-                            headers=forward_headers,
-                            timeout=10,
+            ) as response:
+                response.raise_for_status()
+                # Successful connection: reset backoff.
+                delay = _INITIAL_BACKOFF
+                for raw_line in response.iter_lines():
+                    if not raw_line:
+                        continue
+                    line = raw_line.decode("utf-8")
+                    event = parse_smee_event(line)
+                    if event is None:
+                        continue
+                    body, headers, raw_body = extract_smee_payload(event)
+                    try:
+                        if isinstance(raw_body, str):
+                            # Forward the original signed bytes so that HMAC
+                            # verification on the local server stays valid.
+                            forward_headers = headers.copy()
+                            forward_headers["Content-Type"] = "application/json"
+                            requests.post(
+                                target_url,
+                                data=raw_body.encode("utf-8"),
+                                headers=forward_headers,
+                                timeout=10,
+                            )
+                        else:
+                            requests.post(target_url, json=body, headers=headers, timeout=10)
+                    except requests.RequestException as exc:
+                        print(
+                            f"[smee] failed to forward event to {target_url}: {exc}",
+                            file=sys.stderr,
                         )
-                    else:
-                        requests.post(target_url, json=body, headers=headers, timeout=10)
-                except requests.RequestException as exc:
-                    print(
-                        f"[smee] failed to forward event to {target_url}: {exc}",
-                        file=sys.stderr,
-                    )
-                    continue
+                        continue
         except KeyboardInterrupt:
             break
         except Exception as exc:  # noqa: BLE001 - never let the forwarder thread die

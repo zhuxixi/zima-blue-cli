@@ -74,9 +74,8 @@ class TestKimiAgentConfigLayer:
         )
 
         prompt_file = Path("/tmp/test_prompt.md")
-        work_dir = Path("/tmp/workspace")
 
-        cmd = agent.build_command(prompt_file=prompt_file, work_dir=work_dir)
+        cmd = agent.build_command(prompt_file=prompt_file)
 
         # Verify command structure
         assert cmd[0] == "kimi"
@@ -140,8 +139,7 @@ class TestKimiAgentConfigLayer:
         assert claude_cmd == ["claude", "-p"]
 
         # Verify work-dir is not emitted for Kimi (cwd handled by subprocess)
-        work_dir = Path("/tmp/test")
-        kimi_full = kimi_agent.build_command(work_dir=work_dir)
+        kimi_full = kimi_agent.build_command()
 
         assert "--work-dir" not in kimi_full
 

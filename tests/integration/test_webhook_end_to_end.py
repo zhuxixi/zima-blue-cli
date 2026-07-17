@@ -56,9 +56,12 @@ def test_labeled_event_triggers_both_pjobs(webhook_server, monkeypatch):
     ).encode()
 
     conn = HTTPConnection(host, port)
-    conn.request("POST", "/webhook", body=payload, headers={"Content-Type": "application/json"})
-    response = conn.getresponse()
-    assert response.status == 200
+    try:
+        conn.request("POST", "/webhook", body=payload, headers={"Content-Type": "application/json"})
+        response = conn.getresponse()
+        assert response.status == 200
+    finally:
+        conn.close()
 
     assert len(calls) == 2
     assert calls[0][:5] == [sys.executable, "-m", "zima", "pjob", "run"]

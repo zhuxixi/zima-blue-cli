@@ -35,6 +35,7 @@ class TestTriggerPjobs:
         from zima.webhook import server as wh_server
 
         wh_server._spawned_processes.clear()
+        wh_server._recent_events.clear()
         calls = []
 
         def fake_popen(args, **kwargs):
@@ -60,6 +61,7 @@ class TestTriggerPjobs:
         from zima.webhook import server as wh_server
 
         wh_server._spawned_processes.clear()
+        wh_server._recent_events.clear()
         # Seed an already-finished wrapper handle (would-be zombie).
         finished = _FakeProc(poll_result=0)
         wh_server._spawned_processes.append(finished)
@@ -85,6 +87,7 @@ class TestTriggerPjobs:
         from zima.webhook import server as wh_server
 
         wh_server._spawned_processes.clear()
+        wh_server._recent_events.clear()
 
         def fake_popen(args, **kwargs):
             raise FileNotFoundError("zima not found")
@@ -114,12 +117,14 @@ class TestWebhookRequestHandler:
         thread.start()
         yield httpd.server_address
         httpd.shutdown()
+        httpd.server_close()
 
     def test_valid_labeled_event(self, server, monkeypatch):
         """Valid labeled event returns 200 and triggers PJob."""
         from zima.webhook import server as wh_server
 
         wh_server._spawned_processes.clear()
+        wh_server._recent_events.clear()
         calls = []
 
         def fake_popen(args, **kwargs):
@@ -205,6 +210,7 @@ class TestWebhookRequestHandler:
             assert response.status == 400
         finally:
             httpd.shutdown()
+            httpd.server_close()
 
     def test_payload_too_large_returns_413(self, server):
         """Requests with Content-Length above 1 MB are rejected."""

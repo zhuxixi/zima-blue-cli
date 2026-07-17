@@ -128,6 +128,12 @@ class TestRunSmeeClient:
             def raise_for_status(self):
                 pass
 
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
             def iter_lines(self):
                 return [b"data: " + json.dumps(sse_payload).encode()]
 
@@ -176,6 +182,12 @@ class TestRunSmeeClient:
         class FakeResponse:
             def raise_for_status(self):
                 pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
 
             def iter_lines(self):
                 return [b"data: " + json.dumps(sse_payload).encode()]
@@ -239,6 +251,12 @@ class TestRunSmeeClient:
         class FakeResponse:
             def raise_for_status(self):
                 pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
 
             def iter_lines(self):
                 return []

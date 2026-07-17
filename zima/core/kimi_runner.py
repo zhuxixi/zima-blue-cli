@@ -69,8 +69,9 @@ class KimiRunner:
         workspace_abs.mkdir(parents=True, exist_ok=True)
 
         # Build command using AgentConfig's build_command method
-        # This ensures all parameters (including --model) are properly passed
-        cmd = self.config.build_command(prompt_file=prompt_file, work_dir=workspace_abs)
+        # This ensures all parameters (including --model) are properly passed.
+        # The working directory is applied via subprocess cwd= below, not here.
+        cmd = self.config.build_command(prompt_file=prompt_file)
 
         safe_print(f"{icon('rocket')} Starting cycle {cycle_num}")
         safe_print(f"   Prompt: {prompt_file.name}")

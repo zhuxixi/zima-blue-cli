@@ -2,25 +2,23 @@
 
 ## 安装配置
 
-```bash
-# 确保 ZIMA_HOME 配置目录存在
-mkdir -p ~/.zima/configs/
+从仓库根目录执行（用 `$ZIMA_HOME` 兼容自定义路径，默认 `~/.zima`）：
 
-# 从仓库根目录进入示例目录，并复制配置到 ZIMA_HOME
-#（以下命令使用绝对路径，可直接从任意目录执行）
-cd examples/webhook
-cp -r agents workflows variables envs pjobs ~/.zima/configs/
+```bash
+# 复制示例配置到 ZIMA_HOME（默认 ~/.zima，可用 ZIMA_HOME 环境变量覆盖）
+ZIMA_HOME="${ZIMA_HOME:-$HOME/.zima}"
+mkdir -p "$ZIMA_HOME/configs/"
+cp -r examples/webhook/agents examples/webhook/workflows examples/webhook/variables \
+      examples/webhook/envs examples/webhook/pjobs "$ZIMA_HOME/configs/"
 ```
 
-> 如果 `~/.zima` 不是默认位置，请确保已正确设置 `ZIMA_HOME` 环境变量。
-
 ```bash
-# 启动 webhook server
+# 启动 webhook server。secret 走环境变量，避免出现在 `ps` / /proc 里。
+export ZIMA_WEBHOOK_SECRET=your-webhook-secret
 zima webhook-server \
   --smee-url https://smee.io/YOUR_CHANNEL \
   --pjob claude-cr \
-  --pjob kimi-cr \
-  --secret YOUR_WEBHOOK_SECRET
+  --pjob kimi-cr
 ```
 
 ## 使用说明

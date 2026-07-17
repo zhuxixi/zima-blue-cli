@@ -233,7 +233,7 @@ class TestAgentConfigCommandBuilding(TestIsolator):
         """Test building Kimi command."""
         config = AgentConfig.create("test", "Test", "kimi", parameters={"model": "kimi-custom"})
 
-        cmd = config.build_command(prompt_file="/tmp/prompt.md", work_dir="/tmp/workspace")
+        cmd = config.build_command(prompt_file="/tmp/prompt.md")
 
         assert "kimi" in cmd
         assert "kimi-cli" not in cmd
@@ -248,9 +248,7 @@ class TestAgentConfigCommandBuilding(TestIsolator):
         """Test building Claude command."""
         config = AgentConfig.create("test", "Test", "claude", parameters={"maxTurns": 50})
 
-        cmd = config.build_command(
-            prompt_file=Path("/tmp/prompt.md"), work_dir=Path("/tmp/workspace")
-        )
+        cmd = config.build_command(prompt_file=Path("/tmp/prompt.md"))
 
         assert "claude" in cmd
         assert "-p" in cmd
