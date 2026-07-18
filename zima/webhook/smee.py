@@ -123,8 +123,6 @@ def run_smee_client(smee_url: str, target_url: str) -> None:
                             file=sys.stderr,
                         )
                         continue
-        except KeyboardInterrupt:
-            break
         except Exception as exc:  # noqa: BLE001 - never let the forwarder thread die
             # Any unexpected error (e.g. UnicodeEncodeError on a malformed
             # rawBody, JSON errors) must not kill the forwarding thread; log,

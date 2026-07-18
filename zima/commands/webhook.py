@@ -46,11 +46,14 @@ def _run_smee_forwarder(smee_url: str, target_url: str) -> None:
         try:
             run_smee_client(smee_url, target_url)
         except KeyboardInterrupt:
-            raise
+            # run_smee_client propagates Ctrl+C; stop the forwarder, don't restart.
+            break
         except Exception as exc:  # noqa: BLE001 - restart instead of dying
             print(f"[smee] forwarder crashed ({exc}); restarting", file=sys.stderr)
             time.sleep(1)
             continue
+        # run_smee_client returned (it normally loops forever) -> a future bug;
+        # restart to keep forwarding.
         print("[smee] forwarder returned unexpectedly; restarting", file=sys.stderr)
         time.sleep(1)
 

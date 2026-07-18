@@ -152,10 +152,11 @@ def trigger_pjobs(event: PullRequestLabeledEvent, pjob_codes: list[str]) -> dict
                 f"[webhook] failed to spawn zima for pjob {code}: {exc}",
                 file=sys.stderr,
             )
-    # Mark this event as handled ONLY if at least one PJob spawned OK, so a
-    # transient spawn failure (e.g. zima missing) isn't de-duplicated away —
-    # GitHub's retry can then re-trigger it.
-    if any(v == "ok" for v in statuses.values()):
+    # Mark this event as handled ONLY if every PJob spawned OK. On partial/total
+    # failure, don't mark — GitHub's retry can then re-trigger (accepting a
+    # duplicate run of the PJobs that did spawn, which is safer than dropping a
+    # failed one).
+    if statuses and all(v == "ok" for v in statuses.values()):
         _mark_seen(event)
     return statuses
 
