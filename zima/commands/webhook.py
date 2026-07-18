@@ -37,16 +37,20 @@ def _validate_smee_url(url: str) -> tuple[bool, str]:
 
 
 def _run_smee_forwarder(smee_url: str, target_url: str) -> None:
-    """Run the smee forwarder, restarting it if it ever crashes or returns.
+    """Run the smee forwarder, restarting it on crash or unexpected return.
 
-    run_smee_client normally loops forever; this wrapper ensures a future bug
-    that makes it return/raise doesn't silently kill forwarding.
+    This thread is a daemon, so SIGINT/Ctrl+C is delivered to the main thread
+    (run_server) and process exit reaps this thread; the KeyboardInterrupt and
+    return-restart branches below are defensive — they keep forwarding alive if
+    run_smee_client ever raises/returns unexpectedly (future bug), rather than
+    letting the thread die silently.
     """
     while True:
         try:
             run_smee_client(smee_url, target_url)
         except KeyboardInterrupt:
-            # run_smee_client propagates Ctrl+C; stop the forwarder, don't restart.
+            # Defensive (daemon threads rarely receive SIGINT directly); stop
+            # cleanly rather than restart.
             break
         except Exception as exc:  # noqa: BLE001 - restart instead of dying
             print(f"[smee] forwarder crashed ({exc}); restarting", file=sys.stderr)

@@ -90,6 +90,13 @@ def run_smee_client(smee_url: str, target_url: str) -> None:
                 allow_redirects=False,
             ) as response:
                 response.raise_for_status()
+                # allow_redirects=False: a 3xx isn't an error for raise_for_status,
+                # but it carries no SSE stream -> treat as failure (backoff reconnect)
+                # instead of tight-looping on an empty redirect response.
+                if 300 <= response.status_code < 400:
+                    raise requests.RequestException(
+                        f"unexpected redirect ({response.status_code}) from smee.io"
+                    )
                 # Successful connection: reset backoff.
                 delay = _INITIAL_BACKOFF
                 for raw_line in response.iter_lines():

@@ -81,24 +81,21 @@ def _start_reaper_thread() -> None:
     threading.Thread(target=_loop, daemon=True, name="zima-webhook-reaper").start()
 
 
-def _event_key(event: PullRequestLabeledEvent) -> str:
-    return f"{event.repo}#{event.pr_number}#{event.head_sha}"
+def _dup_key(event: PullRequestLabeledEvent, code: str) -> str:
+    return f"{event.repo}#{event.pr_number}#{event.head_sha}#{code}"
 
 
-def _is_duplicate(event: PullRequestLabeledEvent) -> bool:
-    """Peek whether this event was triggered within the dedup window (does not record)."""
-    key = _event_key(event)
-    now = time.monotonic()
+def _is_duplicate(event: PullRequestLabeledEvent, code: str) -> bool:
+    """Peek whether this (event, pjob) was triggered within the dedup window."""
     with _state_lock:
-        last = _recent_events.get(key)
-        return last is not None and now - last < _DEDUP_WINDOW
+        last = _recent_events.get(_dup_key(event, code))
+        return last is not None and time.monotonic() - last < _DEDUP_WINDOW
 
 
-def _mark_seen(event: PullRequestLabeledEvent) -> None:
-    """Record that this event has been handled (for future de-duplication)."""
-    key = _event_key(event)
+def _mark_seen(event: PullRequestLabeledEvent, code: str) -> None:
+    """Record that this (event, pjob) has been handled (for future de-duplication)."""
     with _state_lock:
-        _recent_events[key] = time.monotonic()
+        _recent_events[_dup_key(event, code)] = time.monotonic()
 
 
 def trigger_pjobs(event: PullRequestLabeledEvent, pjob_codes: list[str]) -> dict[str, str]:
@@ -111,10 +108,13 @@ def trigger_pjobs(event: PullRequestLabeledEvent, pjob_codes: list[str]) -> dict
     """
     # Opportunistic reap: collect finished wrapper handles before spawning more.
     _reap_children()
-    if _is_duplicate(event):
-        return {code: "duplicate" for code in pjob_codes}
     statuses: dict[str, str] = {}
     for code in pjob_codes:
+        # De-dup per (event, pjob_code): a transient spawn failure leaves the
+        # code unmarked, so a re-delivery / re-label re-runs only that code.
+        if _is_duplicate(event, code):
+            statuses[code] = "duplicate"
+            continue
         args = [
             sys.executable,
             "-m",
@@ -146,18 +146,14 @@ def trigger_pjobs(event: PullRequestLabeledEvent, pjob_codes: list[str]) -> dict
             with _state_lock:
                 _spawned_processes.append(proc)
             statuses[code] = "ok"
+            # Mark only this (event, code) as handled, after a successful spawn.
+            _mark_seen(event, code)
         except (FileNotFoundError, OSError) as exc:
             statuses[code] = f"error: {exc}"
             print(
                 f"[webhook] failed to spawn zima for pjob {code}: {exc}",
                 file=sys.stderr,
             )
-    # Mark this event as handled ONLY if every PJob spawned OK. On partial/total
-    # failure, don't mark — GitHub's retry can then re-trigger (accepting a
-    # duplicate run of the PJobs that did spawn, which is safer than dropping a
-    # failed one).
-    if statuses and all(v == "ok" for v in statuses.values()):
-        _mark_seen(event)
     return statuses
 
 

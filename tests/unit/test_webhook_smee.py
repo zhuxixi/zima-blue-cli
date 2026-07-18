@@ -125,6 +125,8 @@ class TestRunSmeeClient:
         posts = []
 
         class FakeResponse:
+            status_code = 200
+
             def raise_for_status(self):
                 pass
 
@@ -180,6 +182,8 @@ class TestRunSmeeClient:
         posts = []
 
         class FakeResponse:
+            status_code = 200
+
             def raise_for_status(self):
                 pass
 
@@ -249,6 +253,8 @@ class TestRunSmeeClient:
         get_calls = []
 
         class FakeResponse:
+            status_code = 200
+
             def raise_for_status(self):
                 pass
 
