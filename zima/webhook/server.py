@@ -86,15 +86,19 @@ def _event_key(event: PullRequestLabeledEvent) -> str:
 
 
 def _is_duplicate(event: PullRequestLabeledEvent) -> bool:
-    """Return True if this event was already triggered within the dedup window."""
+    """Peek whether this event was triggered within the dedup window (does not record)."""
     key = _event_key(event)
     now = time.monotonic()
     with _state_lock:
         last = _recent_events.get(key)
-        if last is not None and now - last < _DEDUP_WINDOW:
-            return True
-        _recent_events[key] = now
-        return False
+        return last is not None and now - last < _DEDUP_WINDOW
+
+
+def _mark_seen(event: PullRequestLabeledEvent) -> None:
+    """Record that this event has been handled (for future de-duplication)."""
+    key = _event_key(event)
+    with _state_lock:
+        _recent_events[key] = time.monotonic()
 
 
 def trigger_pjobs(event: PullRequestLabeledEvent, pjob_codes: list[str]) -> dict[str, str]:
@@ -148,6 +152,11 @@ def trigger_pjobs(event: PullRequestLabeledEvent, pjob_codes: list[str]) -> dict
                 f"[webhook] failed to spawn zima for pjob {code}: {exc}",
                 file=sys.stderr,
             )
+    # Mark this event as handled ONLY if at least one PJob spawned OK, so a
+    # transient spawn failure (e.g. zima missing) isn't de-duplicated away —
+    # GitHub's retry can then re-trigger it.
+    if any(v == "ok" for v in statuses.values()):
+        _mark_seen(event)
     return statuses
 
 

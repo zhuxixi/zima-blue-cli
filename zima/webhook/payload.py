@@ -12,8 +12,9 @@ from typing import Optional
 # via ``--set-var``. Reject anything outside these strict allow-lists so a
 # malformed/forgeable payload cannot inject template or shell metacharacters.
 # ``\Z`` (not ``$``) so a trailing newline can't sneak through the allow-list.
+# SHA-1 (40 hex) today; allow up to 64 hex for GitHub's SHA-256 object IDs.
 _VALID_REPO = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\Z")
-_VALID_SHA = re.compile(r"^[0-9a-f]{7,40}\Z")
+_VALID_SHA = re.compile(r"^[0-9a-f]{7,64}\Z", re.IGNORECASE)
 
 
 @dataclass

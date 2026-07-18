@@ -10,7 +10,7 @@ from typing import Any, Optional
 import requests
 
 # Keys that smee.io mixes into the event object but are not original HTTP headers.
-_SMEE_METADATA_KEYS = {"body", "headers", "query", "timestamp"}
+_SMEE_METADATA_KEYS = {"body", "headers", "query", "timestamp", "rawBody"}
 
 _INITIAL_BACKOFF = 1.0
 _MAX_BACKOFF = 60.0

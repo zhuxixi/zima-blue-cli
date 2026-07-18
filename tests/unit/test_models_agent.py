@@ -19,7 +19,7 @@ class TestAgentConfigCreation(TestIsolator):
         assert config.metadata.name == "Kimi Agent"
         assert config.type == "kimi"
         assert "model" not in config.parameters
-        assert "outputFormat" in config.parameters
+        assert config.parameters["outputFormat"] == "text"
         assert "yolo" not in config.parameters
 
     def test_create_claude_agent(self):
@@ -36,7 +36,7 @@ class TestAgentConfigCreation(TestIsolator):
             code="custom",
             name="Custom",
             agent_type="kimi",
-            parameters={"model": "kimi-custom", "yolo": False, "customParam": "value"},
+            parameters={"model": "kimi-custom", "customParam": "value"},
         )
 
         assert config.parameters["model"] == "kimi-custom"
@@ -241,6 +241,8 @@ class TestAgentConfigCommandBuilding(TestIsolator):
         assert "/tmp/prompt.md" in cmd
         assert "--model" in cmd
         assert "kimi-custom" in cmd
+        assert "--output-format" in cmd
+        assert "text" in cmd
         # Kimi Code CLI does not support --work-dir; cwd is handled by subprocess
         assert "--work-dir" not in cmd
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import threading
+import time
 from typing import List, Optional
 from urllib.parse import urlparse
 
@@ -36,11 +37,22 @@ def _validate_smee_url(url: str) -> tuple[bool, str]:
 
 
 def _run_smee_forwarder(smee_url: str, target_url: str) -> None:
-    """Wrap run_smee_client so the forwarder thread never dies silently."""
-    try:
-        run_smee_client(smee_url, target_url)
-    except Exception as exc:  # noqa: BLE001 - never let the forwarder thread die silently
-        print(f"[smee] forwarder thread exited unexpectedly: {exc}", file=sys.stderr)
+    """Run the smee forwarder, restarting it if it ever crashes or returns.
+
+    run_smee_client normally loops forever; this wrapper ensures a future bug
+    that makes it return/raise doesn't silently kill forwarding.
+    """
+    while True:
+        try:
+            run_smee_client(smee_url, target_url)
+        except KeyboardInterrupt:
+            raise
+        except Exception as exc:  # noqa: BLE001 - restart instead of dying
+            print(f"[smee] forwarder crashed ({exc}); restarting", file=sys.stderr)
+            time.sleep(1)
+            continue
+        print("[smee] forwarder returned unexpectedly; restarting", file=sys.stderr)
+        time.sleep(1)
 
 
 @app.callback()
