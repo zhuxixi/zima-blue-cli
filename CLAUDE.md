@@ -187,6 +187,11 @@ PR 评论有三个独立 API，不同 CR 工具用不同 API 提交，获取完�
 - Windows taskkill: 加 `/T` 杀整个进程树（PJob 子进程不会随 daemon 一起死）
 - 新增运行时路径必须用 `get_zima_home()` 而非 `Path.home() / ".zima"`（ZIMA_HOME env var）
 
+### Agent CLIs
+
+- Kimi agent 调用 `kimi`（Kimi Code CLI）二进制（旧名 `kimi-cli` 已废弃，0.5.5 迁移），运行 Kimi PJob 前需确保 `kimi` 在 PATH 中
+- Kimi 旧参数 `maxStepsPerTurn`/`maxRalphIterations`/`maxRetriesPerStep`/`yolo`/`workDir` 已移除；两个 agent 的工作目录统一由 subprocess `cwd` 控制，无 `--work-dir` CLI flag
+
 ## Documentation
 
 - `AGENTS.md` — Agent context file for Kimi Code agents
