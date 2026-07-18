@@ -1,0 +1,10 @@
+apiVersion: zima.io/v1
+kind: Variable
+metadata:
+  code: cr-vars
+  name: CR Variables
+spec:
+  values:
+    repo: ""
+    pr: ""
+    head_sha: ""

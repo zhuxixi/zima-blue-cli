@@ -222,7 +222,7 @@ Then output this JSON:
         workspace.mkdir(exist_ok=True)
 
         # Build command
-        cmd = agent.build_command(prompt_file=prompt_file, work_dir=workspace)
+        cmd = agent.build_command(prompt_file=prompt_file)
 
         print(f"\n🔧 Generated command:\n{' '.join(cmd)}")
 

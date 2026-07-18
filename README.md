@@ -167,6 +167,26 @@ zima pjob history review-task
 uv run python scripts/cleanup.py --auto
 ```
 
+### Webhook-Triggered Automatic Code Review
+
+Zima can listen for GitHub webhooks and automatically trigger PJob-based code reviews when a PR is labeled with `zima:needs-review`.
+
+```bash
+# Prefer the ZIMA_WEBHOOK_SECRET env var so the secret is not visible in `ps`.
+export ZIMA_WEBHOOK_SECRET=your-webhook-secret
+zima webhook-server \
+  --smee-url https://smee.io/YOUR_CHANNEL \
+  --pjob claude-cr \
+  --pjob kimi-cr
+```
+
+> A secret is **required** by default (fail-closed). For local loopback testing
+> only, pass `--allow-no-secret` to run without HMAC verification.
+
+When a pull request is labeled `zima:needs-review`, the configured PJobs (e.g., `claude-cr` and `kimi-cr`) are triggered automatically.
+
+See [`examples/webhook/README.md`](examples/webhook/README.md) for sample configs and GitHub webhook setup.
+
 ---
 
 ## CLI Commands

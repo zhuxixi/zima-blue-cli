@@ -44,10 +44,7 @@ class TestClaudeAgentConfig:
         """Test basic Claude command building."""
         config = AgentConfig.create("test-claude", "Test Claude", "claude")
 
-        cmd = config.build_command(
-            prompt_file=Path("/tmp/prompt.md"),
-            work_dir=Path("/tmp/workspace"),
-        )
+        cmd = config.build_command(prompt_file=Path("/tmp/prompt.md"))
 
         assert "claude" in cmd
         assert "-p" in cmd
@@ -87,10 +84,7 @@ class TestClaudeAgentConfig:
             },
         )
 
-        cmd = config.build_command(
-            prompt_file=Path("/tmp/prompt.md"),
-            work_dir=Path("/tmp/workspace"),
-        )
+        cmd = config.build_command(prompt_file=Path("/tmp/prompt.md"))
 
         assert "--max-turns" in cmd
         assert "30" in cmd

@@ -1,0 +1,22 @@
+apiVersion: zima.io/v1
+kind: PJob
+metadata:
+  code: kimi-cr
+  name: Kimi Code Review
+spec:
+  agent: kimi
+  workflow: cr-kimi
+  variable: cr-vars
+  env: github-env
+  actions:
+    provider: github
+    preExec:
+      - type: scan_pr
+        repo: "{{repo}}"
+        label: "zima:needs-review"
+    postExec:
+      - condition: success
+        type: add_comment
+        repo: "{{repo}}"
+        issue: "{{pr}}"
+        body: "Code review completed by Kimi."

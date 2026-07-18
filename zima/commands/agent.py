@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import List, Optional
 
 import typer
@@ -384,10 +383,10 @@ def test(
             console.print(f"   - {error}")
         raise typer.Exit(1)
 
-    # Build command
+    # Build command (work_dir is applied via subprocess cwd at execution time,
+    # not encoded in the command string; preview just shows the command).
     cmd = config.build_command(
         prompt_file="/path/to/prompt.md" if not workflow else f"<workflow:{workflow}>",
-        work_dir=Path(config.parameters.get("workDir", "./workspace")),
     )
 
     # Display preview

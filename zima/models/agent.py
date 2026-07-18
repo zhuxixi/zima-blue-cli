@@ -171,7 +171,6 @@ class AgentConfig(BaseConfig):
     def build_command(
         self,
         prompt_file: Optional[Path] = None,
-        work_dir: Optional[Path] = None,
         extra_args: Optional[dict] = None,
     ) -> list[str]:
         """
@@ -179,7 +178,6 @@ class AgentConfig(BaseConfig):
 
         Args:
             prompt_file: Path to prompt file
-            work_dir: Working directory
             extra_args: Additional arguments to override parameters
 
         Returns:

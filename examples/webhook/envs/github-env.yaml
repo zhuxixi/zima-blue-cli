@@ -1,0 +1,12 @@
+apiVersion: zima.io/v1
+kind: Env
+metadata:
+  code: github-env
+  name: GitHub Env
+spec:
+  # 此 env 被 claude-cr 与 kimi-cr 两个 PJob 共用（forType 仅作元数据，解析时不强制按 agent 类型过滤）
+  forType: kimi
+  secrets:
+    - name: GITHUB_TOKEN
+      source: cmd
+      command: gh auth token

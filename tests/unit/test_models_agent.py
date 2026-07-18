@@ -19,7 +19,7 @@ class TestAgentConfigCreation(TestIsolator):
         assert config.metadata.name == "Kimi Agent"
         assert config.type == "kimi"
         assert "model" not in config.parameters
-        assert "outputFormat" in config.parameters
+        assert config.parameters["outputFormat"] == "text"
         assert "yolo" not in config.parameters
 
     def test_create_claude_agent(self):
@@ -36,7 +36,7 @@ class TestAgentConfigCreation(TestIsolator):
             code="custom",
             name="Custom",
             agent_type="kimi",
-            parameters={"model": "kimi-custom", "yolo": False, "customParam": "value"},
+            parameters={"model": "kimi-custom", "customParam": "value"},
         )
 
         assert config.parameters["model"] == "kimi-custom"
@@ -233,7 +233,7 @@ class TestAgentConfigCommandBuilding(TestIsolator):
         """Test building Kimi command."""
         config = AgentConfig.create("test", "Test", "kimi", parameters={"model": "kimi-custom"})
 
-        cmd = config.build_command(prompt_file="/tmp/prompt.md", work_dir="/tmp/workspace")
+        cmd = config.build_command(prompt_file="/tmp/prompt.md")
 
         assert "kimi" in cmd
         assert "kimi-cli" not in cmd
@@ -241,6 +241,8 @@ class TestAgentConfigCommandBuilding(TestIsolator):
         assert "/tmp/prompt.md" in cmd
         assert "--model" in cmd
         assert "kimi-custom" in cmd
+        assert "--output-format" in cmd
+        assert "text" in cmd
         # Kimi Code CLI does not support --work-dir; cwd is handled by subprocess
         assert "--work-dir" not in cmd
 
@@ -248,9 +250,7 @@ class TestAgentConfigCommandBuilding(TestIsolator):
         """Test building Claude command."""
         config = AgentConfig.create("test", "Test", "claude", parameters={"maxTurns": 50})
 
-        cmd = config.build_command(
-            prompt_file=Path("/tmp/prompt.md"), work_dir=Path("/tmp/workspace")
-        )
+        cmd = config.build_command(prompt_file=Path("/tmp/prompt.md"))
 
         assert "claude" in cmd
         assert "-p" in cmd

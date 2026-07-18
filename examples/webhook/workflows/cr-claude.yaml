@@ -1,0 +1,9 @@
+apiVersion: zima.io/v1
+kind: Workflow
+metadata:
+  code: cr-claude
+  name: Claude CR Workflow
+spec:
+  template: |
+    Please review PR #{{ pr }} in {{ repo }} at commit {{ head_sha }}.
+    Use the github-code-review-batch skill.

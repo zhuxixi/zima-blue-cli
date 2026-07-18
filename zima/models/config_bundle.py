@@ -112,13 +112,15 @@ class ConfigBundle:
             pmg_data = manager.load_config("pmg", pmg_code)
             bundle.pmg = PMGConfig.from_dict(pmg_data)
 
-        # 6. Resolve work_dir (PJob > Agent params > current dir)
+        # 6. Resolve work_dir (PJob > Agent params > default "./workspace").
+        # Default to "./workspace" (matching AGENT_PARAMETER_TEMPLATES[claude])
+        # so kimi/claude behave consistently when no explicit workDir is set.
         if pjob_work_dir:
             bundle.work_dir = pjob_work_dir
         elif bundle.agent.parameters.get("workDir"):
             bundle.work_dir = bundle.agent.parameters["workDir"]
         else:
-            bundle.work_dir = "."
+            bundle.work_dir = "./workspace"
 
         return bundle
 
@@ -268,36 +270,23 @@ class ConfigBundle:
     def build_command(
         self,
         prompt_file: Path,
-        work_dir: Optional[str] = None,
     ) -> list[str]:
         """
         Build the complete agent command.
 
         Delegates type-specific command building to AgentConfig.build_command()
         which handles each agent's unique CLI flags and prompt passing mechanism.
-        Then appends PMG parameters on top.
+        Then appends PMG parameters on top. (The working directory is applied by
+        the executor via subprocess ``cwd=``, not encoded in the command string.)
 
         Args:
             prompt_file: Path to the rendered prompt file
-            work_dir: Override work directory (optional)
 
         Returns:
             Command as list of arguments (for subprocess)
         """
-        # Resolve work_dir: explicit param > bundle's resolved dir
-        wd = work_dir or self.work_dir
-
-        # Resolve "." to absolute path so agents (e.g. kimi) don't fall back
-        # to their own defaults like "workspace"
-        resolved_wd = None
-        if wd:
-            resolved_wd = Path(wd).resolve() if wd == "." else Path(wd)
-
         # Delegate to AgentConfig for type-specific command building
-        cmd = self.agent.build_command(
-            prompt_file=prompt_file,
-            work_dir=resolved_wd,
-        )
+        cmd = self.agent.build_command(prompt_file=prompt_file)
 
         # Append PMG parameters (generic, agent-agnostic)
         pmg_params = self.build_agent_params()
