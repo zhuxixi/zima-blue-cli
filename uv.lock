@@ -930,7 +930,7 @@ wheels = [
 
 [[package]]
 name = "zima-blue-cli"
-version = "0.5.5"
+version = "0.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "jinja2" },
@@ -954,7 +954,7 @@ requires-dist = [
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "requests", specifier = ">=2.0" },
+    { name = "requests", specifier = ">=2.32.0" },
     { name = "rich", specifier = ">=13.0.0" },
     { name = "typer", specifier = ">=0.12.0" },
 ]

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.6.0] - 2026-07-18
+
+### Features
+- **webhook**: webhook-triggered automatic code review (#135)
+
+### Changes
+- **claude.md**: note Kimi Code CLI migration (0.5.5) (#137)
+
+[0.6.0]: https://github.com/zhuxixi/zima-blue-cli/compare/v0.5.5...v0.6.0
+
 ## [Unreleased]
 
 ### Features
