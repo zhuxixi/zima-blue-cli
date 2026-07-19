@@ -62,7 +62,7 @@ The core design is composability through seven YAML-based configuration types:
 ### Key Layers
 
 - **`zima/cli.py`** — Typer CLI entry point. Registers subcommand groups. Has Windows UTF-8 fix.
-- **`zima/commands/`** — CLI subcommand implementations (agent, workflow, variable, env, pmg, pjob, schedule, daemon).
+- **`zima/commands/`** — CLI subcommand implementations (agent, workflow, variable, env, pmg, pjob, schedule, daemon, webhook-server).
 - **`zima/config/manager.py`** — `ConfigManager`: unified CRUD for all config types. Single class handles create/read/update/delete/list for every entity kind via `KINDS` set.
 - **`zima/models/`** — Dataclasses for each entity. `BaseConfig` provides common YAML load/save. `Metadata` has code/name/description.
 - **`zima/execution/executor.py`** — `PJobExecutor`: resolves ConfigBundle (agent+workflow+variable+env+pmg), renders template, builds command, executes subprocess, runs postExec actions.
@@ -79,6 +79,8 @@ The core design is composability through seven YAML-based configuration types:
 - **`zima/models/actions.py`** — `PostExecAction` / `ActionsConfig`: dataclasses for PJob post-execution automation.
 - **`zima/scenes.py`** — `Scene` dataclass + `load_scenes()`: merges built-in scenes with user-defined `~/.zima/scenes.yaml` for quickstart wizard.
 - **`zima/daemon_runner.py`** — Entry point for detached daemon process (`python -m zima.daemon_runner`).
+- **`zima/__main__.py`** — Enables `python -m zima`; the webhook server triggers PJobs via `[python, -m, zima, pjob run, ...]`, so without this file triggers silently no-op.
+- **`zima/webhook/`** — GitHub webhook receiver (`server.py` HTTP+spawn, `payload.py` PR-labeled parser + HMAC verify, `smee.py` SSE forwarder) behind the `webhook-server` subcommand; auto-triggers CR PJobs on `pull_request labeled zima:needs-review`.
 - **`zima/core/daemon_scheduler.py`** — `DaemonScheduler`: 32-cycle PJob scheduling with stage timers, PJob spawn/kill, JSONL history.
 - **`zima/utils.py`** — Shared utilities (`ensure_dir`, etc.).
 
@@ -191,6 +193,13 @@ PR 评论有三个独立 API，不同 CR 工具用不同 API 提交，获取完�
 
 - Kimi agent 调用 `kimi`（Kimi Code CLI）二进制（旧名 `kimi-cli` 已废弃，0.5.5 迁移），运行 Kimi PJob 前需确保 `kimi` 在 PATH 中
 - Kimi 旧参数 `maxStepsPerTurn`/`maxRalphIterations`/`maxRetriesPerStep`/`yolo`/`workDir` 已移除；两个 agent 的工作目录统一由 subprocess `cwd` 控制，无 `--work-dir` CLI flag
+
+### Webhook Server
+
+- `webhook-server` 默认 fail-closed：必须设 `--secret` 或 `ZIMA_WEBHOOK_SECRET`；`--allow-no-secret` 仅限本地 loopback 调试
+- `--secret` 是 hidden option（避免出现在 `ps` / `/proc/<pid>/cmdline`），优先用 `ZIMA_WEBHOOK_SECRET` env var；`--smee-url` 做 SSRF 防护（仅允许 https smee.io），且**强制**要求 secret（smee channel 公开可读、可伪造）
+- 触发的 PJob 经 `zima pjob run`（background_runner）后台执行，fire-and-forget，用 `zima pjob ps` 查看；agent 并发由 daemon 管，webhook 不做并发上限
+- repo / head_sha 经严格 allow-list 校验后才传入 PJob `--set-var`（防模板注入）；同一 (event, pjob_code) 在 60s 窗口内去重，部分失败时仅该 code 不标记、可被 GitHub 重投重跑
 
 ## Documentation
 
