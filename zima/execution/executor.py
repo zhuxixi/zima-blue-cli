@@ -373,6 +373,7 @@ class PJobExecutor:
             pjob_env=pjob.spec.env,
             pjob_pmg=pjob.spec.pmg,
             pjob_work_dir=pjob.spec.execution.work_dir,
+            config_store=self.config_manager,
         )
 
         # Apply PJob overrides
@@ -391,6 +392,10 @@ class PJobExecutor:
         temp_dir.mkdir(parents=True, exist_ok=True)
         return temp_dir
 
+    # NOTE: parallel implementation in zima/execution/template_renderer.py
+    # (render_workflow_template). That one is strict (raises) for the CLI
+    # ``workflow render`` path; this one is lenient (swallows render errors into
+    # an HTML comment) for the agent run path. Kept separate on purpose.
     def _render_workflow(self, bundle: ConfigBundle, temp_dir: Path) -> Path:
         """Render workflow template to prompt file."""
         template = bundle.workflow.template
@@ -434,6 +439,10 @@ class PJobExecutor:
 
         return env
 
+    # NOTE: parallel implementation in zima/execution/secret_resolver.py
+    # (SecretResolver). That one is strict (raises) for the CLI ``env`` path;
+    # this one is lenient (returns None on failure, shorter timeout) for the
+    # agent run path. Kept separate on purpose.
     def _resolve_secret(self, secret) -> Optional[str]:
         """Resolve a single secret from its source."""
         source = secret.source

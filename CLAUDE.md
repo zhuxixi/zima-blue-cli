@@ -72,8 +72,11 @@ The core design is composability through seven YAML-based configuration types:
 - **`zima/execution/history.py`** — Execution history tracking with PID recording.
 - **`zima/execution/actions_runner.py`** — `ActionsRunner`: executes postExec actions (GitHub label/comment) after agent exit.
 - **`zima/actions/base.py`** — `ActionProvider` ABC: interface providers implement (add_label, remove_label, post_comment, fetch_diff, scan_prs).
-- **`zima/actions/registry.py`** — `ProviderRegistry`: loads built-ins + auto-discovers external providers via `importlib.metadata.entry_points`.
-- **`zima/providers/defaults.py`** — Default provider config.
+- **`zima/actions/registry.py`** — `ProviderRegistry`: discovers providers (built-in github + external) via the `zima.action_providers` entry-point group (`importlib.metadata.entry_points`).
+- **`zima/models/defaults.py`** — Default action-provider name resolution (`ZIMA_GIT_REPO_PROVIDER` env var).
+- **`zima/models/ports.py`** — `ConfigStore` Protocol: the port `zima.models` depends on instead of concrete `ConfigManager` (DIP).
+- **`zima/execution/secret_resolver.py`** — `SecretResolver` + env export; subprocess/IO moved out of `zima.models`.
+- **`zima/execution/template_renderer.py`** — `render_workflow_template` / `validate_template_syntax`; jinja2 moved out of `zima.models`.
 - **`zima/review/parser.py`** — `ReviewParser`: parses `<zima-review>` XML blocks from agent stdout into structured review results.
 - **`zima/providers/github.py`** — `GitHubProvider`: wraps `gh` CLI for label add/remove, comment post, PR diff fetch.
 - **`zima/models/actions.py`** — `PostExecAction` / `ActionsConfig`: dataclasses for PJob post-execution automation.

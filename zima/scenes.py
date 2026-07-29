@@ -9,7 +9,7 @@ from typing import Optional
 import yaml
 
 from zima.models.actions import ActionsConfig, PostExecAction, PreExecAction
-from zima.providers.defaults import get_default_provider_name
+from zima.models.defaults import get_default_provider_name
 from zima.utils import get_zima_home
 
 

@@ -172,7 +172,7 @@ def validate(
 
     data = manager.load_config("schedule", code)
     cfg = ScheduleConfig.from_dict(data)
-    errors = cfg.validate(resolve_refs=strict)
+    errors = cfg.validate(resolve_refs=strict, config_store=manager)
 
     if errors:
         console.print("[red]✗[/red] Validation failed:")

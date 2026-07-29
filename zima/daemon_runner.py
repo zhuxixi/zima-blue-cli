@@ -35,7 +35,7 @@ def main():
     data = manager.load_config("schedule", schedule_code)
     schedule = ScheduleConfig.from_dict(data)
 
-    errors = schedule.validate(resolve_refs=True)
+    errors = schedule.validate(resolve_refs=True, config_store=manager)
     if errors:
         print("Error: Schedule validation failed:")
         for e in errors:

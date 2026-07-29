@@ -118,8 +118,12 @@ def create(
         console.print(f"[red]✗[/red] {e}")
         raise typer.Exit(1)
 
-    # 7. Validate
+    # 7. Validate (config data + Jinja2 template syntax — the syntax check moved
+    #    out of WorkflowConfig.validate when models went jinja-free).
+    from zima.execution.template_renderer import validate_template_syntax
+
     errors = config.validate()
+    errors.extend(validate_template_syntax(config.template, config.format))
     if errors:
         console.print("[red]✗[/red] Validation failed:")
         for error in errors:
@@ -673,7 +677,11 @@ def render(
 
     # Render template
     try:
-        rendered = workflow.render(values)
+        from zima.execution.template_renderer import render_workflow_template
+
+        rendered = render_workflow_template(
+            workflow.template, workflow.format, values, workflow._get_default_values()
+        )
     except Exception as e:
         console.print(f"[red]✗[/red] Render failed: {e}")
         raise typer.Exit(1)

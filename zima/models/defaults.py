@@ -1,4 +1,9 @@
-"""Default provider resolution via environment variable."""
+"""Default provider resolution via environment variable.
+
+Lives in ``zima.models`` (the domain core) because it supplies the default value
+for :class:`~zima.models.actions.ActionsConfig.provider` and is consumed by the
+model layer itself. It is a pure env-var read with no framework or IO coupling.
+"""
 
 from __future__ import annotations
 

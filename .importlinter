@@ -1,0 +1,34 @@
+[importlinter]
+root_package = zima
+include_external_packages = True
+
+[importlinter:contract:layers]
+name = layers
+type = layers
+layers =
+    zima.__main__
+    zima.cli
+    zima.commands
+    zima.daemon_runner | zima.webhook
+    zima.core
+    zima.providers
+    zima.scenes
+    zima.templates
+    zima.execution
+    zima.review
+    zima.config
+    zima.actions
+    zima.models
+    zima.utils
+
+[importlinter:contract:models-no-forbidden]
+name = models-no-forbidden
+type = forbidden
+source_modules =
+    zima.models
+forbidden_modules =
+    subprocess
+    jinja2
+    requests
+    typer
+    rich

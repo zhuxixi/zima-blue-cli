@@ -9,25 +9,17 @@ from zima.actions.exceptions import ProviderNotFoundError
 
 
 class ProviderRegistry:
-    """Manages built-in and externally registered action providers.
+    """Manages action providers discovered via the ``zima.action_providers`` group.
 
-    Loads built-in providers from ``zima.providers.BUILTIN_PROVIDERS``
-    and discovers additional ones via the ``zima.action_providers``
-    entry-point group. External providers override built-ins of the
-    same name.
+    Built-in providers (e.g. ``github``) are declared as entry points in
+    ``pyproject.toml`` and discovered the same way as external ones, so this
+    module never imports the concrete ``zima.providers`` package. A later
+    entry point overrides an earlier one registering the same provider name.
     """
 
     def __init__(self):
         self._providers: dict[str, ActionProvider] = {}
-        self._load_builtin()
         self._discover_entry_points()
-
-    def _load_builtin(self) -> None:
-        """Register all built-in providers."""
-        from zima.providers import BUILTIN_PROVIDERS
-
-        for name, cls in BUILTIN_PROVIDERS.items():
-            self._providers[name] = cls()
 
     def _discover_entry_points(self) -> None:
         """Discover and register providers via ``zima.action_providers`` entry points."""
@@ -47,6 +39,19 @@ class ProviderRegistry:
                 self._providers[instance.name] = instance  # external overrides builtin
             except Exception as e:
                 print(f"Warning: Failed to load provider from {ep.name}: {e}")
+
+        if not self._providers:
+            # Entry-points are the only registration source, so an empty registry
+            # usually means the installed dist-info is stale/missing (e.g. running
+            # from source without `uv sync`). Fail loud rather than silently dropping
+            # the built-in github provider.
+            import sys
+
+            print(
+                "Warning: no action providers discovered via the 'zima.action_providers' "
+                "entry-points; built-in 'github' is missing. Reinstall or run `uv sync`.",
+                file=sys.stderr,
+            )
 
     def get(self, name: str) -> ActionProvider:
         """Get a registered provider by name.

@@ -52,12 +52,16 @@ class TestProviderRegistry:
             assert registry.get("github") == mock_provider
 
     def test_entry_point_load_failure_warns(self):
-        mock_ep = MagicMock()
-        mock_ep.name = "broken"
-        mock_ep.load.side_effect = ImportError("no module")
+        broken_ep = MagicMock()
+        broken_ep.name = "broken"
+        broken_ep.load.side_effect = ImportError("no module")
+
+        github_ep = MagicMock()
+        github_ep.name = "github"
+        github_ep.load.return_value = GitHubProvider
 
         with patch("importlib.metadata.entry_points") as mock_eps:
-            mock_eps.return_value = [mock_ep]
+            mock_eps.return_value = [broken_ep, github_ep]
             registry = ProviderRegistry()
             assert "broken" not in registry.list()
             assert "github" in registry.list()

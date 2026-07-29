@@ -1,12 +1,15 @@
-"""Workflow configuration model with Jinja2 template support."""
+"""Workflow configuration model.
+
+Pure data layer: holds the template string, format, and variable definitions.
+Template *rendering* and *syntax validation* (Jinja2) are IO/framework concerns
+and live in ``zima.execution.template_renderer`` so this module stays jinja-free.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
-
-from jinja2 import BaseLoader, Environment, TemplateError, UndefinedError
 
 from zima.models.base import BaseConfig, Metadata
 from zima.utils import generate_timestamp, validate_code
@@ -205,13 +208,6 @@ class WorkflowConfig(BaseConfig):
                 f"spec.format '{self.format}' is not valid. Valid: {VALID_TEMPLATE_FORMATS}"
             )
 
-        # Validate template syntax (for Jinja2)
-        if self.format == "jinja2" and self.template:
-            try:
-                self._get_jinja_env().parse(self.template)
-            except TemplateError as e:
-                errors.append(f"Template syntax error: {e}")
-
         # Validate variable definitions
         for var in self.variables:
             var_errors = var.validate()
@@ -234,56 +230,6 @@ class WorkflowConfig(BaseConfig):
         content = path.read_text(encoding="utf-8")
         data = yaml.safe_load(content)
         return cls.from_dict(data or {})
-
-    def _get_jinja_env(self) -> Environment:
-        """Get Jinja2 environment with custom settings."""
-        return Environment(
-            loader=BaseLoader(),
-            trim_blocks=True,
-            lstrip_blocks=True,
-            keep_trailing_newline=True,
-        )
-
-    def render(self, variables: dict[str, Any]) -> str:
-        """
-        Render template with provided variables.
-
-        Args:
-            variables: Dictionary of variable values
-
-        Returns:
-            Rendered template string
-
-        Raises:
-            ValueError: If template format is not supported
-            TemplateError: If template rendering fails
-        """
-        if self.format == "plain":
-            return self.template
-
-        if self.format == "mustache":
-            # Simple mustache support using string.Template as fallback
-            import string
-
-            template = string.Template(self.template)
-            return template.safe_substitute(variables)
-
-        if self.format == "jinja2":
-            try:
-                env = self._get_jinja_env()
-                template = env.from_string(self.template)
-
-                # Merge with defaults
-                context = self._get_default_values()
-                context.update(variables)
-
-                return template.render(**context)
-            except UndefinedError as e:
-                raise ValueError(f"Undefined variable in template: {e}")
-            except TemplateError as e:
-                raise ValueError(f"Template rendering error: {e}")
-
-        raise ValueError(f"Unsupported template format: {self.format}")
 
     def _get_default_values(self) -> dict[str, Any]:
         """Get default values from variable definitions."""

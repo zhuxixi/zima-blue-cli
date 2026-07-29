@@ -222,14 +222,6 @@ class TestWorkflowConfig(TestIsolator):
             errors = workflow.validate()
             assert any("is not valid" in e for e in errors)
 
-        def test_validate_template_syntax_error(self):
-            """Test invalid Jinja2 template syntax."""
-            workflow = WorkflowConfig.create(
-                code="test", name="Test", template="{% if true %}unclosed"
-            )
-            errors = workflow.validate()
-            assert any("Template syntax error" in e for e in errors)
-
         def test_validate_variable_errors(self):
             """Test variable definition errors included."""
             workflow = WorkflowConfig.create(
@@ -286,95 +278,6 @@ class TestWorkflowConfig(TestIsolator):
             assert len(workflow.variables) == 1
             assert workflow.variables[0].name == "name"
             assert workflow.tags == ["greeting"]
-
-    class TestRender:
-        """Test template rendering."""
-
-        def test_render_simple(self):
-            """Test simple variable substitution."""
-            workflow = WorkflowConfig.create(
-                code="simple", name="Simple", template="Hello {{ name }}!"
-            )
-
-            result = workflow.render({"name": "World"})
-            assert result == "Hello World!"
-
-        def test_render_with_defaults(self):
-            """Test rendering with default values."""
-            workflow = WorkflowConfig.create(
-                code="defaults",
-                name="Defaults",
-                template="Hello {{ name }}!",
-                variables=[{"name": "name", "type": "string", "default": "Anonymous"}],
-            )
-
-            # Without providing value, should use default
-            result = workflow.render({})
-            assert result == "Hello Anonymous!"
-
-            # Providing value should override default
-            result = workflow.render({"name": "Custom"})
-            assert result == "Hello Custom!"
-
-        def test_render_nested_variables(self):
-            """Test rendering with nested variable access."""
-            workflow = WorkflowConfig.create(
-                code="nested", name="Nested", template="{{ task.name }}: {{ task.objective }}"
-            )
-
-            result = workflow.render({"task": {"name": "Review", "objective": "Check code"}})
-            assert result == "Review: Check code"
-
-        def test_render_with_condition(self):
-            """Test rendering with conditionals."""
-            workflow = WorkflowConfig.create(
-                code="condition",
-                name="Condition",
-                template="{% if debug %}DEBUG{% else %}PROD{% endif %}",
-            )
-
-            assert workflow.render({"debug": True}) == "DEBUG"
-            assert workflow.render({"debug": False}) == "PROD"
-
-        def test_render_with_loop(self):
-            """Test rendering with loops."""
-            workflow = WorkflowConfig.create(
-                code="loop", name="Loop", template="{% for item in items %}{{ item }} {% endfor %}"
-            )
-
-            result = workflow.render({"items": ["a", "b", "c"]})
-            assert result == "a b c "
-
-        def test_render_plain_format(self):
-            """Test plain format returns template as-is."""
-            workflow = WorkflowConfig.create(
-                code="plain", name="Plain", template="No {{ substitution }}", format="plain"
-            )
-
-            result = workflow.render({})
-            assert result == "No {{ substitution }}"
-
-        def test_render_undefined_variable_error(self):
-            """Test undefined variable raises error."""
-            workflow = WorkflowConfig.create(
-                code="strict", name="Strict", template="{{ undefined_var }}"
-            )
-
-            # Jinja2 by default treats undefined as empty string
-            # But we might want strict mode in the future
-            result = workflow.render({})
-            assert result == ""
-
-        def test_render_invalid_template(self):
-            """Test rendering invalid template raises error."""
-            workflow = WorkflowConfig.create(
-                code="invalid", name="Invalid", template="{% invalid_tag %}", format="jinja2"
-            )
-
-            with pytest.raises(ValueError) as exc_info:
-                workflow.render({})
-
-            assert "Template rendering error" in str(exc_info.value)
 
     class TestVariableValidation:
         """Test variable value validation."""

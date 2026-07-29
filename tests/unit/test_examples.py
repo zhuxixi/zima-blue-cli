@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 import yaml
 
+from zima.execution.template_renderer import render_workflow_template
 from zima.models.agent import AgentConfig
 from zima.models.env import EnvConfig
 from zima.models.pjob import PJobConfig
@@ -238,13 +239,16 @@ class TestReviewerWorkflow:
         data = yaml.safe_load(wf_yaml)
         wf = WorkflowConfig.from_dict(data)
 
-        rendered = wf.render(
+        rendered = render_workflow_template(
+            wf.template,
+            wf.format,
             {
                 "repo": "owner/repo",
                 "pr_number": "42",
                 "pr_title": "Fix bug",
                 "pr_diff": "+some code",
-            }
+            },
+            wf._get_default_values(),
         )
         assert "owner/repo" in rendered
         assert "zima-review" in rendered
