@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from zima.models.base import BaseConfig, Metadata
+from zima.models.ports import ConfigStore
 from zima.models.serialization import YamlSerializable
 from zima.utils import generate_timestamp, validate_code
 
@@ -80,7 +81,9 @@ class ScheduleConfig(BaseConfig):
             updated_at=now,
         )
 
-    def validate(self, resolve_refs: bool = False) -> list[str]:
+    def validate(
+        self, resolve_refs: bool = False, *, config_store: ConfigStore | None = None
+    ) -> list[str]:
         errors = []
 
         if not self.metadata.code:
@@ -124,9 +127,9 @@ class ScheduleConfig(BaseConfig):
 
         # Optional: validate PJob refs exist
         if resolve_refs:
-            from zima.config.manager import ConfigManager
+            if config_store is None:
+                raise ValueError("config_store is required when resolve_refs=True")
 
-            manager = ConfigManager()
             all_pjobs = set()
             for ct in self.cycle_types:
                 all_pjobs.update(ct.work)
@@ -134,7 +137,7 @@ class ScheduleConfig(BaseConfig):
                 all_pjobs.update(ct.dream)
 
             for pjob in all_pjobs:
-                if not manager.config_exists("pjob", pjob):
+                if not config_store.config_exists("pjob", pjob):
                     errors.append(f"referenced pjob '{pjob}' not found")
 
         return errors

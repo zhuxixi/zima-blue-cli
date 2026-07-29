@@ -9,25 +9,17 @@ from zima.actions.exceptions import ProviderNotFoundError
 
 
 class ProviderRegistry:
-    """Manages built-in and externally registered action providers.
+    """Manages action providers discovered via the ``zima.action_providers`` group.
 
-    Loads built-in providers from ``zima.providers.BUILTIN_PROVIDERS``
-    and discovers additional ones via the ``zima.action_providers``
-    entry-point group. External providers override built-ins of the
-    same name.
+    Built-in providers (e.g. ``github``) are declared as entry points in
+    ``pyproject.toml`` and discovered the same way as external ones, so this
+    module never imports the concrete ``zima.providers`` package. A later
+    entry point overrides an earlier one registering the same provider name.
     """
 
     def __init__(self):
         self._providers: dict[str, ActionProvider] = {}
-        self._load_builtin()
         self._discover_entry_points()
-
-    def _load_builtin(self) -> None:
-        """Register all built-in providers."""
-        from zima.providers import BUILTIN_PROVIDERS
-
-        for name, cls in BUILTIN_PROVIDERS.items():
-            self._providers[name] = cls()
 
     def _discover_entry_points(self) -> None:
         """Discover and register providers via ``zima.action_providers`` entry points."""

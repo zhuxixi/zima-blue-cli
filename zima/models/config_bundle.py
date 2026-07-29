@@ -6,11 +6,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from zima.config.manager import ConfigManager
 from zima.models.agent import AgentConfig
 from zima.models.env import EnvConfig
 from zima.models.pjob import Overrides
 from zima.models.pmg import PMGConfig
+from zima.models.ports import ConfigStore
 from zima.models.variable import VariableConfig
 from zima.models.workflow import WorkflowConfig
 
@@ -54,6 +54,8 @@ class ConfigBundle:
         pjob_pmg: str = "",
         pjob_overrides: Optional[Overrides] = None,
         pjob_work_dir: str = "",
+        *,
+        config_store: ConfigStore,
     ) -> ConfigBundle:
         """
         Resolve all configurations for PJob execution.
@@ -71,6 +73,8 @@ class ConfigBundle:
             pjob_pmg: PMG code from PJob (optional)
             pjob_overrides: Overrides from PJob (optional)
             pjob_work_dir: Work dir from PJob (optional)
+            config_store: ConfigStore used to check/load referenced configs
+                (injected by the caller, e.g. a ConfigManager)
 
         Returns:
             Resolved ConfigBundle
@@ -78,7 +82,7 @@ class ConfigBundle:
         Raises:
             ValueError: If required configs not found
         """
-        manager = ConfigManager()
+        manager = config_store
         bundle = cls()
         bundle.overrides = pjob_overrides or Overrides()
 

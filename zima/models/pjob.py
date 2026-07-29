@@ -7,6 +7,7 @@ from typing import Optional
 
 from zima.models.actions import ActionsConfig
 from zima.models.base import BaseConfig, Metadata
+from zima.models.ports import ConfigStore
 from zima.models.serialization import YamlSerializable
 from zima.utils import generate_timestamp, validate_code
 
@@ -311,7 +312,9 @@ class PJobConfig(BaseConfig):
         )
         return job
 
-    def validate(self, resolve_refs: bool = False) -> list[str]:
+    def validate(
+        self, resolve_refs: bool = False, *, config_store: ConfigStore | None = None
+    ) -> list[str]:
         """
         Validate PJob configuration.
 
@@ -351,19 +354,22 @@ class PJobConfig(BaseConfig):
 
         # Validate referenced configs exist (if requested)
         if resolve_refs:
-            from zima.config.manager import ConfigManager
+            if config_store is None:
+                raise ValueError("config_store is required when resolve_refs=True")
 
-            manager = ConfigManager()
-
-            if self.spec.agent and not manager.config_exists("agent", self.spec.agent):
+            if self.spec.agent and not config_store.config_exists("agent", self.spec.agent):
                 errors.append(f"referenced agent '{self.spec.agent}' not found")
-            if self.spec.workflow and not manager.config_exists("workflow", self.spec.workflow):
+            if self.spec.workflow and not config_store.config_exists(
+                "workflow", self.spec.workflow
+            ):
                 errors.append(f"referenced workflow '{self.spec.workflow}' not found")
-            if self.spec.variable and not manager.config_exists("variable", self.spec.variable):
+            if self.spec.variable and not config_store.config_exists(
+                "variable", self.spec.variable
+            ):
                 errors.append(f"referenced variable '{self.spec.variable}' not found")
-            if self.spec.env and not manager.config_exists("env", self.spec.env):
+            if self.spec.env and not config_store.config_exists("env", self.spec.env):
                 errors.append(f"referenced env '{self.spec.env}' not found")
-            if self.spec.pmg and not manager.config_exists("pmg", self.spec.pmg):
+            if self.spec.pmg and not config_store.config_exists("pmg", self.spec.pmg):
                 errors.append(f"referenced pmg '{self.spec.pmg}' not found")
 
         return errors

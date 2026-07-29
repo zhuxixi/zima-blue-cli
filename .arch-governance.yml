@@ -1,0 +1,64 @@
+# Architecture governance contract for zima-blue-cli
+#
+# The single source of truth for dependency direction in this repo. Enforced in
+# CI by `lint-imports` (.github/workflows/integration-test.yml lint job), which
+# reads the generated `.importlinter`. Edit this file, not `.importlinter`; if
+# `layers` or `forbidden_imports` change, regenerate `.importlinter` via:
+#   python ~/.claude/skills/arch-audit/scripts/gen_importlinter.py \
+#       .arch-governance.yml -o .importlinter --root-package zima
+#
+# Why a fine-grained LINEAR order (not a few coarse layers): import-linter
+# treats packages joined by `|` in one layer as INDEPENDENT and mutually
+# forbidden, so coarse grouping (e.g. cli|commands, models|utils) false-flags
+# legitimate intra-layer imports. Each layer here is ~one package; `|` is used
+# only for genuinely independent pairs (daemon_runner & webhook import nothing
+# from each other). Outer (lower) layers may import inner (higher) layers;
+# inner importing outer is a violation.
+#
+# `forbidden_imports.models` keeps the domain layer framework-free. `yaml`
+# (self-serialization in BaseConfig) and `platform` (PMG platform-conditional
+# params) are intentionally NOT forbidden — deliberate, pervasive choices.
+version: 1
+language: python
+
+# Layers ordered OUTER (details / IO) -> INNER (policy / domain).
+# Outer (lower) may import inner (higher); inner importing outer is a violation.
+layers:
+  - {name: bootstrap,      packages: ["zima.__main__"]}
+  - {name: router,         packages: ["zima.cli"]}
+  - {name: commands,       packages: ["zima.commands"]}
+  - {name: entry_adapters, packages: ["zima.daemon_runner", "zima.webhook"]}
+  - {name: runtime,        packages: ["zima.core"]}
+  - {name: providers,      packages: ["zima.providers"]}
+  - {name: scenes,         packages: ["zima.scenes"]}
+  - {name: templates,      packages: ["zima.templates"]}
+  - {name: execution,      packages: ["zima.execution"]}
+  - {name: review,         packages: ["zima.review"]}
+  - {name: config,         packages: ["zima.config"]}
+  - {name: actions,        packages: ["zima.actions"]}
+  - {name: models,         packages: ["zima.models"]}
+  - {name: utils,          packages: ["zima.utils"]}
+
+# Framework isolation (DIP): the domain model layer must not shell out, render
+# templates, or touch HTTP/CLI frameworks. `yaml` (self-serialization in
+# BaseConfig) and `platform` (PMG platform-conditional params) are intentionally
+# NOT forbidden - they are deliberate, pervasive design choices, flagged in the
+# report narrative as debatable rather than accidental leaks.
+forbidden_imports:
+  models:
+    - subprocess
+    - jinja2
+    - requests
+    - typer
+    - rich
+
+# Screaming-architecture check: domain vocabulary expected at the package level.
+# (zima organizes by technical concern - models/commands/config - so the domain
+# vocab agent/pjob/workflow/schedule currently lives only at module level.)
+expected_domain_keywords:
+  - agent
+  - pjob
+  - workflow
+  - schedule
+  - orchestrat
+  - review

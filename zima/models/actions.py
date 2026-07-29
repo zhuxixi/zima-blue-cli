@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from zima.models.defaults import get_default_provider_name, is_default_provider
 from zima.models.serialization import YamlSerializable, omit_empty
-from zima.providers.defaults import get_default_provider_name, is_default_provider
 
 VALID_ACTION_CONDITIONS = {"success", "failure", "always"}
 VALID_POST_ACTION_TYPES = {"add_label", "add_comment"}

@@ -1,9 +1,13 @@
-"""Environment configuration model with secret management."""
+"""Environment configuration model with secret management.
+
+Pure data layer: ``SecretDef`` / ``EnvConfig`` carry configuration only. Secret
+*resolution* (env/file/cmd/vault) and env *export* (dotenv/shell/json) are IO
+concerns and live in ``zima.execution.secret_resolver`` so this module stays
+free of ``subprocess`` and other framework dependencies.
+"""
 
 from __future__ import annotations
 
-import os
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -98,95 +102,6 @@ class SecretDef:
     def get_masked_value(self) -> str:
         """Get masked representation for display."""
         return f"<secret:{self.source}>"
-
-
-class SecretResolver:
-    """Resolver for secret values from various sources."""
-
-    @staticmethod
-    def resolve(secret: SecretDef) -> str:
-        """
-        Resolve secret value from its source.
-
-        Args:
-            secret: Secret definition
-
-        Returns:
-            Resolved secret value
-
-        Raises:
-            ValueError: If resolution fails
-        """
-        if secret.source == "env":
-            return SecretResolver._resolve_env(secret)
-        elif secret.source == "file":
-            return SecretResolver._resolve_file(secret)
-        elif secret.source == "cmd":
-            return SecretResolver._resolve_cmd(secret)
-        elif secret.source == "vault":
-            return SecretResolver._resolve_vault(secret)
-        else:
-            raise ValueError(f"Unknown secret source: {secret.source}")
-
-    @staticmethod
-    def _resolve_env(secret: SecretDef) -> str:
-        """Resolve from environment variable."""
-        if not secret.key:
-            raise ValueError(f"Secret '{secret.name}': 'key' is required for env source")
-
-        value = os.environ.get(secret.key)
-        if value is None:
-            raise ValueError(f"Secret '{secret.name}': Environment variable '{secret.key}' not set")
-        return value
-
-    @staticmethod
-    def _resolve_file(secret: SecretDef) -> str:
-        """Resolve from file."""
-        if not secret.path:
-            raise ValueError(f"Secret '{secret.name}': 'path' is required for file source")
-
-        file_path = Path(secret.path).expanduser()
-
-        if not file_path.exists():
-            raise ValueError(f"Secret '{secret.name}': File not found: {file_path}")
-
-        try:
-            content = file_path.read_text(encoding="utf-8").strip()
-            return content
-        except Exception as e:
-            raise ValueError(f"Secret '{secret.name}': Failed to read file: {e}")
-
-    @staticmethod
-    def _resolve_cmd(secret: SecretDef) -> str:
-        """Resolve from command output."""
-        if not secret.command:
-            raise ValueError(f"Secret '{secret.name}': 'command' is required for cmd source")
-
-        try:
-            result = subprocess.run(
-                secret.command, shell=True, capture_output=True, text=True, timeout=30
-            )
-
-            if result.returncode != 0:
-                raise ValueError(
-                    f"Secret '{secret.name}': Command failed with exit code {result.returncode}: {result.stderr}"
-                )
-
-            return result.stdout.strip()
-        except subprocess.TimeoutExpired:
-            raise ValueError(f"Secret '{secret.name}': Command timed out after 30s")
-        except Exception as e:
-            raise ValueError(f"Secret '{secret.name}': Failed to execute command: {e}")
-
-    @staticmethod
-    def _resolve_vault(secret: SecretDef) -> str:
-        """Resolve from HashiCorp Vault."""
-        # For now, vault is not fully implemented
-        # This would require hvac library and vault connection
-        raise ValueError(
-            f"Secret '{secret.name}': Vault source not yet implemented. "
-            "Please use env, file, or cmd source."
-        )
 
 
 @dataclass
@@ -444,54 +359,6 @@ class EnvConfig(BaseConfig):
                 return secret
         return None
 
-    # ========================================================================
-    # Resolution and Export
-    # ========================================================================
-
-    def resolve_all(self, include_secrets: bool = True) -> dict[str, str]:
-        """
-        Resolve all environment variables.
-
-        Args:
-            include_secrets: Whether to resolve secret values
-
-        Returns:
-            Dictionary of all environment variables
-        """
-        result = dict(self.variables)
-
-        if include_secrets:
-            for secret in self.secrets:
-                try:
-                    result[secret.name] = SecretResolver.resolve(secret)
-                except ValueError as e:
-                    # If resolution fails, use placeholder
-                    result[secret.name] = f"<error:{str(e)}>"
-        else:
-            # Include masked secrets
-            for secret in self.secrets:
-                result[secret.name] = secret.get_masked_value()
-
-        return result
-
-    def resolve_secret(self, name: str) -> str:
-        """
-        Resolve a single secret value.
-
-        Args:
-            name: Secret name
-
-        Returns:
-            Resolved value
-
-        Raises:
-            ValueError: If secret not found or resolution fails
-        """
-        secret = self.get_secret(name)
-        if not secret:
-            raise ValueError(f"Secret '{name}' not found")
-        return SecretResolver.resolve(secret)
-
     def list_variables(self) -> list[str]:
         """List all plain variable keys."""
         return list(self.variables.keys())
@@ -503,73 +370,3 @@ class EnvConfig(BaseConfig):
     def list_all_keys(self) -> list[str]:
         """List all keys (variables and secrets)."""
         return self.list_variables() + self.list_secrets()
-
-    # ========================================================================
-    # Export Formats
-    # ========================================================================
-
-    def export_dotenv(self, resolve_secrets: bool = False) -> str:
-        """
-        Export as dotenv format.
-
-        Args:
-            resolve_secrets: Whether to resolve secret values
-
-        Returns:
-            Dotenv formatted string
-        """
-        lines = [f"# {self.metadata.name}"]
-        if self.metadata.description:
-            lines.append(f"# {self.metadata.description}")
-        lines.append("")
-
-        env_vars = self.resolve_all(include_secrets=resolve_secrets)
-
-        for key, value in sorted(env_vars.items()):
-            # Quote value if it contains special characters
-            if " " in value or "#" in value or "'" in value or '"' in value:
-                escaped = value.replace('"', '\\"')
-                value = f'"{escaped}"'
-            lines.append(f"{key}={value}")
-
-        return "\n".join(lines)
-
-    def export_shell(self, resolve_secrets: bool = False) -> str:
-        """
-        Export as shell script format.
-
-        Args:
-            resolve_secrets: Whether to resolve secret values
-
-        Returns:
-            Shell script formatted string
-        """
-        lines = ["#!/bin/bash", ""]
-        lines.append(f"# {self.metadata.name}")
-        if self.metadata.description:
-            lines.append(f"# {self.metadata.description}")
-        lines.append("")
-
-        env_vars = self.resolve_all(include_secrets=resolve_secrets)
-
-        for key, value in sorted(env_vars.items()):
-            # Escape special characters in value
-            escaped = value.replace('"', '\\"').replace("$", "\\$")
-            lines.append(f'export {key}="{escaped}"')
-
-        return "\n".join(lines)
-
-    def export_json(self, resolve_secrets: bool = False) -> str:
-        """
-        Export as JSON format.
-
-        Args:
-            resolve_secrets: Whether to resolve secret values
-
-        Returns:
-            JSON formatted string
-        """
-        import json
-
-        env_vars = self.resolve_all(include_secrets=resolve_secrets)
-        return json.dumps(env_vars, indent=2, ensure_ascii=False)

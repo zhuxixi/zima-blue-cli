@@ -506,7 +506,7 @@ def get(
     if secret:
         if resolve:
             try:
-                from zima.models.env import SecretResolver
+                from zima.execution.secret_resolver import SecretResolver
 
                 value = SecretResolver.resolve(secret)
                 console.print(value)
@@ -545,12 +545,14 @@ def export(
         raise typer.Exit(1)
 
     # Generate export content
+    from zima.execution.secret_resolver import export_env_dotenv, export_env_json, export_env_shell
+
     if format == "dotenv":
-        content = env_config.export_dotenv(resolve_secrets=resolve_secrets)
+        content = export_env_dotenv(env_config, resolve_secrets=resolve_secrets)
     elif format == "shell":
-        content = env_config.export_shell(resolve_secrets=resolve_secrets)
+        content = export_env_shell(env_config, resolve_secrets=resolve_secrets)
     elif format == "json":
-        content = env_config.export_json(resolve_secrets=resolve_secrets)
+        content = export_env_json(env_config, resolve_secrets=resolve_secrets)
     else:
         console.print(f"[red]✗[/red] Invalid format '{format}'. Valid: dotenv, shell, json")
         raise typer.Exit(1)

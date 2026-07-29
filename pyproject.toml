@@ -31,12 +31,19 @@ dependencies = [
     "requests>=2.32.0",  # >=2.32 avoids CVE-2024-35195 (cert verification bypass)
 ]
 
+# Built-in action providers are discovered via this entry-point group by
+# ProviderRegistry (zima/actions/registry.py), so the actions layer never
+# imports the concrete providers package directly.
+[project.entry-points."zima.action_providers"]
+github = "zima.providers.github:GitHubProvider"
+
 [dependency-groups]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
     "black>=23.0",
     "ruff>=0.1.0",
+    "import-linter>=2.0",
 ]
 
 [project.scripts]

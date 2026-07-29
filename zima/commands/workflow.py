@@ -673,7 +673,11 @@ def render(
 
     # Render template
     try:
-        rendered = workflow.render(values)
+        from zima.execution.template_renderer import render_workflow_template
+
+        rendered = render_workflow_template(
+            workflow.template, workflow.format, values, workflow._get_default_values()
+        )
     except Exception as e:
         console.print(f"[red]✗[/red] Render failed: {e}")
         raise typer.Exit(1)

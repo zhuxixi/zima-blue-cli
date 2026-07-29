@@ -63,3 +63,7 @@ pr_diff.txt
 
 # Test artifacts
 pytest_output.txt
+
+# arch-audit artifacts (generated, not source)
+deps.json
+metrics.json

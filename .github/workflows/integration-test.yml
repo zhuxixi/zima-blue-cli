@@ -7,6 +7,8 @@ on:
       - 'zima/**'
       - 'tests/**'
       - 'pyproject.toml'
+      - '.importlinter'
+      - '.arch-governance.yml'
       - '.github/workflows/integration-test.yml'
   pull_request:
     branches: [main, master]
@@ -14,6 +16,8 @@ on:
       - 'zima/**'
       - 'tests/**'
       - 'pyproject.toml'
+      - '.importlinter'
+      - '.arch-governance.yml'
       - '.github/workflows/integration-test.yml'
   workflow_dispatch:
     inputs:
@@ -51,6 +55,9 @@ jobs:
 
       - name: Run black check
         run: uv run black --check zima/ tests/ --line-length 100
+
+      - name: Run import-linter (architecture contracts)
+        run: uv run lint-imports
 
   # ============ Fast Tests (PR + push) ============
   test-fast:
