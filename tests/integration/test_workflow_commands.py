@@ -75,6 +75,31 @@ class TestWorkflowCreate(TestIsolator):
         assert result.exit_code != 0
         assert "Invalid format" in result.output
 
+    def test_create_invalid_jinja_syntax_fails(self):
+        """Regression: create must reject malformed Jinja2 templates at create time.
+
+        The Jinja2 syntax check moved out of WorkflowConfig.validate() when models
+        went jinja-free; ``workflow create`` re-wires it via validate_template_syntax.
+        """
+        result = runner.invoke(
+            app,
+            [
+                "workflow",
+                "create",
+                "--code",
+                "bad-syntax",
+                "--name",
+                "Bad Syntax",
+                "--template",
+                "{% if true %}unclosed",
+                "--format",
+                "jinja2",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "Template syntax error" in result.output
+
     def test_create_from_existing(self):
         """Test creating workflow from existing."""
         # Create source

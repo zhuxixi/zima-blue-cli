@@ -72,9 +72,12 @@ The core design is composability through seven YAML-based configuration types:
 - **`zima/execution/history.py`** — Execution history tracking with PID recording.
 - **`zima/execution/actions_runner.py`** — `ActionsRunner`: executes preExec actions before agent starts and postExec actions after agent exit. Supports `SkipAction` to short-circuit execution when preExec finds no work.
 - **`zima/actions/base.py`** — `ActionProvider` ABC — interface all providers implement (add_label, remove_label, post_comment, fetch_diff, scan_prs).
-- **`zima/actions/registry.py`** — `ProviderRegistry`: loads built-in + discovers external providers via `importlib.metadata.entry_points`.
+- **`zima/actions/registry.py`** — `ProviderRegistry`: discovers providers (built-in github + external) via the `zima.action_providers` entry-point group.
 - **`zima/actions/exceptions.py`** — `ProviderNotFoundError`, `ProviderError`.
-- **`zima/providers/__init__.py`** — `BUILTIN_PROVIDERS` dict.
+- **`zima/providers/__init__.py`** — provider adapters package (concrete `GitHubProvider` lives in `github.py`); built-ins register via the `zima.action_providers` entry-point in `pyproject.toml`.
+- **`zima/models/defaults.py`** — Default action-provider name resolution (`ZIMA_GIT_REPO_PROVIDER`).
+- **`zima/models/ports.py`** — `ConfigStore` Protocol (DIP port for `zima.models`).
+- **`zima/execution/secret_resolver.py`** / **`zima/execution/template_renderer.py`** — secret resolution + template rendering (IO moved out of `zima.models`).
 - **`zima/providers/github.py`** — `GitHubProvider`: wraps `gh` CLI for label/comment/diff/scan_prs operations.
 - **`zima/models/actions.py`** — `PreExecAction` / `PostExecAction` / `ActionsConfig`: dataclasses for PJob pre-execution and post-execution automation.
 - **`zima/review/parser.py`** — `ReviewParser`: parses `<zima-review>` XML blocks from agent stdout into structured review results.

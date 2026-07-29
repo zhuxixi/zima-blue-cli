@@ -40,6 +40,19 @@ class ProviderRegistry:
             except Exception as e:
                 print(f"Warning: Failed to load provider from {ep.name}: {e}")
 
+        if not self._providers:
+            # Entry-points are the only registration source, so an empty registry
+            # usually means the installed dist-info is stale/missing (e.g. running
+            # from source without `uv sync`). Fail loud rather than silently dropping
+            # the built-in github provider.
+            import sys
+
+            print(
+                "Warning: no action providers discovered via the 'zima.action_providers' "
+                "entry-points; built-in 'github' is missing. Reinstall or run `uv sync`.",
+                file=sys.stderr,
+            )
+
     def get(self, name: str) -> ActionProvider:
         """Get a registered provider by name.
 
