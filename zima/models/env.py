@@ -113,7 +113,7 @@ class EnvConfig(BaseConfig):
     Supports both plain variables and secrets from various sources.
 
     Attributes:
-        for_type: Target agent type (kimi/claude)
+        for_type: Target agent type (kimi/claude/pi)
         variables: Plain environment variables (key-value pairs)
         secrets: Secret definitions (resolved at runtime)
         override_existing: Whether to override existing env vars

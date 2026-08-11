@@ -430,7 +430,7 @@ def types():
     descriptions = {
         "kimi": "Kimi CLI - 月之暗面大模型",
         "claude": "Claude CLI - Anthropic AI",
-        "pi": "pi-coding-agent - pi print mode (ollama/deepSeek etc.)",
+        "pi": "pi-coding-agent - pi print mode (ollama/DeepSeek etc.)",
     }
 
     for agent_type in sorted(VALID_AGENT_TYPES):

@@ -192,6 +192,7 @@ class TestAgentList(TestIsolator):
         # list filter
         result_list = runner.invoke(app, ["agent", "list", "--type", "pi"])
         assert result_list.exit_code == 0
+        assert "p1" in result_list.output
 
 
 class TestAgentShow(TestIsolator):

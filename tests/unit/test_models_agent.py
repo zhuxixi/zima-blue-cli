@@ -423,7 +423,7 @@ class TestValidAgentTypes(TestIsolator):
     """Test valid agent types constant."""
 
     def test_valid_types(self):
-        """Test that only kimi and claude are valid."""
+        """Test that kimi, claude, and pi are valid."""
         assert VALID_AGENT_TYPES == {"kimi", "claude", "pi"}
         assert "openai" not in VALID_AGENT_TYPES
         assert "custom" not in VALID_AGENT_TYPES

@@ -43,7 +43,7 @@ class AgentConfig(BaseConfig):
     """
     Agent configuration model.
 
-    Supports multiple agent types: kimi, claude
+    Supports multiple agent types: kimi, claude, pi
 
     Attributes:
         type: Agent type (kimi/claude)
