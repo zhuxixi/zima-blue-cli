@@ -23,9 +23,19 @@ AGENT_PARAMETER_TEMPLATES = {
         "workDir": "./workspace",
         "addDirs": [],
     },
+    "pi": {
+        "provider": "",
+        "model": "",
+        "thinking": "max",
+        "noSession": True,
+        "outputFormat": "text",
+        "tools": ["read", "bash", "grep", "find", "ls"],
+        "noContextFiles": False,
+        "addDirs": [],
+    },
 }
 
-VALID_AGENT_TYPES = {"kimi", "claude"}
+VALID_AGENT_TYPES = {"kimi", "claude", "pi"}
 
 
 @dataclass
@@ -165,6 +175,7 @@ class AgentConfig(BaseConfig):
         templates = {
             "kimi": ["kimi"],  # Kimi Code CLI
             "claude": ["claude", "-p"],
+            "pi": ["pi", "-p"],  # pi-coding-agent print mode
         }
         return templates.get(self.type, [])
 
@@ -195,14 +206,16 @@ class AgentConfig(BaseConfig):
             cmd = self._build_kimi_command(cmd, params)
         elif self.type == "claude":
             cmd = self._build_claude_command(cmd, params)
+        elif self.type == "pi":
+            cmd = self._build_pi_command(cmd, params)
 
         # Add prompt file - agent-type-specific handling
-        # Claude Code: prompt passed via stdin pipe, not as CLI argument
+        # Claude Code and pi: prompt passed via stdin pipe, not as CLI argument
         # Kimi Code CLI: uses --prompt flag
         if prompt_file:
             if self.type == "kimi":
                 cmd.extend(["--prompt", str(prompt_file)])
-            # Claude: prompt_file is passed via stdin pipe by the executor, not added to cmd
+            # Claude and pi: prompt_file is passed via stdin pipe by executor, not added to cmd
 
         return cmd
 
@@ -274,10 +287,64 @@ class AgentConfig(BaseConfig):
 
         return cmd
 
+    def _build_pi_command(self, cmd: list[str], params: dict) -> list[str]:
+        """Build pi-coding-agent CLI-specific command arguments.
+
+        pi flags (from ``pi --help``):
+          --provider              : Provider name (ollama, google, etc.)
+          --model                : Model pattern or ID
+          --thinking             : off/minimal/low/medium/high/xhigh/max
+          --no-session           : Don't save session (ephemeral)
+          --mode                 : Output mode (text/json/rpc) — NOT --output-format
+          --tools                : Comma-separated tool allowlist
+          --exclude-tools        : Comma-separated tool denylist
+          --no-context-files     : Disable AGENTS.md/CLAUDE.md discovery
+          --system-prompt        : Replace system prompt
+          --append-system-prompt : Append to system prompt
+
+        Note: no --work-dir/--cwd (relies on executor's Popen(cwd=), per PR #71).
+        pi has no --add-dir equivalent; addDirs unsupported for pi.
+        """
+        if params.get("provider"):
+            cmd.extend(["--provider", str(params["provider"])])
+
+        if params.get("model"):
+            cmd.extend(["--model", str(params["model"])])
+
+        if params.get("thinking"):
+            cmd.extend(["--thinking", str(params["thinking"])])
+
+        if params.get("noSession"):
+            cmd.append("--no-session")
+
+        if params.get("outputFormat"):
+            cmd.extend(["--mode", str(params["outputFormat"])])
+
+        if params.get("tools"):
+            tools = params["tools"]
+            if isinstance(tools, list) and tools:
+                cmd.extend(["--tools", ",".join(str(t) for t in tools)])
+
+        if params.get("excludeTools"):
+            tools = params["excludeTools"]
+            if isinstance(tools, list) and tools:
+                cmd.extend(["--exclude-tools", ",".join(str(t) for t in tools)])
+
+        if params.get("noContextFiles"):
+            cmd.append("--no-context-files")
+
+        if params.get("systemPrompt"):
+            cmd.extend(["--system-prompt", str(params["systemPrompt"])])
+
+        if params.get("appendSystemPrompt"):
+            cmd.extend(["--append-system-prompt", str(params["appendSystemPrompt"])])
+
+        return cmd
+
     @property
     def needs_stdin_pipe(self) -> bool:
         """Whether this agent type receives prompt via stdin pipe instead of CLI argument."""
-        return self.type == "claude"
+        return self.type in ("claude", "pi")
 
     def get_default(self, key: str, default: any = None) -> any:
         """

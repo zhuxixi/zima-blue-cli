@@ -30,6 +30,23 @@ class TestAgentConfigCreation(TestIsolator):
         assert "model" not in config.parameters
         assert config.parameters["maxTurns"] == 100
 
+    def test_create_pi_agent(self):
+        """Test creating a pi agent."""
+        config = AgentConfig.create(code="pi-agent", name="Pi Agent", agent_type="pi")
+
+        assert config.type == "pi"
+        assert config.metadata.code == "pi-agent"
+
+    def test_pi_default_parameters(self):
+        """Test pi agent gets default parameters merged (thinking max, noSession, text, tools)."""
+        config = AgentConfig.create("test", "Test", "pi")
+
+        assert config.parameters["thinking"] == "max"
+        assert config.parameters["noSession"] is True
+        assert config.parameters["outputFormat"] == "text"
+        assert config.parameters["tools"] == ["read", "bash", "grep", "find", "ls"]
+        assert config.parameters["noContextFiles"] is False
+
     def test_create_with_custom_params(self):
         """Test creating with custom parameters."""
         config = AgentConfig.create(
@@ -262,6 +279,55 @@ class TestAgentConfigCommandBuilding(TestIsolator):
         assert "--max-turns" in cmd
         assert "50" in cmd
 
+    def test_pi_needs_stdin_pipe(self):
+        """Test pi agent receives prompt via stdin (like claude)."""
+        config = AgentConfig.create("test", "Test", "pi")
+
+        assert config.needs_stdin_pipe is True
+
+    def test_build_pi_command(self):
+        """Test pi command construction with all flags."""
+        config = AgentConfig.create(
+            "test",
+            "Test",
+            "pi",
+            parameters={
+                "provider": "ollama",
+                "model": "deepseek-v4-flash:0731-cloud",
+                "thinking": "max",
+                "noSession": True,
+                "outputFormat": "text",
+                "tools": ["read", "bash", "grep", "find", "ls"],
+            },
+        )
+
+        cmd = config.build_command()
+
+        assert cmd[0] == "pi"
+        assert "-p" in cmd
+        assert "--provider" in cmd and "ollama" in cmd
+        assert "--model" in cmd and "deepseek-v4-flash:0731-cloud" in cmd
+        assert "--thinking" in cmd and "max" in cmd
+        assert "--no-session" in cmd
+        assert "--mode" in cmd and "text" in cmd
+        assert "--tools" in cmd and "read,bash,grep,find,ls" in cmd
+
+    def test_build_pi_command_no_work_dir(self):
+        """Test pi command does NOT pass work-dir/cwd (relies on Popen cwd, per PR #71)."""
+        config = AgentConfig.create("test", "Test", "pi", parameters={"workDir": "/tmp"})
+
+        cmd = config.build_command()
+
+        assert "--work-dir" not in cmd
+        assert "--cwd" not in cmd
+
+    def test_build_pi_command_no_model_by_default(self):
+        """Test pi command omits --model when not set."""
+        config = AgentConfig.create("test", "Test", "pi")
+        cmd = config.build_command()
+
+        assert "--model" not in cmd
+
     def test_build_command_with_add_dirs(self):
         """Test building command with additional directories."""
         config = AgentConfig.create(
@@ -358,7 +424,7 @@ class TestValidAgentTypes(TestIsolator):
 
     def test_valid_types(self):
         """Test that only kimi and claude are valid."""
-        assert VALID_AGENT_TYPES == {"kimi", "claude"}
+        assert VALID_AGENT_TYPES == {"kimi", "claude", "pi"}
         assert "openai" not in VALID_AGENT_TYPES
         assert "custom" not in VALID_AGENT_TYPES
 
