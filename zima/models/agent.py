@@ -46,7 +46,7 @@ class AgentConfig(BaseConfig):
     Supports multiple agent types: kimi, claude, pi
 
     Attributes:
-        type: Agent type (kimi/claude)
+        type: Agent type (kimi/claude/pi)
         parameters: Type-specific parameters
         defaults: Default workflow/variable/env/pmg references
     """
@@ -86,7 +86,7 @@ class AgentConfig(BaseConfig):
         Args:
             code: Unique agent code
             name: Display name
-            agent_type: Agent type (kimi/claude)
+            agent_type: Agent type (kimi/claude/pi)
             description: Optional description
             parameters: Custom parameters (override defaults)
             defaults: Default workflow/variable/env/pmg references
@@ -305,6 +305,16 @@ class AgentConfig(BaseConfig):
         Note: no --work-dir/--cwd (relies on executor's Popen(cwd=), per PR #71).
         pi has no --add-dir equivalent; addDirs unsupported for pi.
         """
+        # pi has no --add-dir flag; warn if addDirs configured (avoid silent drop)
+        if params.get("addDirs"):
+            import warnings
+
+            warnings.warn(
+                "pi agent type does not support addDirs (pi has no --add-dir flag); "
+                "addDirs configuration is ignored.",
+                stacklevel=2,
+            )
+
         if params.get("provider"):
             cmd.extend(["--provider", str(params["provider"])])
 
@@ -324,11 +334,15 @@ class AgentConfig(BaseConfig):
             tools = params["tools"]
             if isinstance(tools, list) and tools:
                 cmd.extend(["--tools", ",".join(str(t) for t in tools)])
+            elif isinstance(tools, str) and tools:
+                cmd.extend(["--tools", tools])
 
         if params.get("excludeTools"):
             tools = params["excludeTools"]
             if isinstance(tools, list) and tools:
                 cmd.extend(["--exclude-tools", ",".join(str(t) for t in tools)])
+            elif isinstance(tools, str) and tools:
+                cmd.extend(["--exclude-tools", tools])
 
         if params.get("noContextFiles"):
             cmd.append("--no-context-files")

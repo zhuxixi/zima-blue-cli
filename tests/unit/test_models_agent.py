@@ -328,6 +328,19 @@ class TestAgentConfigCommandBuilding(TestIsolator):
 
         assert "--model" not in cmd
 
+    def test_build_pi_command_tools_as_string(self):
+        """Test pi --tools accepts a comma-separated string (not silently dropped)."""
+        config = AgentConfig.create("test", "Test", "pi", parameters={"tools": "read,bash,grep"})
+        cmd = config.build_command()
+        assert "--tools" in cmd
+        assert "read,bash,grep" in cmd
+
+    def test_build_pi_command_addDirs_warns(self):
+        """Test pi warns when addDirs configured (unsupported, avoid silent drop)."""
+        config = AgentConfig.create("test", "Test", "pi", parameters={"addDirs": ["./extra"]})
+        with pytest.warns(UserWarning, match="addDirs"):
+            config.build_command()
+
     def test_build_command_with_add_dirs(self):
         """Test building command with additional directories."""
         config = AgentConfig.create(

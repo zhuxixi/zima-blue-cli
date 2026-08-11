@@ -197,7 +197,8 @@ PR 评论有三个独立 API，不同 CR 工具用不同 API 提交，获取完�
 ### Agent CLIs
 
 - Kimi agent 调用 `kimi`（Kimi Code CLI）二进制（旧名 `kimi-cli` 已废弃，0.5.5 迁移），运行 Kimi PJob 前需确保 `kimi` 在 PATH 中
-- Kimi 旧参数 `maxStepsPerTurn`/`maxRalphIterations`/`maxRetriesPerStep`/`yolo`/`workDir` 已移除；两个 agent 的工作目录统一由 subprocess `cwd` 控制，无 `--work-dir` CLI flag
+- pi agent 调用 `pi`（pi-coding-agent）二进制，运行 pi PJob 前需确保 `pi` 在 PATH 中；pi 用 `--mode` 而非 `--output-format` 控制输出格式，`--thinking max` 默认深度思考，prompt 经 stdin pipe 传入（同 claude）
+- Kimi 旧参数 `maxStepsPerTurn`/`maxRalphIterations`/`maxRetriesPerStep`/`yolo`/`workDir` 已移除；三个 agent（kimi/claude/pi）的工作目录统一由 subprocess `cwd` 控制，无 `--work-dir` CLI flag
 
 ### Webhook Server
 

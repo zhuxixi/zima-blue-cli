@@ -164,4 +164,4 @@ zima pjob run <pi-cr-job>
 1. **stdin pipe**（决策 2）：**已实测验证可行**（`echo | pi -p` 成功，exit 0）。唯一技术风险解除。
 2. **pi 工具名**：`read/bash/grep/find/ls` 实现时核对 pi 实际内置工具名。
 3. **thinking 等级**：依赖本机 models.json 配置层配好 thinkingLevelMap（支持 max→max），代码层只管传 `--thinking max`。
-4. **CR 耗时与 timeout**：thinking max 显著增加 CR 耗时（jfox 实测开思考比关思考慢约 10×）。zima pjob 的 `execution.timeout` 默认 600s，thinking max 的 CR 可能超时。配置层需把 pi CR pjob 的 timeout 调大（建议 1800s+）。代码层不涉及 timeout（由 pjob 配置）。
+4. **CR 耗时与 timeout**：thinking max 显著增加 CR 耗时（jfox 实测开思考比关思考慢约 10×）。zima pjob 的 `execution.timeout` 默认 `0`（无 timeout，见 `PJobConfig.timeout: int = 0`），所以 thinking max 的 CR 默认不会被 zima 超时——除非配置层显式设了 timeout。若要限制时长，配置层给 pi CR pjob 设一个宽裕的 timeout（如 1800s+）。代码层不涉及 timeout（由 pjob 配置）。
