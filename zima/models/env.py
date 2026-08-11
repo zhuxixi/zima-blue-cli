@@ -19,7 +19,7 @@ from zima.utils import generate_timestamp, validate_code
 VALID_SECRET_SOURCES = {"env", "file", "cmd", "vault"}
 
 # Valid agent types that can have env configs
-VALID_ENV_FOR_TYPES = {"kimi", "claude"}
+VALID_ENV_FOR_TYPES = {"kimi", "claude", "pi"}
 
 
 @dataclass
