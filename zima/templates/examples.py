@@ -18,6 +18,32 @@ spec:
     env: my-env
 """
 
+PI_AGENT_EXAMPLE = """\
+apiVersion: zima.io/v1
+kind: Agent
+metadata:
+  code: my-pi-agent
+  name: My Pi Agent
+  description: "An example pi-coding-agent for code review"
+spec:
+  type: pi
+  parameters:
+    provider: ollama
+    model: deepseek-v4-flash:0731-cloud
+    thinking: max
+    noSession: true
+    outputFormat: text
+    tools:
+    - read
+    - bash
+    - grep
+    - find
+    - ls
+  defaults:
+    workflow: my-workflow
+    env: my-env
+"""
+
 WORKFLOW_EXAMPLE = """\
 apiVersion: zima.io/v1
 kind: Workflow
@@ -84,7 +110,7 @@ metadata:
   name: My Parameter Group
   description: "Example PMG"
 spec:
-  forTypes: [kimi, claude]
+  forTypes: [kimi, claude, pi]
   parameters:
     - name: verbose
       type: flag
@@ -298,7 +324,7 @@ spec:
 """
 
 EXAMPLES = {
-    "agent": {"my-agent": AGENT_EXAMPLE},
+    "agent": {"my-agent": AGENT_EXAMPLE, "my-pi-agent": PI_AGENT_EXAMPLE},
     "workflow": {"my-workflow": WORKFLOW_EXAMPLE, "reviewer-cr": REVIEWER_WORKFLOW},
     "variable": {"my-variables": VARIABLE_EXAMPLE, "reviewer-vars": REVIEWER_VARIABLES},
     "env": {"my-env": ENV_EXAMPLE},

@@ -233,6 +233,15 @@ class TestPMGConfig(TestIsolator):
             assert len(pmg.extends) == 1
             assert len(pmg.conditions) == 1
 
+        def test_create_pmg_with_pi_for_types(self):
+            """Test pmg config accepts pi in for_types (create + validate)."""
+            pmg = PMGConfig.create(
+                code="test-pmg-pi", name="Test Pi PMG", for_types=["kimi", "claude", "pi"]
+            )
+            assert pmg.for_types == ["kimi", "claude", "pi"]
+            errors = pmg.validate()
+            assert not any("pi" in e and "forType" in e for e in errors)
+
         def test_create_with_string_extends(self):
             """Test creating with string extends."""
             pmg = PMGConfig.create(

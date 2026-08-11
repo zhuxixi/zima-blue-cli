@@ -49,7 +49,7 @@ The core design is composability through seven YAML-based configuration types:
 
 | Entity | Model | Purpose |
 |--------|-------|---------|
-| Agent | `AgentConfig` | AI executor config (kimi/claude), builds CLI commands |
+| Agent | `AgentConfig` | AI executor config (kimi/claude/pi), builds CLI commands |
 | Workflow | `WorkflowConfig` | Jinja2 prompt templates with typed variable definitions |
 | Variable | `VariableConfig` | Key-value data for template rendering |
 | Env | `EnvConfig` | Secrets and env vars (env/file/cmd/vault sources) |
@@ -67,7 +67,7 @@ The core design is composability through seven YAML-based configuration types:
 - **`zima/models/`** — Dataclasses for each entity. `BaseConfig` provides common YAML load/save. `Metadata` has code/name/description.
 - **`zima/execution/executor.py`** — `PJobExecutor`: resolves ConfigBundle (agent+workflow+variable+env+pmg), renders template, builds command, executes subprocess, runs postExec actions.
 - **`zima/models/config_bundle.py`** — `ConfigBundle`: assembled config set ready for execution.
-- **`zima/core/kimi_runner.py`** / **`zima/core/claude_runner.py`** — Agent-specific subprocess runners for Kimi and Claude.
+- **`zima/core/kimi_runner.py`** / **`zima/core/claude_runner.py`** — Agent-specific subprocess runners for Kimi and Claude. (pi type reuses the executor's generic subprocess + stdin-pipe path, no dedicated runner.)
 - **`zima/execution/background_runner.py`** — Background PJob execution in detached process.
 - **`zima/execution/history.py`** — Execution history tracking with PID recording.
 - **`zima/execution/actions_runner.py`** — `ActionsRunner`: executes postExec actions (GitHub label/comment) after agent exit.
@@ -96,7 +96,7 @@ zima pjob run <code>
   → Renders Workflow template with Variables
   → Builds CLI command from Agent parameters
   → Runs preExec actions (e.g., scan_prs); SkipAction → ExecutionResult(status=SKIPPED)
-  → Executes subprocess (kimi/claude)
+  → Executes subprocess (kimi/claude/pi)
   → Runs postExec actions (e.g. GitHub label transition) in finally block
   → Captures output, stores execution history centrally
   → Returns ExecutionResult
@@ -169,6 +169,8 @@ To add a new **Agent type** (e.g., a new AI CLI):
 1. Add to `VALID_AGENT_TYPES` and parameter template in `zima/models/agent.py`
 2. Implement `_build_*_command` method in `AgentConfig`
 
+Note: `pi` type is supported (pi-coding-agent print mode). It uses `--mode` for output format (not `--output-format`), `needs_stdin_pipe=True` (stdin-piped like claude), and relies on `Popen(cwd=)` (no `--work-dir` flag).
+
 To add a new **Configuration Entity**:
 1. Create model in `zima/models/<entity>.py`
 2. Add kind to `ConfigManager.KINDS`
@@ -195,7 +197,8 @@ PR 评论有三个独立 API，不同 CR 工具用不同 API 提交，获取完�
 ### Agent CLIs
 
 - Kimi agent 调用 `kimi`（Kimi Code CLI）二进制（旧名 `kimi-cli` 已废弃，0.5.5 迁移），运行 Kimi PJob 前需确保 `kimi` 在 PATH 中
-- Kimi 旧参数 `maxStepsPerTurn`/`maxRalphIterations`/`maxRetriesPerStep`/`yolo`/`workDir` 已移除；两个 agent 的工作目录统一由 subprocess `cwd` 控制，无 `--work-dir` CLI flag
+- pi agent 调用 `pi`（pi-coding-agent）二进制，运行 pi PJob 前需确保 `pi` 在 PATH 中；pi 用 `--mode` 而非 `--output-format` 控制输出格式，`--thinking max` 默认深度思考，prompt 经 stdin pipe 传入（同 claude）
+- Kimi 旧参数 `maxStepsPerTurn`/`maxRalphIterations`/`maxRetriesPerStep`/`yolo`/`workDir` 已移除；三个 agent（kimi/claude/pi）的工作目录统一由 subprocess `cwd` 控制，无 `--work-dir` CLI flag
 
 ### Webhook Server
 

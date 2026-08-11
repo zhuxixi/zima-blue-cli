@@ -168,6 +168,11 @@ class TestEnvConfig(TestIsolator):
             assert env.secrets[0].name == "SECRET1"
             assert env.override_existing is True
 
+        def test_create_pi_for_type(self):
+            """Test env config accepts pi as for_type."""
+            env = EnvConfig.create(code="test-env-pi", name="Test Pi Env", for_type="pi")
+            assert env.for_type == "pi"
+
         def test_create_invalid_type(self):
             """Test creating with invalid type raises error."""
             with pytest.raises(ValueError) as exc_info:

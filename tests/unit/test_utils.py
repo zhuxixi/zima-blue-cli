@@ -113,6 +113,7 @@ class TestAgentTypeValidation:
         [
             ("kimi", True),
             ("claude", True),
+            ("pi", True),
             ("invalid", False),
             ("KIMI", False),  # case sensitive
             ("", False),
@@ -126,7 +127,7 @@ class TestAgentTypeValidation:
     def test_get_valid_agent_types(self):
         """Test getting valid agent types."""
         types = utils.get_valid_agent_types()
-        assert types == {"kimi", "claude"}
+        assert types == {"kimi", "claude", "pi"}
         # Ensure it's a copy
         types.add("new")
         assert "new" not in utils.get_valid_agent_types()
