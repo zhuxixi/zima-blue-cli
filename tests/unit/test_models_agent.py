@@ -335,6 +335,13 @@ class TestAgentConfigCommandBuilding(TestIsolator):
         assert "--tools" in cmd
         assert "read,bash,grep" in cmd
 
+    def test_build_pi_command_excludeTools_as_string(self):
+        """Test pi --exclude-tools accepts a comma-separated string too."""
+        config = AgentConfig.create("test", "Test", "pi", parameters={"excludeTools": "edit,write"})
+        cmd = config.build_command()
+        assert "--exclude-tools" in cmd
+        assert "edit,write" in cmd
+
     def test_build_pi_command_addDirs_warns(self):
         """Test pi warns when addDirs configured (unsupported, avoid silent drop)."""
         config = AgentConfig.create("test", "Test", "pi", parameters={"addDirs": ["./extra"]})
