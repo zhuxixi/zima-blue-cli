@@ -181,6 +181,18 @@ class TestAgentList(TestIsolator):
         assert "k1" in result.output
         assert "c1" not in result.output
 
+    def test_create_and_list_pi_type(self):
+        """Test creating a pi agent and listing by pi type filter."""
+        result = runner.invoke(
+            app, ["agent", "create", "--name", "Pi", "--code", "p1", "--type", "pi"]
+        )
+        assert result.exit_code == 0
+        assert "Pi" in result.output
+        assert "pi" in result.output
+        # list filter
+        result_list = runner.invoke(app, ["agent", "list", "--type", "pi"])
+        assert result_list.exit_code == 0
+
 
 class TestAgentShow(TestIsolator):
     """Test zima agent show command."""
