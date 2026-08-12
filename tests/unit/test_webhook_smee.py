@@ -169,6 +169,76 @@ class TestRunSmeeClient:
         assert data is None
         assert headers["x-hub-signature-256"] == "sha256=secret"
 
+    def test_forwards_resigned_body_with_secret(self, monkeypatch):
+        """无 rawBody + secret：对 json.dumps(body) 字节重签后 data= 发送。
+
+        Regression for #149: smee 事件无 rawBody 时旧代码用 requests json=
+        重序列化，字节与签名不匹配 -> 本地 server 400。
+        """
+        import hashlib
+        import hmac as hmac_module
+
+        secret = "test-secret"
+        sse_payload = {
+            "body": {"action": "labeled", "label": {"name": "zima:needs-review"}},
+            "x-hub-signature-256": "sha256=stale",
+        }
+
+        posts = []
+        get_calls = []
+
+        class FakeResponse:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def iter_lines(self):
+                return [b"data: " + json.dumps(sse_payload).encode()]
+
+        def fake_get(*args, **kwargs):
+            get_calls.append(None)
+            # After processing the first (and only) event, make the reconnect fail
+            # so the loop exits cleanly.
+            if len(get_calls) > 1:
+                raise requests.RequestException("stop loop")
+            return FakeResponse()
+
+        def fake_post(url, json=None, data=None, headers=None, timeout=None):
+            posts.append((url, json, data, headers, timeout))
+
+        def fake_sleep(seconds):
+            raise RuntimeError("stop loop")
+
+        monkeypatch.setattr("zima.webhook.smee.requests.get", fake_get)
+        monkeypatch.setattr("zima.webhook.smee.requests.post", fake_post)
+        monkeypatch.setattr("zima.webhook.smee.time.sleep", fake_sleep)
+
+        try:
+            run_smee_client("https://smee.io/test", "http://127.0.0.1:8765/webhook", secret=secret)
+        except (RuntimeError, requests.RequestException):
+            pass
+
+        assert len(posts) == 1
+        url, body, data, headers, timeout = posts[0]
+        assert url == "http://127.0.0.1:8765/webhook"
+        assert body is None
+        assert data is not None
+        expected_bytes = json.dumps(sse_payload["body"]).encode("utf-8")
+        expected_sig = (
+            "sha256="
+            + hmac_module.new(secret.encode("utf-8"), expected_bytes, hashlib.sha256).hexdigest()
+        )
+        assert data == expected_bytes
+        assert headers["x-hub-signature-256"] == expected_sig
+        assert headers["Content-Type"] == "application/json"
+
     def test_forwards_raw_body_bytes(self, monkeypatch):
         """When ``rawBody`` is present, forward the signed bytes unchanged."""
         raw = '{"action":"labeled","label":{"name":"zima:needs-review"}}'

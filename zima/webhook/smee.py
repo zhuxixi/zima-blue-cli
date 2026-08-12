@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 import sys
 import time
+from hashlib import sha256
 from typing import Any, Optional
 
 import requests
@@ -75,8 +77,13 @@ def extract_smee_payload(
     return body, headers, raw_body
 
 
-def run_smee_client(smee_url: str, target_url: str) -> None:
-    """Connect to smee.io and forward events to local target URL."""
+def run_smee_client(smee_url: str, target_url: str, secret: Optional[str] = None) -> None:
+    """Connect to smee.io and forward events to local target URL.
+
+    ``secret`` is used to recompute the HMAC signature when a smee.io event
+    lacks the original signed bytes (no rawBody); when None, the event is
+    forwarded as-is (local no-secret debugging).
+    """
     delay = _INITIAL_BACKOFF
     while True:
         try:
@@ -113,14 +120,38 @@ def run_smee_client(smee_url: str, target_url: str) -> None:
                             # verification on the local server stays valid.
                             forward_headers = headers.copy()
                             forward_headers["Content-Type"] = "application/json"
-                            requests.post(
+                            resp = requests.post(
                                 target_url,
                                 data=raw_body.encode("utf-8"),
                                 headers=forward_headers,
                                 timeout=10,
                             )
+                        elif secret:
+                            # smee.io dropped the raw signed bytes (no rawBody):
+                            # resign the exact bytes we are about to send, so the
+                            # signature always matches the payload on the server.
+                            payload_bytes = json.dumps(body).encode("utf-8")
+                            forward_headers = headers.copy()
+                            forward_headers["x-hub-signature-256"] = (
+                                "sha256="
+                                + hmac.new(
+                                    secret.encode("utf-8"), payload_bytes, sha256
+                                ).hexdigest()
+                            )
+                            forward_headers["Content-Type"] = "application/json"
+                            resp = requests.post(
+                                target_url,
+                                data=payload_bytes,
+                                headers=forward_headers,
+                                timeout=10,
+                            )
                         else:
-                            requests.post(target_url, json=body, headers=headers, timeout=10)
+                            resp = requests.post(target_url, json=body, headers=headers, timeout=10)
+                        if not 200 <= resp.status_code < 300:
+                            print(
+                                f"[smee] forward got {resp.status_code}: {resp.text}",
+                                file=sys.stderr,
+                            )
                     except Exception as exc:  # noqa: BLE001 - skip the bad event, keep the stream
                         # Broaden beyond RequestException so a malformed event
                         # (e.g. UnicodeEncodeError on raw_body.encode) skips this
