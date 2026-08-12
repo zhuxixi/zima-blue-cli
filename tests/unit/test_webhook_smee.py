@@ -391,3 +391,61 @@ class TestRunSmeeClient:
 
         # If the ValueError had escaped, sleep would never have been called.
         assert sleeps == [1.0, 2.0, 4.0]
+
+    def test_forward_logs_non_2xx(self, monkeypatch, capsys):
+        """非 2xx 响应记日志到 stderr，不再静默失败（#149 教训）。
+
+        Regression: 旧代码 requests.post 后不检查响应码，400 invalid
+        signature 被静默吞掉 -> 无日志、无 spawn，链路看似正常实为瘫痪。
+        """
+        sse_payload = {
+            "body": {"action": "labeled", "label": {"name": "zima:needs-review"}},
+            "x-hub-signature-256": "sha256=stale",
+        }
+
+        class FakeResponse500:
+            status_code = 500
+            text = "boom"
+
+        get_calls = []
+
+        class FakeResponse:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def iter_lines(self):
+                return [b"data: " + json.dumps(sse_payload).encode()]
+
+        def fake_get(*args, **kwargs):
+            get_calls.append(None)
+            # After processing the first (and only) event, make the reconnect fail
+            # so the loop exits cleanly.
+            if len(get_calls) > 1:
+                raise requests.RequestException("stop loop")
+            return FakeResponse()
+
+        def fake_post(url, json=None, data=None, headers=None, timeout=None):
+            return FakeResponse500()
+
+        def fake_sleep(seconds):
+            raise RuntimeError("stop loop")
+
+        monkeypatch.setattr("zima.webhook.smee.requests.get", fake_get)
+        monkeypatch.setattr("zima.webhook.smee.requests.post", fake_post)
+        monkeypatch.setattr("zima.webhook.smee.time.sleep", fake_sleep)
+
+        try:
+            run_smee_client("https://smee.io/test", "http://127.0.0.1:8765/webhook", secret="s")
+        except (RuntimeError, requests.RequestException):
+            pass
+
+        err = capsys.readouterr().err
+        assert "forward got 500: boom" in err
