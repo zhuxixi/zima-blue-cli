@@ -102,6 +102,17 @@ def parse_pull_request_labeled(payload: dict) -> Optional[PullRequestLabeledEven
     )
 
 
+def is_valid_repo(value: str) -> bool:
+    """Return True if ``value`` is a well-formed ``owner/name`` repo identifier.
+
+    Centralizes the repo allow-list so payload parsing and CLI ``--repo``
+    validation share one rule (and one injection guard): only ``[A-Za-z0-9._-]``
+    around a single ``/``, anchored with ``\\Z`` so a trailing newline can't
+    sneak through.
+    """
+    return isinstance(value, str) and _VALID_REPO.match(value) is not None
+
+
 def should_trigger_review(event: PullRequestLabeledEvent, skip_draft: bool = True) -> bool:
     """Decide whether to trigger review for this event."""
     if event.state != "open":

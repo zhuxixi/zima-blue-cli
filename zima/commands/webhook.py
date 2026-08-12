@@ -12,7 +12,8 @@ import typer
 from rich.console import Console
 
 from zima.utils import validate_code_with_error
-from zima.webhook.server import run_server
+from zima.webhook.payload import is_valid_repo
+from zima.webhook.server import PjobRoute, run_server
 from zima.webhook.smee import run_smee_client
 
 app = typer.Typer(
@@ -66,6 +67,13 @@ def _run_smee_forwarder(smee_url: str, target_url: str) -> None:
 def serve(
     ctx: typer.Context,
     pjob: List[str] = typer.Option([], "--pjob", help="PJob code to trigger (can be repeated)"),
+    repo: List[str] = typer.Option(
+        [],
+        "--repo",
+        help="Repo (owner/name) to bind the preceding --pjob to. Given in order, "
+        "one --repo per --pjob, to route events by repo so one server can serve "
+        "multiple repos. Omit entirely for legacy broadcast mode (trigger on any repo).",
+    ),
     smee_url: Optional[str] = typer.Option(None, "--smee-url", help="smee.io channel URL"),
     port: int = typer.Option(8765, "--port", help="Local HTTP port"),
     secret: Optional[str] = typer.Option(
@@ -122,6 +130,29 @@ def serve(
             console.print(f"[red]✗[/red] Invalid PJob code '{code}': {error}")
             raise typer.Exit(1)
 
+    # Repo routing: --repo is optional and order-paired with --pjob. If any
+    # --repo is given, every --pjob must have exactly one (1:1 by order) and the
+    # server enters routing mode (only fire on a matching repo). If none is
+    # given, the server stays in legacy broadcast mode (fire on any repo).
+    if repo:
+        if len(repo) != len(pjob):
+            console.print(
+                f"[red]✗[/red] --repo count ({len(repo)}) must equal --pjob count "
+                f"({len(pjob)}): they are paired in order. Drop all --repo to keep "
+                "legacy broadcast mode."
+            )
+            raise typer.Exit(1)
+        for value in repo:
+            if not is_valid_repo(value):
+                console.print(
+                    f"[red]✗[/red] Invalid --repo '{value}': expected 'owner/name' "
+                    "(letters, digits, '.', '_', '-' only)."
+                )
+                raise typer.Exit(1)
+        routes = [PjobRoute(code=code, repo=bound) for code, bound in zip(pjob, repo)]
+    else:
+        routes = [PjobRoute(code=code) for code in pjob]
+
     if smee_url:
         ok, serr = _validate_smee_url(smee_url)
         if not ok:
@@ -145,7 +176,7 @@ def serve(
 
     run_server(
         port=port,
-        pjob_codes=list(pjob),
+        routes=routes,
         secret=secret,
         skip_draft=skip_draft,
         on_listening=_on_listening,
