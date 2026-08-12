@@ -1,4 +1,9 @@
-"""smee.io client for receiving GitHub webhooks locally."""
+"""smee.io client for receiving GitHub webhooks locally.
+
+Trust model note: when a ``secret`` is configured and smee.io drops
+``rawBody``, this client re-signs events on the channel (see
+``run_smee_client``) — treat the channel URL like the webhook secret.
+"""
 
 from __future__ import annotations
 
@@ -83,6 +88,12 @@ def run_smee_client(smee_url: str, target_url: str, secret: Optional[str] = None
     ``secret`` is used to recompute the HMAC signature when a smee.io event
     lacks the original signed bytes (no rawBody); when None, the event is
     forwarded as-is (local no-secret debugging).
+
+    Note on trust: when ``secret`` is set and smee.io drops ``rawBody``, this
+    client re-signs any event it receives on the channel with that secret.
+    The smee channel URL must therefore be protected like the webhook secret
+    itself — HMAC here authenticates "forwarded by our local client", not
+    "originated from GitHub".
     """
     delay = _INITIAL_BACKOFF
     while True:

@@ -212,6 +212,11 @@ class TestRunSmeeClient:
 
         def fake_post(url, json=None, data=None, headers=None, timeout=None):
             posts.append((url, json, data, headers, timeout))
+            return FakePostResponse()
+
+        class FakePostResponse:
+            status_code = 200
+            text = "ok"
 
         def fake_sleep(seconds):
             raise RuntimeError("stop loop")
