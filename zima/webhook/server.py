@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable, ClassVar, Optional
 
@@ -36,6 +37,31 @@ _spawned_processes: list[subprocess.Popen] = []
 _recent_events: dict[str, float] = {}
 # Ensures the reaper daemon thread is started only once per process.
 _reaper_started = False
+
+
+@dataclass
+class PjobRoute:
+    """A PJob binding for the webhook server.
+
+    ``repo`` is the ``owner/name`` the PJob is bound to. ``None`` means
+    "trigger on any repo" (broadcast) — the legacy behavior when the server is
+    started without any ``--repo`` options. Case-insensitive comparison is used
+    because GitHub owner/repo names are case-insensitive in practice.
+    """
+
+    code: str
+    repo: Optional[str] = None
+
+
+def _route_matches(route: PjobRoute, event_repo: str) -> bool:
+    """Return True if ``route`` should fire for ``event_repo``.
+
+    Broadcast routes (``repo is None``) always match. Bound routes match
+    case-insensitively against the event's repo full_name.
+    """
+    if route.repo is None:
+        return True
+    return route.repo.lower() == event_repo.lower()
 
 
 def _reap_children() -> None:
@@ -98,18 +124,29 @@ def _mark_seen(event: PullRequestLabeledEvent, code: str) -> None:
         _recent_events[_dup_key(event, code)] = time.monotonic()
 
 
-def trigger_pjobs(event: PullRequestLabeledEvent, pjob_codes: list[str]) -> dict[str, str]:
-    """Trigger configured PJobs for a labeled event.
+def trigger_pjobs(event: PullRequestLabeledEvent, routes: list[PjobRoute]) -> dict[str, str]:
+    """Trigger configured PJobs for a labeled event, routed by repo.
 
-    Returns a mapping from PJob code to status string (``"ok"``, ``"duplicate"``,
-    or an error message). Failures are logged to stderr so they remain
-    observable while the HTTP handler still returns 200 to GitHub to avoid
-    retry storms.
+    Only routes whose ``repo`` matches ``event.repo`` (broadcast routes always
+    match) are considered. Returns a mapping from triggered PJob code to a
+    status string (``"ok"``, ``"duplicate"``, or an error message). Failures are
+    logged to stderr so they remain observable while the HTTP handler still
+    returns 200 to GitHub to avoid retry storms.
+
+    When the server is in routing mode (every route has a ``repo``) and none of
+    them match the event's repo, nothing is triggered and a single notice is
+    logged — this is the "ignore unknown repos" behavior that lets one server
+    instance serve many repos without cross-triggering.
     """
     # Opportunistic reap: collect finished wrapper handles before spawning more.
     _reap_children()
     statuses: dict[str, str] = {}
-    for code in pjob_codes:
+    matched = False
+    for route in routes:
+        if not _route_matches(route, event.repo):
+            continue
+        matched = True
+        code = route.code
         # De-dup per (event, pjob_code): a transient spawn failure leaves the
         # code unmarked, so a re-delivery / re-label re-runs only that code.
         if _is_duplicate(event, code):
@@ -154,13 +191,20 @@ def trigger_pjobs(event: PullRequestLabeledEvent, pjob_codes: list[str]) -> dict
                 f"[webhook] failed to spawn zima for pjob {code}: {exc}",
                 file=sys.stderr,
             )
+    # Routing mode + zero matches: ignore the event but leave a trace so
+    # operators can see why a known repo's event triggered nothing.
+    if routes and not matched:
+        print(
+            f"[webhook] event repo {event.repo} matched no --pjob binding; ignored",
+            file=sys.stderr,
+        )
     return statuses
 
 
 class WebhookRequestHandler(BaseHTTPRequestHandler):
     """Handle GitHub webhook POST requests."""
 
-    pjob_codes: ClassVar[Optional[list[str]]] = None
+    pjob_routes: ClassVar[Optional[list[PjobRoute]]] = None
     secret: ClassVar[Optional[str]] = None
     skip_draft: ClassVar[bool] = True
     on_event: ClassVar[Optional[Callable[[PullRequestLabeledEvent], None]]] = None
@@ -221,9 +265,9 @@ class WebhookRequestHandler(BaseHTTPRequestHandler):
                 return
             if self.on_event:
                 self.on_event(event)
-            codes = self.pjob_codes or []
-            statuses = trigger_pjobs(event, codes)
-            body: dict = {"triggered": list(codes)}
+            routes = self.pjob_routes or []
+            statuses = trigger_pjobs(event, routes)
+            body: dict = {"triggered": list(statuses.keys())}
             if statuses:
                 body["statuses"] = statuses
             self._send_json(200, body)
@@ -233,7 +277,7 @@ class WebhookRequestHandler(BaseHTTPRequestHandler):
 
 
 def make_handler(
-    pjob_codes: list[str],
+    routes: list[PjobRoute],
     secret: Optional[str] = None,
     skip_draft: bool = True,
     on_event: Optional[Callable[[PullRequestLabeledEvent], None]] = None,
@@ -243,7 +287,7 @@ def make_handler(
         "ConfiguredWebhookHandler",
         (WebhookRequestHandler,),
         {
-            "pjob_codes": list(pjob_codes),
+            "pjob_routes": list(routes),
             "secret": secret,
             "skip_draft": skip_draft,
             "on_event": on_event,
@@ -253,7 +297,7 @@ def make_handler(
 
 def run_server(
     port: int,
-    pjob_codes: list[str],
+    routes: list[PjobRoute],
     secret: Optional[str] = None,
     skip_draft: bool = True,
     on_listening: Optional[Callable[[], None]] = None,
@@ -264,7 +308,7 @@ def run_server(
     but before serving begins, so callers can start dependents (e.g. the smee
     forwarder) that must not race the bind.
     """
-    handler = make_handler(pjob_codes=pjob_codes, secret=secret, skip_draft=skip_draft)
+    handler = make_handler(routes=routes, secret=secret, skip_draft=skip_draft)
     _start_reaper_thread()
     # ThreadingHTTPServer so a slow/malformed delivery can't block the single
     # worker and stall the whole pipeline.

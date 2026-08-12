@@ -5,6 +5,7 @@ import hmac
 
 from zima.webhook.payload import (
     PullRequestLabeledEvent,
+    is_valid_repo,
     parse_pull_request_labeled,
     should_trigger_review,
     verify_signature,
@@ -157,3 +158,32 @@ class TestShouldTriggerReview:
             "labeled", "zima:needs-review", "owner/repo", 42, "abc", False, "closed"
         )
         assert should_trigger_review(event) is False
+
+
+class TestIsValidRepo:
+    """Tests for the repo identifier validator (shared by parsing and --repo CLI)."""
+
+    def test_valid_owner_name(self):
+        """Plain owner/name is valid."""
+        assert is_valid_repo("owner/repo") is True
+
+    def test_valid_with_dots_dashes_underscores(self):
+        """Allowable punctuation in owner/name segments is valid."""
+        assert is_valid_repo("owner.name/my_repo-1") is True
+
+    def test_valid_mixed_case(self):
+        """Mixed case (GitHub owner/repo) is valid."""
+        assert is_valid_repo("EllingZheng/zima-blue-cli") is True
+
+    def test_reject_missing_slash(self):
+        """No separator is invalid."""
+        assert is_valid_repo("ownerrepo") is False
+
+    def test_reject_shell_injection(self):
+        """Metacharacters are rejected (injection guard)."""
+        assert is_valid_repo("owner/repo; rm -rf /") is False
+
+    def test_reject_non_string(self):
+        """Non-string input is rejected rather than raising."""
+        assert is_valid_repo(None) is False  # type: ignore[arg-type]
+        assert is_valid_repo(123) is False  # type: ignore[arg-type]

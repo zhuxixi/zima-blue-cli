@@ -20,6 +20,7 @@ class TestWebhookServerCommand:
         assert result.exit_code == 0
         assert "--smee-url" in clean
         assert "--pjob" in clean
+        assert "--repo" in clean
         assert "--port" in clean
         assert "--allow-no-secret" in clean
 
@@ -88,3 +89,79 @@ class TestWebhookServerCommand:
         assert spec is not None, "zima/__main__.py is missing; `python -m zima` would fail"
         module = importlib.import_module("zima.__main__")
         assert module.app is not None
+
+    def test_repo_paired_with_pjob_accepted(self, monkeypatch):
+        """A 1:1 --pjob/--repo pairing reaches run_server with bound routes."""
+        captured: dict = {}
+
+        def fake_run_server(**kwargs):
+            captured.update(kwargs)
+
+        monkeypatch.setattr("zima.commands.webhook.run_server", fake_run_server)
+        result = runner.invoke(
+            app,
+            [
+                "webhook-server",
+                "--allow-no-secret",
+                "--port",
+                "8765",
+                "--pjob",
+                "zima-cr",
+                "--repo",
+                "zhuxixi/zima-blue-cli",
+                "--pjob",
+                "jfox-cr",
+                "--repo",
+                "zhuxixi/jfox",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        routes = captured["routes"]
+        assert [r.code for r in routes] == ["zima-cr", "jfox-cr"]
+        assert [r.repo for r in routes] == ["zhuxixi/zima-blue-cli", "zhuxixi/jfox"]
+
+    def test_broadcast_mode_when_no_repo(self, monkeypatch):
+        """Without --repo, routes carry repo=None (legacy broadcast mode)."""
+        captured: dict = {}
+
+        def fake_run_server(**kwargs):
+            captured.update(kwargs)
+
+        monkeypatch.setattr("zima.commands.webhook.run_server", fake_run_server)
+        result = runner.invoke(
+            app,
+            ["webhook-server", "--allow-no-secret", "--port", "8765", "--pjob", "cr"],
+        )
+        assert result.exit_code == 0, result.output
+        routes = captured["routes"]
+        assert routes == [importlib.import_module("zima.webhook.server").PjobRoute("cr")]
+        assert routes[0].repo is None
+
+    def test_repo_count_mismatch_fails(self):
+        """Unequal --repo / --pjob counts are rejected."""
+        result = runner.invoke(
+            app,
+            [
+                "webhook-server",
+                "--allow-no-secret",
+                "--pjob",
+                "a",
+                "--pjob",
+                "b",
+                "--repo",
+                "owner/repo",
+            ],
+        )
+        clean = strip_ansi(result.output)
+        assert result.exit_code == 1
+        assert "--repo count" in clean
+
+    def test_invalid_repo_value_fails(self):
+        """A malformed --repo value is rejected."""
+        result = runner.invoke(
+            app,
+            ["webhook-server", "--allow-no-secret", "--pjob", "a", "--repo", "bad repo"],
+        )
+        clean = strip_ansi(result.output)
+        assert result.exit_code == 1
+        assert "Invalid --repo" in clean

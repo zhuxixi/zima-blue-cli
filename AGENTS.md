@@ -118,6 +118,7 @@ zima pjob run <code>
 - **`zima webhook-server --pjob <code> [--smee-url <url>] [--secret <secret>]`** runs a local HTTP server on `--port` (default `8765`).
 - When `--smee-url` is provided, a background thread connects to smee.io via SSE and forwards events to `http://127.0.0.1:<port>/webhook`.
 - The server verifies `X-Hub-Signature-256` when `--secret` is set, filters for `zima:needs-review` labels, and spawns `zima pjob run <code> --set-var=repo=... --set-var=pr=... --set-var=head_sha=...` for each configured PJob.
+- **Multi-repo routing** (`--repo`, repeated): bind each `--pjob` to a repo in order — `--pjob A --repo owner1/repo1 --pjob B --repo owner2/repo2`. An event then fires only the PJob whose repo matches (case-insensitive); events for unbound repos are ignored (logged), not broadcast. Omit `--repo` entirely to keep legacy broadcast mode (one PJob set, any repo). One smee channel + one server + one unit can serve many repos this way.
 - Example configs are in `examples/webhook/`, including sample agents, workflows, variables, envs, and PJobs for both Claude and Kimi code review.
 
 ### Data Layout
