@@ -327,6 +327,58 @@ class TestWebhookRequestHandler:
         assert calls[0][5] == "jfox-cr"
         assert "--set-var=repo=zhuxixi/jfox" in calls[0]
 
+    def test_unmatched_repo_event_returns_200_and_triggers_nothing(self, monkeypatch):
+        """Routing mode: an event for an unbound repo returns 200, fires nothing."""
+        from zima.webhook import server as wh_server
+
+        wh_server._spawned_processes.clear()
+        wh_server._recent_events.clear()
+        calls = []
+
+        def fake_popen(args, **kwargs):
+            calls.append(args)
+            return _FakeProc()
+
+        monkeypatch.setattr("zima.webhook.server.subprocess.Popen", fake_popen)
+
+        handler = make_handler(
+            routes=[PjobRoute("zima-cr", "zhuxixi/zima-blue-cli")],
+            secret=None,
+            skip_draft=True,
+        )
+        httpd = HTTPServer(("127.0.0.1", 0), handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+
+        try:
+            payload = json.dumps(
+                {
+                    "action": "labeled",
+                    "label": {"name": "zima:needs-review"},
+                    "pull_request": {
+                        "number": 8,
+                        "state": "open",
+                        "draft": False,
+                        "head": {"sha": "5fd94cc2a5c187d2854fd11b82fe6eac601e2e5a"},
+                        "base": {"repo": {"full_name": "someone/else"}},
+                    },
+                }
+            ).encode()
+            conn = HTTPConnection("127.0.0.1", httpd.server_address[1])
+            conn.request(
+                "POST", "/webhook", body=payload, headers={"Content-Type": "application/json"}
+            )
+            response = conn.getresponse()
+            body = json.loads(response.read().decode("utf-8"))
+            assert response.status == 200
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+        # No PJob spawned; response reports an empty triggered set, not a 5xx.
+        assert calls == []
+        assert body["triggered"] == []
+
     def test_ignores_non_labeled(self, server, monkeypatch):
         """Non-labeled action returns 200 but does not trigger."""
         calls = []
