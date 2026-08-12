@@ -169,7 +169,7 @@ To add a new **Agent type** (e.g., a new AI CLI):
 1. Add to `VALID_AGENT_TYPES` and parameter template in `zima/models/agent.py`
 2. Implement `_build_*_command` method in `AgentConfig`
 
-Note: `pi` type is supported (pi-coding-agent print mode). It uses `--mode` for output format (not `--output-format`), `needs_stdin_pipe=True` (stdin-piped like claude), and relies on `Popen(cwd=)` (no `--work-dir` flag).
+Note: `pi` type is supported (pi-coding-agent print mode). It uses `--mode` for output format (not `--output-format`), `needs_stdin_pipe=True` (stdin-piped like claude), and relies on `Popen(cwd=)` (pi has no `--work-dir`/`--add-dir` flag, so `addDirs` is unsupported and warned+ignored, unlike kimi/claude).
 
 To add a new **Configuration Entity**:
 1. Create model in `zima/models/<entity>.py`
