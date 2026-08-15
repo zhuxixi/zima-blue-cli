@@ -57,6 +57,9 @@ Thumbs.db
 .claude/worktrees/
 .claude/settings.local.json
 
+# Pi worktrees
+.pi/worktrees/
+
 # Misc
 pr_diff.txt
 
