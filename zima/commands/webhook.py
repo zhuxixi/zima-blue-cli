@@ -173,6 +173,10 @@ def serve(
                 daemon=True,
             ).start()
             console.print(f"[green]✓[/green] Connected to smee.io, forwarding to {target_url}")
+            console.print(
+                "[yellow]⚠[/yellow] smee channel is public: events without rawBody are "
+                "re-signed locally - HMAC authenticates the local forwarder, not GitHub"
+            )
         console.print(
             f"[green]✓[/green] Webhook server listening on http://127.0.0.1:{port}/webhook"
         )

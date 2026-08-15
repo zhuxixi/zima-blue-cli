@@ -147,8 +147,19 @@ class TestRunSmeeClient:
                 raise requests.RequestException("stop loop")
             return FakeResponse()
 
+        class FakePostResponse:
+            status_code = 200
+            text = "ok"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
         def fake_post(url, json=None, data=None, headers=None, timeout=None):
             posts.append((url, json, data, headers, timeout))
+            return FakePostResponse()
 
         def fake_sleep(seconds):
             raise RuntimeError("stop loop")
@@ -169,7 +180,7 @@ class TestRunSmeeClient:
         assert data is None
         assert headers["x-hub-signature-256"] == "sha256=secret"
 
-    def test_forwards_resigned_body_with_secret(self, monkeypatch):
+    def test_forwards_resigned_body_with_secret(self, monkeypatch, capsys):
         """无 rawBody + secret：对 json.dumps(body) 字节重签后 data= 发送。
 
         Regression for #149: smee 事件无 rawBody 时旧代码用 requests json=
@@ -218,12 +229,19 @@ class TestRunSmeeClient:
             status_code = 200
             text = "ok"
 
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
         def fake_sleep(seconds):
             raise RuntimeError("stop loop")
 
         monkeypatch.setattr("zima.webhook.smee.requests.get", fake_get)
         monkeypatch.setattr("zima.webhook.smee.requests.post", fake_post)
         monkeypatch.setattr("zima.webhook.smee.time.sleep", fake_sleep)
+        monkeypatch.setattr("zima.webhook.smee._RESIGN_WARNING_LOGGED", False)
 
         try:
             run_smee_client("https://smee.io/test", "http://127.0.0.1:8765/webhook", secret=secret)
@@ -243,6 +261,9 @@ class TestRunSmeeClient:
         assert data == expected_bytes
         assert headers["x-hub-signature-256"] == expected_sig
         assert headers["Content-Type"] == "application/json"
+
+        err = capsys.readouterr().err
+        assert "[smee] warning" in err
 
     def test_forwards_raw_body_bytes(self, monkeypatch):
         """When ``rawBody`` is present, forward the signed bytes unchanged."""
@@ -277,8 +298,19 @@ class TestRunSmeeClient:
                 raise requests.RequestException("stop loop")
             return FakeResponse()
 
+        class FakePostResponse:
+            status_code = 200
+            text = "ok"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
         def fake_post(url, json=None, data=None, headers=None, timeout=None):
             posts.append((url, json, data, headers, timeout))
+            return FakePostResponse()
 
         def fake_sleep(seconds):
             raise RuntimeError("stop loop")
@@ -411,6 +443,12 @@ class TestRunSmeeClient:
         class FakeResponse500:
             status_code = 500
             text = "boom"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
 
         get_calls = []
 
