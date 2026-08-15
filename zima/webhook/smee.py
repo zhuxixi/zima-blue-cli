@@ -13,6 +13,7 @@ from __future__ import annotations
 import hmac
 import json
 import sys
+import threading
 import time
 from hashlib import sha256
 from typing import Any, Optional
@@ -25,6 +26,7 @@ _SMEE_METADATA_KEYS = {"body", "headers", "query", "timestamp", "rawBody"}
 _INITIAL_BACKOFF = 1.0
 _MAX_BACKOFF = 60.0
 _RESIGN_WARNING_LOGGED = False
+_RESIGN_WARNING_LOCK = threading.Lock()
 
 
 def parse_smee_event(line: str) -> Optional[dict]:
@@ -150,15 +152,16 @@ def run_smee_client(smee_url: str, target_url: str, secret: Optional[str] = None
                             # resign the exact bytes we are about to send, so the
                             # signature always matches the payload on the server.
                             payload_bytes = json.dumps(body).encode("utf-8")
-                            global _RESIGN_WARNING_LOGGED
-                            if not _RESIGN_WARNING_LOGGED:
-                                print(
-                                    "[smee] warning: event lacks rawBody - re-signing locally; "
-                                    "the channel is public, so HMAC authenticates the local "
-                                    "forwarder, not GitHub",
-                                    file=sys.stderr,
-                                )
-                                _RESIGN_WARNING_LOGGED = True
+                            with _RESIGN_WARNING_LOCK:
+                                global _RESIGN_WARNING_LOGGED
+                                if not _RESIGN_WARNING_LOGGED:
+                                    print(
+                                        "[smee] warning: event lacks rawBody - re-signing locally; "
+                                        "the channel is public, so HMAC authenticates the local "
+                                        "forwarder, not GitHub",
+                                        file=sys.stderr,
+                                    )
+                                    _RESIGN_WARNING_LOGGED = True
                             forward_headers = headers.copy()
                             forward_headers["x-hub-signature-256"] = (
                                 "sha256="
