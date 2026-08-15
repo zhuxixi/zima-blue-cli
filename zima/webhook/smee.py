@@ -1,10 +1,21 @@
-"""smee.io client for receiving GitHub webhooks locally."""
+"""smee.io client for receiving GitHub webhooks locally.
+
+Trust model note: when a ``secret`` is configured and smee.io drops
+``rawBody``, this client re-signs events on the channel (see
+``run_smee_client``). The smee channel is publicly readable, so anyone
+who knows the channel URL can inject events; the HMAC then only
+authenticates "forwarded by our local client", not "originated from
+GitHub".
+"""
 
 from __future__ import annotations
 
+import hmac
 import json
 import sys
+import threading
 import time
+from hashlib import sha256
 from typing import Any, Optional
 
 import requests
@@ -14,6 +25,8 @@ _SMEE_METADATA_KEYS = {"body", "headers", "query", "timestamp", "rawBody"}
 
 _INITIAL_BACKOFF = 1.0
 _MAX_BACKOFF = 60.0
+_RESIGN_WARNING_LOGGED = False
+_RESIGN_WARNING_LOCK = threading.Lock()
 
 
 def parse_smee_event(line: str) -> Optional[dict]:
@@ -75,8 +88,18 @@ def extract_smee_payload(
     return body, headers, raw_body
 
 
-def run_smee_client(smee_url: str, target_url: str) -> None:
-    """Connect to smee.io and forward events to local target URL."""
+def run_smee_client(smee_url: str, target_url: str, secret: Optional[str] = None) -> None:
+    """Connect to smee.io and forward events to local target URL.
+
+    ``secret`` is used to recompute the HMAC signature when a smee.io event
+    lacks the original signed bytes (no rawBody); when None, the event is
+    forwarded as-is (local no-secret debugging).
+
+    Note on trust: when ``secret`` is set and smee.io drops ``rawBody``, this
+    client re-signs any event it receives on the channel with that secret.
+    The smee channel is publicly readable and cannot be kept secret; HMAC here
+    authenticates "forwarded by our local client", not "originated from GitHub".
+    """
     delay = _INITIAL_BACKOFF
     while True:
         try:
@@ -113,14 +136,60 @@ def run_smee_client(smee_url: str, target_url: str) -> None:
                             # verification on the local server stays valid.
                             forward_headers = headers.copy()
                             forward_headers["Content-Type"] = "application/json"
-                            requests.post(
+                            with requests.post(
                                 target_url,
                                 data=raw_body.encode("utf-8"),
                                 headers=forward_headers,
                                 timeout=10,
+                            ) as resp:
+                                if not 200 <= resp.status_code < 300:
+                                    print(
+                                        f"[smee] forward got {resp.status_code}: {resp.text}",
+                                        file=sys.stderr,
+                                    )
+                        elif secret:
+                            # smee.io dropped the raw signed bytes (no rawBody):
+                            # resign the exact bytes we are about to send, so the
+                            # signature always matches the payload on the server.
+                            payload_bytes = json.dumps(body).encode("utf-8")
+                            with _RESIGN_WARNING_LOCK:
+                                global _RESIGN_WARNING_LOGGED
+                                if not _RESIGN_WARNING_LOGGED:
+                                    print(
+                                        "[smee] warning: event lacks rawBody - re-signing locally; "
+                                        "the channel is public, so HMAC authenticates the local "
+                                        "forwarder, not GitHub",
+                                        file=sys.stderr,
+                                    )
+                                    _RESIGN_WARNING_LOGGED = True
+                            forward_headers = headers.copy()
+                            forward_headers["x-hub-signature-256"] = (
+                                "sha256="
+                                + hmac.new(
+                                    secret.encode("utf-8"), payload_bytes, sha256
+                                ).hexdigest()
                             )
+                            forward_headers["Content-Type"] = "application/json"
+                            with requests.post(
+                                target_url,
+                                data=payload_bytes,
+                                headers=forward_headers,
+                                timeout=10,
+                            ) as resp:
+                                if not 200 <= resp.status_code < 300:
+                                    print(
+                                        f"[smee] forward got {resp.status_code}: {resp.text}",
+                                        file=sys.stderr,
+                                    )
                         else:
-                            requests.post(target_url, json=body, headers=headers, timeout=10)
+                            with requests.post(
+                                target_url, json=body, headers=headers, timeout=10
+                            ) as resp:
+                                if not 200 <= resp.status_code < 300:
+                                    print(
+                                        f"[smee] forward got {resp.status_code}: {resp.text}",
+                                        file=sys.stderr,
+                                    )
                     except Exception as exc:  # noqa: BLE001 - skip the bad event, keep the stream
                         # Broaden beyond RequestException so a malformed event
                         # (e.g. UnicodeEncodeError on raw_body.encode) skips this

@@ -165,3 +165,47 @@ class TestWebhookServerCommand:
         clean = strip_ansi(result.output)
         assert result.exit_code == 1
         assert "Invalid --repo" in clean
+
+    def test_smee_forwarder_thread_receives_secret(self, monkeypatch):
+        """smee forwarder 线程拿到 serve() 的 secret（透传链路完整）。
+
+        Regression for #149: secret 只在 server 验签用，从未传进 smee
+        forwarder -> 无 rawBody 事件无法重签 -> 400。
+        """
+        import zima.commands.webhook as webhook_cmd
+
+        captured: dict = {}
+        thread_spawns = []
+
+        def fake_run_server(**kwargs):
+            captured.update(kwargs)
+
+        class FakeThread:
+            def __init__(self, target, args, daemon=True):
+                thread_spawns.append((target, args))
+
+            def start(self):
+                pass
+
+        monkeypatch.setattr(webhook_cmd, "run_server", fake_run_server)
+        monkeypatch.setattr(webhook_cmd.threading, "Thread", FakeThread)
+
+        result = runner.invoke(
+            app,
+            [
+                "webhook-server",
+                "--smee-url",
+                "https://smee.io/x",
+                "--secret",
+                "s3cret",
+                "--pjob",
+                "cr",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+
+        captured["on_listening"]()
+        assert len(thread_spawns) == 1
+        target, args = thread_spawns[0]
+        assert target is webhook_cmd._run_smee_forwarder
+        assert args == ("https://smee.io/x", "http://127.0.0.1:8765/webhook", "s3cret")

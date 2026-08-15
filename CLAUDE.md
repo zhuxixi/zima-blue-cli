@@ -204,6 +204,7 @@ PR 评论有三个独立 API，不同 CR 工具用不同 API 提交，获取完�
 
 - `webhook-server` 默认 fail-closed：必须设 `--secret` 或 `ZIMA_WEBHOOK_SECRET`；`--allow-no-secret` 仅限本地 loopback 调试
 - `--secret` 是 hidden option（避免出现在 `ps` / `/proc/<pid>/cmdline`），优先用 `ZIMA_WEBHOOK_SECRET` env var；`--smee-url` 做 SSRF 防护（仅允许 https smee.io），且**强制**要求 secret（smee channel 公开可读、可伪造）
+- smee 事件无 rawBody 时转发器会用 secret 对 `json.dumps(body)` 重签再转发（#150）：此时 HMAC 只认证「经本地转发器」而非「GitHub 来源」；smee channel 公开可读，任何知道 channel URL 的人都能注入伪造事件触发 CR PJob（护栏：仅 zima:needs-review 标签事件、repo 白名单、60s 去重、触发自己的 PJob）。要端到端认证 GitHub 来源需用公网直投（GitHub → server，不经 smee）
 - 触发的 PJob 经 `zima pjob run`（background_runner）后台执行，fire-and-forget，用 `zima pjob ps` 查看；agent 并发由 daemon 管，webhook 不做并发上限
 - repo / head_sha 经严格 allow-list 校验后才传入 PJob `--set-var`（防模板注入）；同一 (event, pjob_code) 在 60s 窗口内去重，部分失败时仅该 code 不标记、可被 GitHub 重投重跑
 - 多仓库路由：`--repo`（repeatable）与 `--pjob` 按序 1:1 配对（`--pjob A --repo X --pjob B --repo Y`），事件只触发 `repo` 匹配的 PJob（大小写不敏感），未匹配 repo 的事件忽略且记日志、不广播 → 单实例可服务多仓库（共用一个 smee channel）。完全不传 `--repo` 保留广播模式（向后兼容）；一旦传任何 `--repo`，计数必须等于 `--pjob` 否则报错。路由逻辑在 `server.py::trigger_pjobs` 经 `PjobRoute(code, repo|None)` 实现，`payload.py` 的 `should_trigger_review` 只管事件合法性（不感知 repo 绑定）

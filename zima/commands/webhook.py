@@ -37,7 +37,7 @@ def _validate_smee_url(url: str) -> tuple[bool, str]:
     return True, ""
 
 
-def _run_smee_forwarder(smee_url: str, target_url: str) -> None:
+def _run_smee_forwarder(smee_url: str, target_url: str, secret: Optional[str]) -> None:
     """Run the smee forwarder, restarting it on crash or unexpected return.
 
     This thread is a daemon, so SIGINT/Ctrl+C is delivered to the main thread
@@ -45,10 +45,13 @@ def _run_smee_forwarder(smee_url: str, target_url: str) -> None:
     return-restart branches below are defensive — they keep forwarding alive if
     run_smee_client ever raises/returns unexpectedly (future bug), rather than
     letting the thread die silently.
+
+    ``secret`` is passed through to run_smee_client so smee events missing the
+    original signed bytes (no rawBody) can be re-signed for the local server.
     """
     while True:
         try:
-            run_smee_client(smee_url, target_url)
+            run_smee_client(smee_url, target_url, secret)
         except KeyboardInterrupt:
             # Defensive (daemon threads rarely receive SIGINT directly); stop
             # cleanly rather than restart.
@@ -166,10 +169,14 @@ def serve(
             target_url = f"http://127.0.0.1:{port}/webhook"
             threading.Thread(
                 target=_run_smee_forwarder,
-                args=(smee_url, target_url),
+                args=(smee_url, target_url, secret),
                 daemon=True,
             ).start()
             console.print(f"[green]✓[/green] Connected to smee.io, forwarding to {target_url}")
+            console.print(
+                "[yellow]⚠[/yellow] smee channel is public: events without rawBody are "
+                "re-signed locally - HMAC authenticates the local forwarder, not GitHub"
+            )
         console.print(
             f"[green]✓[/green] Webhook server listening on http://127.0.0.1:{port}/webhook"
         )
