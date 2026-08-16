@@ -22,6 +22,11 @@ from zima.models.pjob import Overrides, PJobConfig
 from zima.review.parser import ReviewParser
 from zima.utils import generate_timestamp, get_zima_home
 
+# Well-formed owner/name (same charset contract as zima.webhook.payload's
+# repo allow-list). Scan-provided repo values must match before they may
+# drive rendering or postExec gh targets (#158).
+_REPO_FORMAT = re.compile(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+")
+
 
 class ExecutionStatus(Enum):
     """Execution status enum."""
@@ -255,31 +260,34 @@ class PJobExecutor:
                             # Third-party providers (entry-point extension) may
                             # return PR dicts with missing/non-numeric numbers;
                             # never let unvalidated scan output flow anywhere:
-                            # drop the pr keys from dynamic_vars so merge-back /
-                            # injection / postExec all keep configured values
+                            # drop every scan-discovered key (pr aliases, repo,
+                            # and the pr_* family — prefix-based so future
+                            # run_pre discoveries are covered too) so merge-back
+                            # / injection / postExec all keep configured values
                             print(
                                 f"Warning: scan returned non-numeric pr_number "
-                                f"(len={len(_scanned_pr)}); dropping scan pr "
-                                f"values (#158 R8/R9)"
+                                f"(len={len(_scanned_pr)}); dropping scan "
+                                f"values (#158 R8/R11)"
                             )
-                            # The whole discovered dict comes from the same
-                            # unvalidated provider response — drop every
-                            # scan-discovered key, not just the pr aliases
+                            # Persist the RAW values for the failure skip-set
+                            # ONLY: failed runs still register (repo, raw_pr)
+                            # so a persistently-broken provider is not retried
+                            # every cycle; nothing else consumes them (#158 R11)
+                            result.scan_pr_result = {
+                                "repo": str(dynamic_vars.get("repo") or ""),
+                                "pr_number": str(dynamic_vars.get("pr_number") or ""),
+                            }
                             dynamic_vars = {
                                 k: v
                                 for k, v in dynamic_vars.items()
-                                if k
-                                not in (
-                                    "pr_number",
-                                    "pr",
-                                    "repo",
-                                    "pr_url",
-                                    "pr_title",
-                                    "pr_diff",
-                                )
+                                if k not in ("pr_number", "pr", "repo") and not k.startswith("pr_")
                             }
                         else:
                             _scanned_repo = str(dynamic_vars.get("repo") or "").strip()
+                            if _scanned_repo and not _REPO_FORMAT.fullmatch(_scanned_repo):
+                                # Same trust boundary as the finally net: a
+                                # malformed repo never enters holders (#158 R11)
+                                _scanned_repo = ""
                             bundle.overrides = copy.copy(bundle.overrides)
                             bundle.overrides.variable_values = dict(
                                 bundle.overrides.variable_values
@@ -360,9 +368,9 @@ class PJobExecutor:
                             env_vars[key] = value
                     # Merge discovered vars into bundle (for Jinja2 rendering)
                     bundle.inject_dynamic_vars(dynamic_vars)
-                    # Persist scan_pr_result for skip logic (repo is useful
-                    # for the finally safety net even when pr_number is
-                    # missing/garbage from a third-party provider, #158 R9)
+                    # Persist scan_pr_result for skip logic (valid scans only;
+                    # invalid scans persisted their raw values in the branch
+                    # above, #158 R10/R11)
                     if _scan_valid and ("pr_number" in dynamic_vars or "repo" in dynamic_vars):
                         # Not persisted for invalid scans: a garbage pr_number
                         # would pollute the (repo, pr_number) failure skip-set
@@ -504,7 +512,7 @@ class PJobExecutor:
                             # Only a well-formed owner/name may drive postExec
                             # substitution — a misbehaving provider cannot
                             # smuggle arbitrary strings into gh targets (#158 R10)
-                            if not re.fullmatch(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+", _scanned_repo):
+                            if not _REPO_FORMAT.fullmatch(_scanned_repo):
                                 _scanned_repo = ""
                             _cur_repo = str(action_env.get("repo") or "").strip()
                             if (
