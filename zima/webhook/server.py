@@ -160,7 +160,7 @@ def trigger_pjobs(event: PullRequestLabeledEvent, routes: list[PjobRoute]) -> di
             "run",
             code,
             f"--set-var=repo={event.repo}",
-            f"--set-var=pr={event.pr_number}",
+            f"--set-var=pr_number={event.pr_number}",
             f"--set-var=head_sha={event.head_sha}",
         ]
         try:

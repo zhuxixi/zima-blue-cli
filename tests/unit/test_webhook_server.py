@@ -52,7 +52,7 @@ class TestTriggerPjobs:
         assert calls[0][:6] == [sys.executable, "-m", "zima", "pjob", "run", "claude-cr"]
         assert calls[1][:6] == [sys.executable, "-m", "zima", "pjob", "run", "kimi-cr"]
         assert "--set-var=repo=owner/repo" in calls[0]
-        assert "--set-var=pr=42" in calls[0]
+        assert "--set-var=pr_number=42" in calls[0]
         assert "--set-var=head_sha=abc" in calls[0]
         # Both wrapper handles are retained so the reaper can poll/reap them.
         assert len(wh_server._spawned_processes) == 2
