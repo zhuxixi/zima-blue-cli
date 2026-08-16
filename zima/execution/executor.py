@@ -247,6 +247,7 @@ class PJobExecutor:
                     # Scan-path execution with a non-empty runtime pr pin is
                     # impossible (the pinned branch short-circuits), so any
                     # differing value here is static/legacy.
+                    _scan_valid = True  # no pr_number -> nothing to validate
                     if "pr_number" in dynamic_vars:
                         _scanned_pr = normalize_pr_number(dynamic_vars["pr_number"])
                         _scan_valid = bool(re.fullmatch(r"[0-9]+", _scanned_pr))
@@ -261,10 +262,21 @@ class PJobExecutor:
                                 f"(len={len(_scanned_pr)}); dropping scan pr "
                                 f"values (#158 R8/R9)"
                             )
+                            # The whole discovered dict comes from the same
+                            # unvalidated provider response — drop every
+                            # scan-discovered key, not just the pr aliases
                             dynamic_vars = {
                                 k: v
                                 for k, v in dynamic_vars.items()
-                                if k not in ("pr_number", "pr")
+                                if k
+                                not in (
+                                    "pr_number",
+                                    "pr",
+                                    "repo",
+                                    "pr_url",
+                                    "pr_title",
+                                    "pr_diff",
+                                )
                             }
                         else:
                             _scanned_repo = str(dynamic_vars.get("repo") or "").strip()
@@ -329,10 +341,15 @@ class PJobExecutor:
                                     f"pr_number={_scanned_pr}; using the scanned "
                                     f"value for rendering and postExec"
                                 )
-                            # Canonicalize the scan value itself so the later
-                            # inject_dynamic_vars cannot overwrite the holder
-                            # rewrites with the raw ('#N', padded) form (#158 R9)
-                            dynamic_vars = {**dynamic_vars, "pr_number": _scanned_pr}
+                            # Canonicalize the scan values themselves so the
+                            # later inject_dynamic_vars cannot overwrite the
+                            # holder rewrites with the raw ('#N', padded) forms
+                            # (#158 R9/R10)
+                            dynamic_vars = {
+                                **dynamic_vars,
+                                "pr_number": _scanned_pr,
+                                "repo": _scanned_repo,
+                            }
                     # Merge discovered vars into env (for postExec substitution)
                     # Skip keys that already exist in runtime overrides (higher priority)
                     for key, value in dynamic_vars.items():
@@ -346,7 +363,11 @@ class PJobExecutor:
                     # Persist scan_pr_result for skip logic (repo is useful
                     # for the finally safety net even when pr_number is
                     # missing/garbage from a third-party provider, #158 R9)
-                    if "pr_number" in dynamic_vars or "repo" in dynamic_vars:
+                    if _scan_valid and ("pr_number" in dynamic_vars or "repo" in dynamic_vars):
+                        # Not persisted for invalid scans: a garbage pr_number
+                        # would pollute the (repo, pr_number) failure skip-set
+                        # with an empty/garbage key that never matches a real
+                        # candidate PR (#158 R10)
                         result.scan_pr_result = {
                             "repo": dynamic_vars.get("repo", ""),
                             "pr_number": dynamic_vars.get("pr_number", ""),
@@ -480,6 +501,11 @@ class PJobExecutor:
                             # paths are case-insensitive, format-only variants
                             # must not warn (#158 R9)
                             _scanned_repo = str(_spr.get("repo") or "").strip()
+                            # Only a well-formed owner/name may drive postExec
+                            # substitution — a misbehaving provider cannot
+                            # smuggle arbitrary strings into gh targets (#158 R10)
+                            if not re.fullmatch(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+", _scanned_repo):
+                                _scanned_repo = ""
                             _cur_repo = str(action_env.get("repo") or "").strip()
                             if (
                                 _scanned_repo
