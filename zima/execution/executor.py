@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import os
+import re
 import shutil
 import subprocess
 import uuid
@@ -248,42 +249,74 @@ class PJobExecutor:
                     # differing value here is static/legacy.
                     if "pr_number" in dynamic_vars:
                         _scanned_pr = normalize_pr_number(dynamic_vars["pr_number"])
-                        bundle.overrides = copy.copy(bundle.overrides)
-                        bundle.overrides.variable_values = dict(bundle.overrides.variable_values)
-                        bundle.overrides.env_vars = dict(bundle.overrides.env_vars)
-                        _changed: set = set()
-                        for _holder in (
-                            bundle.overrides.variable_values,
-                            bundle.overrides.env_vars,
-                            env_vars,
-                        ):
-                            for _k in ("pr_number", "pr"):
-                                if _k not in _holder:
-                                    continue
-                                _norm_val = normalize_pr_number(_holder[_k])
-                                if _norm_val == _scanned_pr:
-                                    continue
-                                _holder[_k] = _scanned_pr
-                                if _norm_val:
-                                    # Only genuinely stale (non-empty, differing)
-                                    # values warn; empty defaults backfill silently
-                                    _changed.add(_k)
-                        if bundle.variable:
-                            for _k in ("pr_number", "pr"):
-                                if _k in bundle.variable.values:
-                                    _norm_val = normalize_pr_number(bundle.variable.values[_k])
-                                    if _norm_val == _scanned_pr:
-                                        continue
-                                    bundle.variable.values[_k] = _scanned_pr
-                                    if _norm_val:
-                                        _changed.add(_k)
-                        if _changed:
+                        _scan_valid = bool(re.fullmatch(r"[0-9]+", _scanned_pr))
+                        if not _scan_valid:
+                            # Third-party providers (entry-point extension) may
+                            # return PR dicts with missing/non-numeric numbers;
+                            # never write unvalidated scan output into holders
                             print(
-                                f"Warning: stale/empty override/config value(s) "
-                                f"{sorted(_changed)} differ from scanned "
-                                f"pr_number={_scanned_pr}; using the scanned "
-                                f"value for rendering and postExec"
+                                f"Warning: scan returned non-numeric pr_number "
+                                f"(len={len(_scanned_pr)}); skipping pr/repo "
+                                f"stale-rewrite (#158 R8)"
                             )
+                        else:
+                            _scanned_repo = str(dynamic_vars.get("repo") or "")
+                            bundle.overrides = copy.copy(bundle.overrides)
+                            bundle.overrides.variable_values = dict(
+                                bundle.overrides.variable_values
+                            )
+                            bundle.overrides.env_vars = dict(bundle.overrides.env_vars)
+                            if bundle.variable:
+                                bundle.variable = copy.copy(bundle.variable)
+                                bundle.variable.values = dict(bundle.variable.values)
+                            _changed: set = set()
+                            for _holder in (
+                                bundle.overrides.variable_values,
+                                bundle.overrides.env_vars,
+                                env_vars,
+                            ):
+                                for _k in ("pr_number", "pr"):
+                                    if _k not in _holder:
+                                        continue
+                                    _raw = str(_holder[_k])
+                                    if _raw.strip() == _scanned_pr:
+                                        continue  # already in canonical form
+                                    _holder[_k] = _scanned_pr
+                                    # Warn only when the normalized value points
+                                    # at a DIFFERENT PR; same-PR format variants
+                                    # ('#123', padded) rewrite silently (#158 R8)
+                                    if normalize_pr_number(_raw) != _scanned_pr and _raw.strip():
+                                        _changed.add(_k)
+                                if _scanned_repo and str(_holder.get("repo") or "").strip() not in (
+                                    "",
+                                    _scanned_repo,
+                                ):
+                                    _holder["repo"] = _scanned_repo
+                                    _changed.add("repo")
+                            if bundle.variable:
+                                for _k in ("pr_number", "pr"):
+                                    if _k in bundle.variable.values:
+                                        _raw = str(bundle.variable.values[_k])
+                                        if _raw.strip() == _scanned_pr:
+                                            continue
+                                        bundle.variable.values[_k] = _scanned_pr
+                                        if (
+                                            normalize_pr_number(_raw) != _scanned_pr
+                                            and _raw.strip()
+                                        ):
+                                            _changed.add(_k)
+                                if _scanned_repo and str(
+                                    bundle.variable.values.get("repo") or ""
+                                ).strip() not in ("", _scanned_repo):
+                                    bundle.variable.values["repo"] = _scanned_repo
+                                    _changed.add("repo")
+                            if _changed:
+                                print(
+                                    f"Warning: stale/empty override/config value(s) "
+                                    f"{sorted(_changed)} differ from scanned "
+                                    f"pr_number={_scanned_pr}; using the scanned "
+                                    f"value for rendering and postExec"
+                                )
                     # Merge discovered vars into env (for postExec substitution)
                     # Skip keys that already exist in runtime overrides (higher priority)
                     for key, value in dynamic_vars.items():
@@ -414,6 +447,15 @@ class PJobExecutor:
                                                 f"using the scanned value for postExec"
                                             )
                                         action_env[_k] = _scanned
+                                _scanned_repo = str(_spr.get("repo") or "").strip()
+                                _cur_repo = str(action_env.get("repo") or "").strip()
+                                if _scanned_repo and _cur_repo and _cur_repo != _scanned_repo:
+                                    print(
+                                        f"Warning: override repo differs from scanned "
+                                        f"repo={_scanned_repo}; using the scanned "
+                                        f"value for postExec"
+                                    )
+                                    action_env["repo"] = _scanned_repo
                         self._run_post_exec_actions(_pjob, result, action_env)
                 except Exception as e:
                     import traceback

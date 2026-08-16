@@ -966,3 +966,108 @@ class TestPrAliasRenderChannel:
                 result = executor.execute("test-pjob", overrides=Overrides())
         assert result.status == ExecutionStatus.SUCCESS
         assert "stale/empty" not in capsys.readouterr().out
+
+
+class TestPrRewriteEdgeCases:
+    """#158 R8: rewrite-channel edge cases."""
+
+    def _base_run(self, manager, template, pjob_overrides, scan_result, action_repo="{{repo}}"):
+        from zima.models.variable import VariableConfig
+
+        agent = AgentConfig.create(
+            code="test-agent",
+            name="A",
+            agent_type="kimi",
+            parameters={"mockCommand": "echo hello"},
+        )
+        manager.save_config("agent", "test-agent", agent.to_dict())
+        workflow = WorkflowConfig.create(code="test-workflow", name="W", template=template)
+        manager.save_config("workflow", "test-workflow", workflow.to_dict())
+        var = VariableConfig.create(
+            code="test-var",
+            name="V",
+            values={"repo": "owner/repo", "pr_url": "", "pr_number": ""},
+        )
+        manager.save_config("variable", "test-var", var.to_dict())
+        pjob = PJobConfig.create(
+            code="test-pjob",
+            name="P",
+            agent="test-agent",
+            workflow="test-workflow",
+            variable="test-var",
+            overrides=pjob_overrides,
+        )
+        pjob.spec.actions = ActionsConfig(
+            provider="github",
+            pre_exec=[PreExecAction(type="scan_pr", repo=action_repo, label="zima:needs-review")],
+        )
+        manager.save_config("pjob", "test-pjob", pjob.to_dict())
+
+        executor = PJobExecutor()
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = scan_result
+        mock_provider.fetch_diff.return_value = "+diff"
+        captured: dict = {}
+
+        def fake_run(**kwargs):
+            cmd = kwargs["command"]
+            text = " ".join(cmd)
+            if "--prompt" in cmd:
+                text += "\n" + Path(cmd[cmd.index("--prompt") + 1]).read_text()
+            captured["text"] = text
+            return (0, "done", "", 12345)
+
+        with patch.object(executor._actions_runner._registry, "get", return_value=mock_provider):
+            with patch.object(executor, "_run_command", side_effect=fake_run):
+                result = executor.execute("test-pjob", overrides=Overrides())
+        return result, captured.get("text", "")
+
+    def test_hash_format_same_pr_rewritten_silently(self, isolated_zima_home, capsys):
+        from zima.config.manager import ConfigManager
+
+        manager = ConfigManager()
+        result, text = self._base_run(
+            manager,
+            template="#{{ pr_number }}",
+            pjob_overrides={"variableValues": {"pr_number": "#42"}},
+            scan_result=[{"number": "42", "title": "T", "url": "u"}],
+        )
+        assert result.status == ExecutionStatus.SUCCESS
+        assert "#42" in text and "##42" not in text  # canonical form, no '#'
+        out = capsys.readouterr().out
+        assert "stale/empty" not in out  # same PR, format-only: silent rewrite
+
+    def test_non_numeric_scan_output_skips_rewrite(self, isolated_zima_home, capsys):
+        from zima.config.manager import ConfigManager
+
+        manager = ConfigManager()
+        result, text = self._base_run(
+            manager,
+            template="#{{ pr_number }}",
+            pjob_overrides={"variableValues": {"pr_number": "999"}},
+            scan_result=[{"number": "abc", "title": "T", "url": "u"}],  # bad provider
+        )
+        assert result.status == ExecutionStatus.SUCCESS
+        out = capsys.readouterr().out
+        assert "non-numeric pr_number" in out
+        assert "stale/empty" not in out  # rewrite skipped entirely
+        # Holder value preserved (not overwritten with garbage)
+        assert "999" in text
+
+    def test_stale_repo_rewritten_to_scanned(self, isolated_zima_home, capsys):
+        from zima.config.manager import ConfigManager
+
+        manager = ConfigManager()
+        result, text = self._base_run(
+            manager,
+            template="repo={{ repo }} #{{ pr_number }}",
+            pjob_overrides={"variableValues": {"repo": "old/legacy"}},
+            scan_result=[{"number": "42", "title": "T", "url": "u"}],
+            action_repo="owner/repo",  # scan targeted the correct repo while
+            # the static override still carries a stale one
+        )
+        assert result.status == ExecutionStatus.SUCCESS
+        assert "repo=owner/repo" in text
+        assert "old/legacy" not in text
+        out = capsys.readouterr().out
+        assert "'repo'" in out  # repo listed among rewritten keys
