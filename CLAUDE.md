@@ -22,6 +22,9 @@ uv run black zima/ tests/ --line-length 100
 # Lint
 uv run ruff check zima/ tests/
 
+# Architecture dependency-direction contracts (layers + framework-free models)
+uv run lint-imports
+
 # Run all tests
 uv run pytest
 
@@ -159,7 +162,7 @@ Customizable via `ZIMA_HOME` env var.
 ## CI Pipeline
 
 - **GitHub Actions** on push/PR to `main` (workflow accepts `master` too, see `.github/workflows/integration-test.yml`)
-- Lint: `uv run ruff check zima/ tests/` + `uv run black --check zima/ tests/ --line-length 100`
+- Lint: `uv run ruff check zima/ tests/` + `uv run black --check zima/ tests/ --line-length 100` + `uv run lint-imports` (architecture contracts; gate on `.importlinter` / `.arch-governance.yml`)
 - Test: `uv run pytest tests/ -m "not slow" --cov=zima --cov-fail-under=60` (Python 3.10/3.13 matrix)
 - Publish: `.github/workflows/publish.yml` triggers on tag push
 
@@ -179,6 +182,14 @@ To add a new **Configuration Entity**:
 5. Add example YAML to `zima/templates/examples.py` (`EXAMPLES` dict + `VALID_KINDS`). `EXAMPLES` is nested: `EXAMPLES[kind][example_name]` → YAML string.
 
 ## Gotchas
+
+### Architecture Governance (dependency direction)
+
+- `.arch-governance.yml` 是依赖方向的单一事实源；改它而非 `.importlinter`（后者由前者生成，CI 的 `uv run lint-imports` 读它），详见 ADR-005
+- 分层是细粒度线性序（外/IO 层 → 内/领域层：`__main__`→`cli`→`commands`→`daemon_runner|webhook`→`core`→`providers`→`scenes`→`templates`→`execution`→`review`→`config`→`actions`→`models`→`utils`）；外层可 import 内层，反向即违规
+- `zima.models` 是框架无关的领域核（最内层）：禁止 import `subprocess`/`jinja2`/`requests`/`typer`/`rich`（`yaml`/`platform` 刻意不禁）
+- 框架 IO 走 `zima/execution` 适配层（`secret_resolver.py` 解密钥、`template_renderer.py` 渲染 jinja2）；`models` 经 `models/ports.py` 的 `ConfigStore` Protocol 依赖抽象，不直接依赖具体 `ConfigManager`
+- 内置 github provider 走 entry-point（`pyproject.toml` 的 `zima.action_providers`）注册，`actions` 层不 import `providers`
 
 ### GitHub PR Code Review Feedback
 
@@ -214,5 +225,5 @@ PR 评论有三个独立 API，不同 CR 工具用不同 API 提交，获取完�
 - `AGENTS.md` — Agent context file for Kimi Code agents
 - `docs/architecture/` — **Current architecture** (authoritative)
 - `docs/history/` — Deprecated designs (reference only)
-- `docs/decisions/` — ADRs; ADR-004 (single execution) is the current model
+- `docs/decisions/` — ADRs; ADR-004 (single execution) is the current model, ADR-005 (architecture governance) defines the dependency-direction contract
 - `docs/design/` — Feature design documents (PJob design, API interface, etc.)
