@@ -633,6 +633,17 @@ class TestRunPrePinnedPr:
             result = runner.run_pre(self._make_actions(), {"pr_number": "11"})
             assert result["pr_number"] == "11"
 
+    def test_whitespace_pr_number_does_not_shadow_alias(self):
+        """pr_number=' ' (manual typo) is treated as absent; a valid legacy
+        pr value still pins (#158 R6)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.fetch_diff.return_value = "+d"
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(self._make_actions(), {"pr_number": " ", "pr": "11"})
+            mock_provider.scan_prs.assert_not_called()
+            assert result["pr_number"] == "11"
+
     def test_pinned_hash_only_raises_skip(self):
         """ "#" with no digits fails fast instead of silently unpinning (#158 R4)."""
         runner = ActionsRunner()

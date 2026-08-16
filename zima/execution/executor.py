@@ -233,32 +233,36 @@ class PJobExecutor:
                         workdir=bundle.work_dir,
                         pin_env=pin_env,
                     )
-                    # A stale static (or empty) pr/pr_number override must not
-                    # pin rendering + postExec to a different (or empty) PR
-                    # than the one actually scanned (#158 R6: issues 15, 20).
-                    # Explicit non-empty runtime pins never reach here (the
-                    # pinned branch short-circuits), so popping is safe.
+                    # A stale/empty pr value — whether it lives in static
+                    # spec.overrides, in the runtime overrides object, or in
+                    # the Variable config values it was deep-merged into —
+                    # must not pin rendering + postExec to a different (or
+                    # empty) PR than the one actually scanned (#158 R6).
+                    # Scan-path execution with a non-empty runtime pr pin is
+                    # impossible (the pinned branch short-circuits), so any
+                    # differing value here is static/legacy and safe to pop.
                     if "pr_number" in dynamic_vars:
-                        stale_keys = []
-                        for _k in ("pr_number", "pr"):
-                            _raw = bundle.overrides.variable_values.get(_k)
-                            if _raw is None:
-                                continue
-                            _norm = normalize_pr_number(_raw)
-                            if _norm == dynamic_vars["pr_number"]:
-                                continue
-                            if runtime_overrides is not None and _norm:
-                                continue
-                            stale_keys.append(_k)
-                        if stale_keys:
+                        _scanned_pr = normalize_pr_number(dynamic_vars["pr_number"])
+                        _holders = [bundle.overrides.variable_values]
+                        if bundle.variable:
+                            _holders.append(bundle.variable.values)
+                        _popped: list[str] = []
+                        for _holder in _holders:
+                            for _k in ("pr_number", "pr"):
+                                _raw = _holder.get(_k)
+                                if _raw is None:
+                                    continue
+                                if normalize_pr_number(_raw) == _scanned_pr:
+                                    continue
+                                _holder.pop(_k, None)
+                                _popped.append(_k)
+                        if _popped:
                             print(
-                                f"Warning: stale/empty override key(s) {stale_keys} "
-                                f"differ from scanned pr_number="
-                                f"{dynamic_vars['pr_number']}; using the scanned "
-                                f"value for rendering and postExec"
+                                f"Warning: stale/empty override/config value(s) "
+                                f"{_popped} differ from scanned pr_number="
+                                f"{_scanned_pr}; using the scanned value for "
+                                f"rendering and postExec"
                             )
-                            for _k in stale_keys:
-                                bundle.overrides.variable_values.pop(_k, None)
                     # Merge discovered vars into env (for postExec substitution)
                     # Skip keys that already exist in runtime overrides (higher priority)
                     for key, value in dynamic_vars.items():

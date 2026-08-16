@@ -235,17 +235,21 @@ class ActionsRunner:
                 # overrides); static Variable config keys never pin (#158 R2).
                 pin_source = pin_env if pin_env is not None else env
                 # Normalize the common "#123" copy-paste form (#158 R3).
-                raw_pin = (pin_source.get("pr_number") or pin_source.get("pr") or "").strip()
-                pinned = normalize_pr_number(raw_pin)
-                if raw_pin.startswith("#") and not pinned:
-                    # "#" alone normalizes to empty: treat as malformed so
-                    # the input is never silently swallowed (#158 R4). An
-                    # entirely absent/empty pin still falls through to the
-                    # scan path (daemon polling behavior unchanged).
-                    raise SkipAction(
-                        "preExec scan_pr skipped — pinned pr value is only a "
-                        f"'#' prefix with no digits, pjob={self._pjob_code or '?'}"
-                    )
+                # pr_number wins over the legacy pr name; whitespace-only
+                # values are treated as absent so they cannot shadow a valid
+                # alias value (#158 R6); "#"-only input fails fast (#158 R4).
+                pinned = ""
+                for _pin_key in ("pr_number", "pr"):
+                    _raw = str(pin_source.get(_pin_key) or "").strip()
+                    if not _raw:
+                        continue
+                    pinned = normalize_pr_number(_raw)
+                    if not pinned:
+                        raise SkipAction(
+                            "preExec scan_pr skipped — pinned pr value is only a "
+                            f"'#' prefix with no digits, pjob={self._pjob_code or '?'}"
+                        )
+                    break
                 if pinned and not re.fullmatch(r"[0-9]+", pinned):
                     # Malformed manual input (typo in --set-var): fail fast.
                     # Only report the length, never echo the raw value (#158 R2).

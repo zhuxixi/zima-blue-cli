@@ -792,3 +792,77 @@ class TestStaleOverrideCleanup:
         mock_provider.remove_label.assert_called_once_with("owner/repo", "42", "zima:needs-review")
         # Warning emitted (stale key detected)
         assert "stale/empty override" in capsys.readouterr().out
+
+
+class TestStaleOverrideCleanupCliPath(TestStaleOverrideCleanup):
+    """Same scenario as TestStaleOverrideCleanup but through the REAL caller
+    paths: commands/pjob.py and background_runner always pass an Overrides()
+    object (possibly empty / partially filled), never None (#158 R6)."""
+
+    def test_empty_runtime_overrides_object(self, isolated_zima_home):
+        from zima.config.manager import ConfigManager
+
+        manager = ConfigManager()
+        self._setup(manager)
+
+        executor = PJobExecutor()
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = [
+            {"number": "42", "title": "Fix", "url": "https://github.com/owner/repo/pull/42"}
+        ]
+        mock_provider.fetch_diff.return_value = "+diff"
+
+        captured: dict = {}
+
+        def fake_run(**kwargs):
+            cmd = kwargs["command"]
+            text = " ".join(cmd)
+            if "--prompt" in cmd:
+                text += "\n" + Path(cmd[cmd.index("--prompt") + 1]).read_text()
+            captured["text"] = text
+            return (0, "done", "", 12345)
+
+        with patch.object(executor._actions_runner._registry, "get", return_value=mock_provider):
+            with patch.object(executor, "_run_command", side_effect=fake_run):
+                # CLI path: always constructs Overrides() even with no --set-var
+                result = executor.execute("test-pjob", overrides=Overrides())
+
+        assert result.status == ExecutionStatus.SUCCESS
+        assert "#42" in captured["text"]
+        assert "999" not in captured["text"]
+
+    def test_partial_runtime_overrides_static_merged_into_values(self, isolated_zima_home):
+        from zima.config.manager import ConfigManager
+
+        manager = ConfigManager()
+        self._setup(manager)
+
+        executor = PJobExecutor()
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = [
+            {"number": "42", "title": "Fix", "url": "https://github.com/owner/repo/pull/42"}
+        ]
+        mock_provider.fetch_diff.return_value = "+diff"
+
+        captured: dict = {}
+
+        def fake_run(**kwargs):
+            cmd = kwargs["command"]
+            text = " ".join(cmd)
+            if "--prompt" in cmd:
+                text += "\n" + Path(cmd[cmd.index("--prompt") + 1]).read_text()
+            captured["text"] = text
+            return (0, "done", "", 12345)
+
+        with patch.object(executor._actions_runner._registry, "get", return_value=mock_provider):
+            with patch.object(executor, "_run_command", side_effect=fake_run):
+                # Runtime carries an unrelated set-var; the static pr_number=999
+                # was deep-merged into variable.values by apply_overrides
+                result = executor.execute(
+                    "test-pjob",
+                    overrides=Overrides(variable_values={"repo": "owner/repo"}),
+                )
+
+        assert result.status == ExecutionStatus.SUCCESS
+        assert "#42" in captured["text"]
+        assert "999" not in captured["text"]
