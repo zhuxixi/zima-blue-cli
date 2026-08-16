@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.7.0] - 2026-08-16
+
+### Features
+- add pi skills package (github-issue-driven suite) (#152)
+- **skill**: add pi release skill for #146 (#148)
+- **webhook**: repo-routed PJobs so one server serves multiple repos (#145) (#147)
+- **agent**: support pi-coding-agent as a new agent type for code review (#144)
+
+### Fixes
+- **webhook**: smee client forward 重签修复，webhook 触发链路首次可用 (#149) (#150)
+
+### Changes
+- **arch**: isolate zima.models behind ports; enforce with lint-imports gate (#141)
+- **claude.md**: document webhook-triggered code review (#135) (#138)
+
+[0.7.0]: https://github.com/zhuxixi/zima-blue-cli/compare/v0.6.0...v0.7.0
+
 ## [0.6.0] - 2026-07-18
 
 ### Features
