@@ -370,6 +370,102 @@ class TestActionsRunnerPreExec:
                 runner.run_pre(actions, {})
             assert "no prs found" in str(exc_info.value).lower()
 
+
+class TestRunPrePinnedPr:
+    """Pinned-PR short-circuit (#158): env pr_number/pr set by the webhook
+    spawn or manual --set-var means the exact PR is known — skip the label
+    rescan (GitHub search index lags the just-delivered label event)."""
+
+    def _make_actions(self, repo="owner/repo"):
+        return ActionsConfig(
+            pre_exec=[PreExecAction(type="scan_pr", repo=repo, label="zima:needs-review")]
+        )
+
+    def test_pinned_pr_number_skips_rescan(self):
+        """env pr_number pinned -> provider.scan_prs NOT called, values constructed."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(self._make_actions(), {"pr_number": "11"})
+            mock_provider.scan_prs.assert_not_called()
+            mock_provider.fetch_diff.assert_not_called()
+            assert result == {
+                "repo": "owner/repo",
+                "pr_number": "11",
+                "pr_title": "",
+                "pr_url": "https://github.com/owner/repo/pull/11",
+            }
+
+    def test_pinned_pr_legacy_name(self):
+        """env pr (legacy webhook name) also pins."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(self._make_actions(), {"pr": "11"})
+            mock_provider.scan_prs.assert_not_called()
+            assert result["pr_number"] == "11"
+
+    def test_pinned_pr_number_wins_over_legacy(self):
+        """Both set -> pr_number takes precedence."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(self._make_actions(), {"pr_number": "11", "pr": "22"})
+            assert result["pr_number"] == "11"
+
+    def test_pinned_pr_number_stripped(self):
+        """Whitespace-only padding around the pinned value is stripped."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(self._make_actions(), {"pr_number": " 11 "})
+            assert result["pr_number"] == "11"
+
+    def test_empty_pinned_falls_back_to_rescan(self):
+        """pr_number set but empty -> original rescan path (with results)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = [
+            {"number": "42", "title": "Fix", "url": "https://github.com/o/r/pull/42"}
+        ]
+        mock_provider.fetch_diff.return_value = "diff content"
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(self._make_actions(), {"pr_number": ""})
+            mock_provider.scan_prs.assert_called_once_with("owner/repo", "zima:needs-review")
+            assert result["pr_number"] == "42"
+
+    def test_no_pinned_calls_scan_prs(self):
+        """No pinned vars at all -> scan_prs called (regression lock)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = [
+            {"number": "42", "title": "Fix", "url": "https://github.com/o/r/pull/42"}
+        ]
+        mock_provider.fetch_diff.return_value = "d"
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            runner.run_pre(self._make_actions(), {})
+            mock_provider.scan_prs.assert_called_once()
+
+    def test_pinned_with_empty_repo_still_skips(self):
+        """Guard order: empty-repo guard precedes the pinned branch."""
+        runner = ActionsRunner()
+        actions = self._make_actions(repo="")
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with pytest.raises(SkipAction) as exc_info:
+                runner.run_pre(actions, {"pr_number": "11"})
+            assert "repo resolved to empty" in str(exc_info.value)
+
+    def test_pinned_wins_over_empty_rescan(self):
+        """The #158 bug itself: pinned set + rescan would return [] -> no SkipAction."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = []
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(self._make_actions(), {"pr_number": "11"})
+            mock_provider.scan_prs.assert_not_called()
+            assert result["pr_number"] == "11"
+
     def test_run_pre_provider_not_found(self, capsys):
         """Test run_pre warns and returns empty dict when provider is not found."""
         runner = ActionsRunner()

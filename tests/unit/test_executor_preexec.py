@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -582,3 +583,115 @@ class TestPreExecIntegration:
         call_env = mock_run_pre.call_args[0][1]  # second positional arg = env dict
         assert call_env.get("repo") == "zhuxixi/zima-blue-cli"
         assert call_env.get("label") == "zima:needs-review"
+
+
+class TestPinnedPrFlow:
+    """Executor-level flow for webhook-pinned PR (#158): overrides carry
+    pr_number from --set-var; scan_pr short-circuits; template renders the
+    constructed pr_url."""
+
+    def _setup_configs(self, manager, static_pr_number=""):
+        from zima.models.variable import VariableConfig
+
+        agent = AgentConfig.create(
+            code="test-agent",
+            name="Test Agent",
+            agent_type="kimi",
+            parameters={"mockCommand": "echo hello"},
+        )
+        manager.save_config("agent", "test-agent", agent.to_dict())
+
+        workflow = WorkflowConfig.create(
+            code="test-workflow",
+            name="Test Workflow",
+            template="batch review pr {{ pr_url }}",
+        )
+        manager.save_config("workflow", "test-workflow", workflow.to_dict())
+
+        var = VariableConfig.create(
+            code="test-var",
+            name="Test Vars",
+            values={"repo": "owner/repo", "pr_url": "", "pr_number": static_pr_number},
+        )
+        manager.save_config("variable", "test-var", var.to_dict())
+
+        pjob = PJobConfig.create(
+            code="test-pjob",
+            name="Test PJob",
+            agent="test-agent",
+            workflow="test-workflow",
+            variable="test-var",
+        )
+        pjob.spec.actions = ActionsConfig(
+            provider="github",
+            pre_exec=[PreExecAction(type="scan_pr", repo="{{repo}}", label="zima:needs-review")],
+        )
+        manager.save_config("pjob", "test-pjob", pjob.to_dict())
+
+    def test_pinned_pr_number_flows_to_template(self, isolated_zima_home):
+        """Webhook-style run: overrides pin pr_number=11; scan_pr short-circuits
+        (no provider calls) and the rendered prompt contains the canonical URL."""
+        from zima.config.manager import ConfigManager
+        from zima.execution.executor import Overrides
+
+        manager = ConfigManager()
+        self._setup_configs(manager)
+
+        executor = PJobExecutor()
+        overrides = Overrides(
+            variable_values={
+                "repo": "owner/repo",
+                "pr_number": "11",
+                "head_sha": "abc123",
+            }
+        )
+
+        captured: dict = {}
+
+        def fake_run(**kwargs):
+            cmd = kwargs["command"]
+            text = " ".join(cmd)
+            sf = kwargs.get("stdin_file")
+            if sf:
+                text += "\n" + Path(sf).read_text()
+            if "--prompt" in cmd:
+                text += "\n" + Path(cmd[cmd.index("--prompt") + 1]).read_text()
+            captured["text"] = text
+            return (0, "done", "", 12345)
+
+        with patch.object(executor, "_run_command", side_effect=fake_run):
+            result = executor.execute("test-pjob", overrides=overrides)
+
+        assert result.status == ExecutionStatus.SUCCESS
+        assert "https://github.com/owner/repo/pull/11" in captured["text"]
+
+    def test_pinned_pr_number_beats_static_config(self, isolated_zima_home):
+        """Pinned pr_number (override) wins over stale static variable value."""
+        from zima.config.manager import ConfigManager
+        from zima.execution.executor import Overrides
+
+        manager = ConfigManager()
+        self._setup_configs(manager, static_pr_number="999")
+
+        executor = PJobExecutor()
+        overrides = Overrides(variable_values={"repo": "owner/repo", "pr_number": "11"})
+
+        captured: dict = {}
+
+        def fake_run(**kwargs):
+            cmd = kwargs["command"]
+            text = " ".join(cmd)
+            sf = kwargs.get("stdin_file")
+            if sf:
+                text += "\n" + Path(sf).read_text()
+            if "--prompt" in cmd:
+                text += "\n" + Path(cmd[cmd.index("--prompt") + 1]).read_text()
+            captured["text"] = text
+            return (0, "done", "", 12345)
+
+        with patch.object(executor, "_run_command", side_effect=fake_run):
+            result = executor.execute("test-pjob", overrides=overrides)
+
+        assert result.status == ExecutionStatus.SUCCESS
+        assert "pull/11" in captured["text"]
+        assert "pull/999" not in captured["text"]

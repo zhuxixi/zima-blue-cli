@@ -206,6 +206,18 @@ class ActionsRunner:
                         f"preExec scan_pr skipped — label resolved to empty "
                         f"(pjob={self._pjob_code or '?'}, original='{action.label}')"
                     )
+                # Caller pinned the exact PR (webhook event / manual --set-var):
+                # trust it instead of rescanning the label. GitHub's search index
+                # lags a few seconds behind the just-delivered label event, so a
+                # rescan at trigger time can miss the PR that caused this very
+                # run (#158). No pin -> daemon polling path, behavior unchanged.
+                pinned = (env.get("pr_number") or env.get("pr") or "").strip()
+                if pinned:
+                    discovered["repo"] = repo
+                    discovered["pr_number"] = pinned
+                    discovered["pr_title"] = ""
+                    discovered["pr_url"] = f"https://github.com/{repo}/pull/{pinned}"
+                    continue
                 prs = provider.scan_prs(repo, label)
                 if not prs:
                     raise SkipAction(f"No PRs found with label '{label}' in {repo}")
