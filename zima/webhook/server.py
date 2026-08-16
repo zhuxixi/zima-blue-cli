@@ -160,7 +160,11 @@ def trigger_pjobs(event: PullRequestLabeledEvent, routes: list[PjobRoute]) -> di
             "run",
             code,
             f"--set-var=repo={event.repo}",
+            # pr_number is the consumed name; bare pr kept during the
+            # compatibility window so user templates with {{ pr }} still
+            # render under webhook triggers (renamed in #158).
             f"--set-var=pr_number={event.pr_number}",
+            f"--set-var=pr={event.pr_number}",
             f"--set-var=head_sha={event.head_sha}",
         ]
         try:

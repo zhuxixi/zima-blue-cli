@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from typing import Optional
 
@@ -211,12 +212,36 @@ class ActionsRunner:
                 # lags a few seconds behind the just-delivered label event, so a
                 # rescan at trigger time can miss the PR that caused this very
                 # run (#158). No pin -> daemon polling path, behavior unchanged.
+                # Note: "pinned" only reads runtime-injected values here; a
+                # non-empty pr/pr_number key in a static Variable config would
+                # also pin (unlikely; logged below for visibility).
                 pinned = (env.get("pr_number") or env.get("pr") or "").strip()
+                if pinned and not re.fullmatch(r"[0-9]+", pinned):
+                    # Malformed manual input (e.g. typo): fall back to the
+                    # scan path rather than building a bogus pr_url (#158 R1).
+                    print(
+                        f"Warning: pinned pr value '{pinned}' is not a number, "
+                        f"falling back to label rescan"
+                    )
+                    pinned = ""
                 if pinned:
+                    print(
+                        f"scan_pr: pinned PR #{pinned} in {repo} "
+                        f"(runtime-injected), skipping label rescan"
+                    )
                     discovered["repo"] = repo
                     discovered["pr_number"] = pinned
                     discovered["pr_title"] = ""
                     discovered["pr_url"] = f"https://github.com/{repo}/pull/{pinned}"
+                    # Keep the pr_diff contract of the scan path: fetch_diff
+                    # reads the PR directly (gh pr view), not the search index,
+                    # so it does not reintroduce the #158 race. Degrade to an
+                    # empty diff with a warning instead of failing the run.
+                    try:
+                        discovered["pr_diff"] = provider.fetch_diff(repo, pinned)
+                    except Exception as e:  # noqa: BLE001 - degrade, not fail
+                        print(f"Warning: fetch_diff failed for pinned PR #{pinned}: {e}")
+                        discovered["pr_diff"] = ""
                     continue
                 prs = provider.scan_prs(repo, label)
                 if not prs:
