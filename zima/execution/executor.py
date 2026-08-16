@@ -28,6 +28,13 @@ from zima.utils import generate_timestamp, get_zima_home
 _REPO_FORMAT = re.compile(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+")
 
 
+def _sanitize_scan_value(value) -> str:
+    """Make an unvalidated provider string safe for history persistence:
+    printable characters only, capped at 64 (#158 R12)."""
+    text = "".join(ch for ch in str(value or "") if ch.isprintable())
+    return text[:64]
+
+
 class ExecutionStatus(Enum):
     """Execution status enum."""
 
@@ -270,12 +277,15 @@ class PJobExecutor:
                                 f"values (#158 R8/R11)"
                             )
                             # Persist the RAW values for the failure skip-set
-                            # ONLY: failed runs still register (repo, raw_pr)
-                            # so a persistently-broken provider is not retried
-                            # every cycle; nothing else consumes them (#158 R11)
+                            # ONLY (sanitized — printable chars, 64-char cap —
+                            # before they reach history JSON, #158 R12): failed
+                            # runs still register (repo, raw_pr) so a
+                            # persistently-broken provider is not retried every
+                            # cycle. The finally net re-validates anything it
+                            # reads back from here before use (#158 R12).
                             result.scan_pr_result = {
-                                "repo": str(dynamic_vars.get("repo") or ""),
-                                "pr_number": str(dynamic_vars.get("pr_number") or ""),
+                                "repo": _sanitize_scan_value(dynamic_vars.get("repo")),
+                                "pr_number": _sanitize_scan_value(dynamic_vars.get("pr_number")),
                             }
                             dynamic_vars = {
                                 k: v
@@ -284,10 +294,15 @@ class PJobExecutor:
                             }
                         else:
                             _scanned_repo = str(dynamic_vars.get("repo") or "").strip()
+                            _drop_repo = False
                             if _scanned_repo and not _REPO_FORMAT.fullmatch(_scanned_repo):
                                 # Same trust boundary as the finally net: a
-                                # malformed repo never enters holders (#158 R11)
+                                # malformed repo never enters holders — and is
+                                # dropped from dynamic_vars entirely so the
+                                # canonicalization below cannot write an empty
+                                # string over configured values (#158 R12)
                                 _scanned_repo = ""
+                                _drop_repo = True
                             bundle.overrides = copy.copy(bundle.overrides)
                             bundle.overrides.variable_values = dict(
                                 bundle.overrides.variable_values
@@ -352,12 +367,17 @@ class PJobExecutor:
                             # Canonicalize the scan values themselves so the
                             # later inject_dynamic_vars cannot overwrite the
                             # holder rewrites with the raw ('#N', padded) forms
-                            # (#158 R9/R10)
+                            # (#158 R9/R10). A repo rejected by the format gate
+                            # is removed entirely — never backfilled as ""
+                            # over configured values (#158 R12).
                             dynamic_vars = {
                                 **dynamic_vars,
                                 "pr_number": _scanned_pr,
-                                "repo": _scanned_repo,
                             }
+                            if _scanned_repo:
+                                dynamic_vars["repo"] = _scanned_repo
+                            elif _drop_repo:
+                                dynamic_vars.pop("repo", None)
                     # Merge discovered vars into env (for postExec substitution)
                     # Skip keys that already exist in runtime overrides (higher priority)
                     for key, value in dynamic_vars.items():
