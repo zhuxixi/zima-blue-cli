@@ -583,6 +583,20 @@ class TestRunPrePinnedPr:
             assert result["pr_number"] == "11"
             assert result["pr_diff"] == "+diff"
 
+    def test_pinned_mixed_exception_then_empty_reports_both(self):
+        """Mixed retry sequence (raise, then empty) keeps the exception detail
+        and the re-label guidance (#158 R6)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.fetch_diff.side_effect = [RuntimeError("gh down"), "", ""]
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with patch("zima.execution.actions_runner.time.sleep"):
+                with pytest.raises(SkipAction) as exc_info:
+                    runner.run_pre(self._make_actions(), {"pr_number": "11"})
+            msg = str(exc_info.value)
+            assert "gh down" in msg
+            assert "re-label to retry" in msg
+
     def test_pinned_hash_prefix_normalized(self):
         """ "#11" (common copy-paste form) normalizes to 11 and pins (#158 R3)."""
         runner = ActionsRunner()

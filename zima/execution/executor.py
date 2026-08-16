@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from zima.config.manager import ConfigManager
-from zima.execution.actions_runner import ActionsRunner, SkipAction
+from zima.execution.actions_runner import ActionsRunner, SkipAction, normalize_pr_number
 from zima.execution.history import ExecutionHistory
 from zima.models.config_bundle import ConfigBundle
 from zima.models.pjob import Overrides, PJobConfig
@@ -233,6 +233,32 @@ class PJobExecutor:
                         workdir=bundle.work_dir,
                         pin_env=pin_env,
                     )
+                    # A stale static (or empty) pr/pr_number override must not
+                    # pin rendering + postExec to a different (or empty) PR
+                    # than the one actually scanned (#158 R6: issues 15, 20).
+                    # Explicit non-empty runtime pins never reach here (the
+                    # pinned branch short-circuits), so popping is safe.
+                    if "pr_number" in dynamic_vars:
+                        stale_keys = []
+                        for _k in ("pr_number", "pr"):
+                            _raw = bundle.overrides.variable_values.get(_k)
+                            if _raw is None:
+                                continue
+                            _norm = normalize_pr_number(_raw)
+                            if _norm == dynamic_vars["pr_number"]:
+                                continue
+                            if runtime_overrides is not None and _norm:
+                                continue
+                            stale_keys.append(_k)
+                        if stale_keys:
+                            print(
+                                f"Warning: stale/empty override key(s) {stale_keys} "
+                                f"differ from scanned pr_number="
+                                f"{dynamic_vars['pr_number']}; using the scanned "
+                                f"value for rendering and postExec"
+                            )
+                            for _k in stale_keys:
+                                bundle.overrides.variable_values.pop(_k, None)
                     # Merge discovered vars into env (for postExec substitution)
                     # Skip keys that already exist in runtime overrides (higher priority)
                     for key, value in dynamic_vars.items():
@@ -345,22 +371,24 @@ class PJobExecutor:
                             for k, v in _bundle.overrides.variable_values.items():
                                 if v is not None:
                                     action_env.setdefault(k, str(v))
-                            # A stale static pr/pr_number override must not
-                            # mislabel the PR actually scanned this run (#158 R4)
+                            # Safety net on top of the pre-merge stale-key pop:
+                            # whatever pr/pr_number value action_env ended up
+                            # with, the actually-scanned PR must win (#158 R4/R6:
+                            # alias symmetry, '#'-normalization, no raw echo,
+                            # empty-override bypass).
                             _spr = getattr(result, "scan_pr_result", None) or {}
-                            _scanned = _spr.get("pr_number") or ""
-                            _static = str(
-                                _bundle.overrides.variable_values.get("pr_number")
-                                or _bundle.overrides.variable_values.get("pr")
-                                or ""
-                            )
-                            if _scanned and _static and _scanned != _static:
-                                print(
-                                    f"Warning: static override pr_number={_static} "
-                                    f"differs from scanned pr_number={_scanned}; "
-                                    f"using the scanned value for postExec"
-                                )
-                                action_env["pr_number"] = _scanned
+                            _scanned = normalize_pr_number(_spr.get("pr_number") or "")
+                            if _scanned:
+                                for _k in ("pr_number", "pr"):
+                                    _cur = normalize_pr_number(action_env.get(_k) or "")
+                                    if _cur != _scanned:
+                                        if _cur:
+                                            print(
+                                                f"Warning: override {_k} (len={len(_cur)}) "
+                                                f"differs from scanned pr_number={_scanned}; "
+                                                f"using the scanned value for postExec"
+                                            )
+                                        action_env[_k] = _scanned
                         self._run_post_exec_actions(_pjob, result, action_env)
                 except Exception as e:
                     import traceback

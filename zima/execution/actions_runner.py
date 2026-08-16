@@ -38,6 +38,15 @@ def _matches_condition(condition: str, returncode: int) -> bool:
     return False
 
 
+def normalize_pr_number(value: str) -> str:
+    """Normalize a user-supplied PR number: strip whitespace and a leading
+    ``#`` (common copy-paste form). Returns "" for empty input."""
+    v = str(value or "").strip()
+    if v.startswith("#"):
+        v = v.lstrip("#").strip()
+    return v
+
+
 class ActionsRunner:
     """Executes preExec and postExec actions around agent execution.
 
@@ -225,17 +234,18 @@ class ActionsRunner:
                 # Only runtime-injected values pin (pin_env from the executor's
                 # overrides); static Variable config keys never pin (#158 R2).
                 pin_source = pin_env if pin_env is not None else env
-                pinned = (pin_source.get("pr_number") or pin_source.get("pr") or "").strip()
                 # Normalize the common "#123" copy-paste form (#158 R3).
-                if pinned.startswith("#"):
-                    pinned = pinned.lstrip("#").strip()
-                    if not pinned:
-                        # "#" alone normalizes to empty: treat as malformed so
-                        # the input is never silently swallowed (#158 R4).
-                        raise SkipAction(
-                            "preExec scan_pr skipped — pinned pr value is only a "
-                            f"'#' prefix with no digits, pjob={self._pjob_code or '?'}"
-                        )
+                raw_pin = (pin_source.get("pr_number") or pin_source.get("pr") or "").strip()
+                pinned = normalize_pr_number(raw_pin)
+                if raw_pin.startswith("#") and not pinned:
+                    # "#" alone normalizes to empty: treat as malformed so
+                    # the input is never silently swallowed (#158 R4). An
+                    # entirely absent/empty pin still falls through to the
+                    # scan path (daemon polling behavior unchanged).
+                    raise SkipAction(
+                        "preExec scan_pr skipped — pinned pr value is only a "
+                        f"'#' prefix with no digits, pjob={self._pjob_code or '?'}"
+                    )
                 if pinned and not re.fullmatch(r"[0-9]+", pinned):
                     # Malformed manual input (typo in --set-var): fail fast.
                     # Only report the length, never echo the raw value (#158 R2).
@@ -268,8 +278,8 @@ class ActionsRunner:
                     for attempt in range(3):
                         try:
                             diff = provider.fetch_diff(repo, pinned)
-                            last_exc = None
                             if diff:
+                                last_exc = None
                                 break
                         except Exception as e:  # noqa: BLE001 - retry, then skip
                             last_exc = e
@@ -284,8 +294,9 @@ class ActionsRunner:
                     if not diff:
                         raise SkipAction(
                             f"preExec scan_pr skipped — fetch_diff returned an "
-                            f"empty diff for pinned PR #{pinned} (gh failure or "
-                            f"no patch); not reviewing without a diff"
+                            f"empty diff for pinned PR #{pinned} (gh failed or "
+                            f"no patch); not reviewing without a diff — "
+                            f"re-label to retry"
                         )
                     discovered["pr_diff"] = diff
                     continue

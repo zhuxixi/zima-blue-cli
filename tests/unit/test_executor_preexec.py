@@ -9,7 +9,7 @@ import pytest
 
 from zima.execution.actions_runner import SkipAction
 from zima.execution.executor import ExecutionStatus, PJobExecutor
-from zima.models.actions import ActionsConfig, PreExecAction
+from zima.models.actions import ActionsConfig, PostExecAction, PreExecAction
 from zima.models.agent import AgentConfig
 from zima.models.pjob import Overrides, PJobConfig
 from zima.models.workflow import WorkflowConfig
@@ -703,3 +703,92 @@ class TestPinnedPrFlow:
         assert result.status == ExecutionStatus.SUCCESS
         assert "pull/11" in captured["text"]
         assert "pull/999" not in captured["text"]
+
+
+class TestStaleOverrideCleanup:
+    """#158 R6: a stale static pr/pr_number override must not pin rendering or
+    postExec to a different PR than the one the scan actually found."""
+
+    def _setup(self, manager):
+        from zima.models.variable import VariableConfig
+
+        agent = AgentConfig.create(
+            code="test-agent",
+            name="Test Agent",
+            agent_type="kimi",
+            parameters={"mockCommand": "echo hello"},
+        )
+        manager.save_config("agent", "test-agent", agent.to_dict())
+
+        workflow = WorkflowConfig.create(
+            code="test-workflow",
+            name="Test Workflow",
+            template="review {{ pr_url }} #{{ pr_number }}",
+        )
+        manager.save_config("workflow", "test-workflow", workflow.to_dict())
+
+        var = VariableConfig.create(
+            code="test-var",
+            name="Test Vars",
+            values={"repo": "owner/repo", "pr_url": "", "pr_number": ""},
+        )
+        manager.save_config("variable", "test-var", var.to_dict())
+
+        pjob = PJobConfig.create(
+            code="test-pjob",
+            name="Test PJob",
+            agent="test-agent",
+            workflow="test-workflow",
+            variable="test-var",
+            overrides={"variableValues": {"pr_number": "999"}},
+        )
+        pjob.spec.actions = ActionsConfig(
+            provider="github",
+            pre_exec=[PreExecAction(type="scan_pr", repo="{{repo}}", label="zima:needs-review")],
+            post_exec=[
+                PostExecAction(
+                    condition="success",
+                    type="add_label",
+                    remove_labels=["zima:needs-review"],
+                    repo="{{repo}}",
+                    issue="{{pr_number}}",
+                )
+            ],
+        )
+        manager.save_config("pjob", "test-pjob", pjob.to_dict())
+
+    def test_stale_static_override_loses_to_scanned_pr(self, isolated_zima_home, capsys):
+        from zima.config.manager import ConfigManager
+
+        manager = ConfigManager()
+        self._setup(manager)
+
+        executor = PJobExecutor()
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = [
+            {"number": "42", "title": "Fix", "url": "https://github.com/owner/repo/pull/42"}
+        ]
+        mock_provider.fetch_diff.return_value = "+diff"
+
+        captured: dict = {}
+
+        def fake_run(**kwargs):
+            cmd = kwargs["command"]
+            text = " ".join(cmd)
+            if "--prompt" in cmd:
+                text += "\n" + Path(cmd[cmd.index("--prompt") + 1]).read_text()
+            captured["text"] = text
+            return (0, "done", "", 12345)
+
+        with patch.object(executor._actions_runner._registry, "get", return_value=mock_provider):
+            with patch.object(executor, "_run_command", side_effect=fake_run):
+                result = executor.execute("test-pjob")  # no runtime overrides
+
+        assert result.status == ExecutionStatus.SUCCESS
+        # Prompt renders the SCANNED PR, not the stale static override
+        assert "#42" in captured["text"]
+        assert "999" not in captured["text"]
+        # postExec also sees the scanned value (remove_label on success path)
+        mock_provider.remove_label.assert_called_once_with("owner/repo", "42", "zima:needs-review")
+        # Warning emitted (stale key detected)
+        assert "stale/empty override" in capsys.readouterr().out

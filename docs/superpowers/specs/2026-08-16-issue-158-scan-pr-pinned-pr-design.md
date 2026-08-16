@@ -72,3 +72,7 @@ original Component Contract where they differ:
   substitution works even when the PJob references no Variable config.
 - webhook server injects both `pr_number` and legacy `pr` during the
   compatibility window.
+- **`spec.overrides` `pr`/`pr_number` keys are deprecated**: a stale static
+  value that disagrees with the scanned PR is popped (with a warning) before
+  merge-back, and a finally-block safety net forces the scanned value into
+  postExec substitution under both alias keys.
