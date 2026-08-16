@@ -345,6 +345,22 @@ class PJobExecutor:
                             for k, v in _bundle.overrides.variable_values.items():
                                 if v is not None:
                                     action_env.setdefault(k, str(v))
+                            # A stale static pr/pr_number override must not
+                            # mislabel the PR actually scanned this run (#158 R4)
+                            _spr = getattr(result, "scan_pr_result", None) or {}
+                            _scanned = _spr.get("pr_number") or ""
+                            _static = str(
+                                _bundle.overrides.variable_values.get("pr_number")
+                                or _bundle.overrides.variable_values.get("pr")
+                                or ""
+                            )
+                            if _scanned and _static and _scanned != _static:
+                                print(
+                                    f"Warning: static override pr_number={_static} "
+                                    f"differs from scanned pr_number={_scanned}; "
+                                    f"using the scanned value for postExec"
+                                )
+                                action_env["pr_number"] = _scanned
                         self._run_post_exec_actions(_pjob, result, action_env)
                 except Exception as e:
                     import traceback

@@ -229,6 +229,13 @@ class ActionsRunner:
                 # Normalize the common "#123" copy-paste form (#158 R3).
                 if pinned.startswith("#"):
                     pinned = pinned.lstrip("#").strip()
+                    if not pinned:
+                        # "#" alone normalizes to empty: treat as malformed so
+                        # the input is never silently swallowed (#158 R4).
+                        raise SkipAction(
+                            "preExec scan_pr skipped — pinned pr value is only a "
+                            f"'#' prefix with no digits, pjob={self._pjob_code or '?'}"
+                        )
                 if pinned and not re.fullmatch(r"[0-9]+", pinned):
                     # Malformed manual input (typo in --set-var): fail fast.
                     # Only report the length, never echo the raw value (#158 R2).
@@ -252,18 +259,22 @@ class ActionsRunner:
                     # SkipAction (SKIPPED skips postExec, label stays for a
                     # re-run) instead of "reviewing" an empty diff (#158 R2).
                     # Transient gh failures get a short bounded retry first
-                    # (#158 R3): attempts 3x with 1s/2s backoff.
+                    # (#158 R3/R4): attempts 3x with 1s/2s backoff. An empty
+                    # string ALSO retries — GitHubProvider.fetch_diff returns
+                    # "" for gh non-zero exit (check=False), so rate-limit /
+                    # network blips surface as empty, not raised.
                     diff = ""
                     last_exc: Optional[Exception] = None
                     for attempt in range(3):
                         try:
                             diff = provider.fetch_diff(repo, pinned)
                             last_exc = None
-                            break
+                            if diff:
+                                break
                         except Exception as e:  # noqa: BLE001 - retry, then skip
                             last_exc = e
-                            if attempt < 2:
-                                time.sleep(1.0 * (attempt + 1))
+                        if attempt < 2:
+                            time.sleep(1.0 * (attempt + 1))
                     if last_exc is not None:
                         raise SkipAction(
                             f"preExec scan_pr skipped — fetch_diff raised for "
