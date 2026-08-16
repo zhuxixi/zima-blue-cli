@@ -253,14 +253,21 @@ class PJobExecutor:
                         if not _scan_valid:
                             # Third-party providers (entry-point extension) may
                             # return PR dicts with missing/non-numeric numbers;
-                            # never write unvalidated scan output into holders
+                            # never let unvalidated scan output flow anywhere:
+                            # drop the pr keys from dynamic_vars so merge-back /
+                            # injection / postExec all keep configured values
                             print(
                                 f"Warning: scan returned non-numeric pr_number "
-                                f"(len={len(_scanned_pr)}); skipping pr/repo "
-                                f"stale-rewrite (#158 R8)"
+                                f"(len={len(_scanned_pr)}); dropping scan pr "
+                                f"values (#158 R8/R9)"
                             )
+                            dynamic_vars = {
+                                k: v
+                                for k, v in dynamic_vars.items()
+                                if k not in ("pr_number", "pr")
+                            }
                         else:
-                            _scanned_repo = str(dynamic_vars.get("repo") or "")
+                            _scanned_repo = str(dynamic_vars.get("repo") or "").strip()
                             bundle.overrides = copy.copy(bundle.overrides)
                             bundle.overrides.variable_values = dict(
                                 bundle.overrides.variable_values
@@ -279,7 +286,7 @@ class PJobExecutor:
                                     if _k not in _holder:
                                         continue
                                     _raw = str(_holder[_k])
-                                    if _raw.strip() == _scanned_pr:
+                                    if _raw == _scanned_pr:
                                         continue  # already in canonical form
                                     _holder[_k] = _scanned_pr
                                     # Warn only when the normalized value points
@@ -287,9 +294,11 @@ class PJobExecutor:
                                     # ('#123', padded) rewrite silently (#158 R8)
                                     if normalize_pr_number(_raw) != _scanned_pr and _raw.strip():
                                         _changed.add(_k)
-                                if _scanned_repo and str(_holder.get("repo") or "").strip() not in (
-                                    "",
-                                    _scanned_repo,
+                                _cur_repo_h = str(_holder.get("repo") or "").strip()
+                                if (
+                                    _scanned_repo
+                                    and _cur_repo_h
+                                    and _cur_repo_h.lower() != _scanned_repo.lower()
                                 ):
                                     _holder["repo"] = _scanned_repo
                                     _changed.add("repo")
@@ -297,7 +306,7 @@ class PJobExecutor:
                                 for _k in ("pr_number", "pr"):
                                     if _k in bundle.variable.values:
                                         _raw = str(bundle.variable.values[_k])
-                                        if _raw.strip() == _scanned_pr:
+                                        if _raw == _scanned_pr:
                                             continue
                                         bundle.variable.values[_k] = _scanned_pr
                                         if (
@@ -305,9 +314,12 @@ class PJobExecutor:
                                             and _raw.strip()
                                         ):
                                             _changed.add(_k)
-                                if _scanned_repo and str(
-                                    bundle.variable.values.get("repo") or ""
-                                ).strip() not in ("", _scanned_repo):
+                                _cur_repo_v = str(bundle.variable.values.get("repo") or "").strip()
+                                if (
+                                    _scanned_repo
+                                    and _cur_repo_v
+                                    and _cur_repo_v.lower() != _scanned_repo.lower()
+                                ):
                                     bundle.variable.values["repo"] = _scanned_repo
                                     _changed.add("repo")
                             if _changed:
@@ -317,6 +329,10 @@ class PJobExecutor:
                                     f"pr_number={_scanned_pr}; using the scanned "
                                     f"value for rendering and postExec"
                                 )
+                            # Canonicalize the scan value itself so the later
+                            # inject_dynamic_vars cannot overwrite the holder
+                            # rewrites with the raw ('#N', padded) form (#158 R9)
+                            dynamic_vars = {**dynamic_vars, "pr_number": _scanned_pr}
                     # Merge discovered vars into env (for postExec substitution)
                     # Skip keys that already exist in runtime overrides (higher priority)
                     for key, value in dynamic_vars.items():
@@ -327,11 +343,13 @@ class PJobExecutor:
                             env_vars[key] = value
                     # Merge discovered vars into bundle (for Jinja2 rendering)
                     bundle.inject_dynamic_vars(dynamic_vars)
-                    # Persist scan_pr_result for skip logic
-                    if "pr_number" in dynamic_vars:
+                    # Persist scan_pr_result for skip logic (repo is useful
+                    # for the finally safety net even when pr_number is
+                    # missing/garbage from a third-party provider, #158 R9)
+                    if "pr_number" in dynamic_vars or "repo" in dynamic_vars:
                         result.scan_pr_result = {
                             "repo": dynamic_vars.get("repo", ""),
-                            "pr_number": dynamic_vars["pr_number"],
+                            "pr_number": dynamic_vars.get("pr_number", ""),
                         }
                 except SkipAction as e:
                     result.status = ExecutionStatus.SKIPPED
@@ -436,6 +454,16 @@ class PJobExecutor:
                             # empty-override bypass).
                             _spr = getattr(result, "scan_pr_result", None) or {}
                             _scanned = normalize_pr_number(_spr.get("pr_number") or "")
+                            if _scanned and not re.fullmatch(r"[0-9]+", _scanned):
+                                # Same validation as the pre-merge rewrite: a
+                                # non-numeric scan value must not be forced into
+                                # postExec substitution (#158 R9)
+                                print(
+                                    f"Warning: scan returned non-numeric pr_number "
+                                    f"(len={len(_scanned)}); skipping pr correction "
+                                    f"in postExec"
+                                )
+                                _scanned = ""
                             if _scanned:
                                 for _k in ("pr_number", "pr"):
                                     _cur = normalize_pr_number(action_env.get(_k) or "")
@@ -447,15 +475,23 @@ class PJobExecutor:
                                                 f"using the scanned value for postExec"
                                             )
                                         action_env[_k] = _scanned
-                                _scanned_repo = str(_spr.get("repo") or "").strip()
-                                _cur_repo = str(action_env.get("repo") or "").strip()
-                                if _scanned_repo and _cur_repo and _cur_repo != _scanned_repo:
-                                    print(
-                                        f"Warning: override repo differs from scanned "
-                                        f"repo={_scanned_repo}; using the scanned "
-                                        f"value for postExec"
-                                    )
-                                    action_env["repo"] = _scanned_repo
+                            # Repo correction is independent of pr_number
+                            # validity (#158 R9); case-insensitive — GitHub repo
+                            # paths are case-insensitive, format-only variants
+                            # must not warn (#158 R9)
+                            _scanned_repo = str(_spr.get("repo") or "").strip()
+                            _cur_repo = str(action_env.get("repo") or "").strip()
+                            if (
+                                _scanned_repo
+                                and _cur_repo
+                                and _cur_repo.lower() != _scanned_repo.lower()
+                            ):
+                                print(
+                                    f"Warning: override repo differs from scanned "
+                                    f"repo={_scanned_repo}; using the scanned "
+                                    f"value for postExec"
+                                )
+                                action_env["repo"] = _scanned_repo
                         self._run_post_exec_actions(_pjob, result, action_env)
                 except Exception as e:
                     import traceback
