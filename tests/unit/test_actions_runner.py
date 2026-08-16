@@ -583,6 +583,42 @@ class TestRunPrePinnedPr:
             assert result["pr_number"] == "11"
             assert result["pr_diff"] == "+diff"
 
+    def test_pinned_hash_prefix_normalized(self):
+        """ "#11" (common copy-paste form) normalizes to 11 and pins (#158 R3)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.fetch_diff.return_value = "+d"
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(self._make_actions(), {"pr_number": "#11"})
+            mock_provider.scan_prs.assert_not_called()
+            assert result["pr_number"] == "11"
+            assert result["pr_url"].endswith("/pull/11")
+
+    def test_pinned_fetch_diff_retries_then_raises_skip(self):
+        """fetch_diff raising twice then succeeding still completes (#158 R3)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.fetch_diff.side_effect = [
+            RuntimeError("gh down"),
+            RuntimeError("gh down"),
+            "+diff",
+        ]
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with patch("zima.execution.actions_runner.time.sleep") as mock_sleep:
+                result = runner.run_pre(self._make_actions(), {"pr_number": "11"})
+            assert mock_sleep.call_count == 2
+            assert result["pr_diff"] == "+diff"
+
+    def test_pin_env_not_provided_reads_env(self):
+        """Legacy direct callers (pin_env=None) still read merged env —
+        backwards compatibility for library use."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.fetch_diff.return_value = "+d"
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(self._make_actions(), {"pr_number": "11"})
+            assert result["pr_number"] == "11"
+
     def test_malformed_pinned_raises_skip(self):
         """Non-numeric pinned value fails fast via SkipAction (no rescan, no
         mixed state, raw value not echoed — only its length)."""

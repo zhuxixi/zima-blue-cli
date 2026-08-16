@@ -188,6 +188,9 @@ class PJobExecutor:
         )
         self._actions_runner._pjob_code = pjob_code
         temp_dir: Optional[Path] = None
+        # Runtime-only overrides (execute() argument): the pinned-PR
+        # short-circuit must trust these alone (#158 R3).
+        runtime_overrides = overrides
 
         try:
             # 1. Load PJob configuration
@@ -216,10 +219,12 @@ class PJobExecutor:
                             pre_env.setdefault(k, str(v))
                     # Runtime-injected variable values only (--set-var /
                     # webhook spawn): the pinned-PR short-circuit must trust
-                    # these alone, never static Variable config values (#158).
+                    # these alone — never static Variable config values nor
+                    # PJob YAML spec.overrides (#158 R3: build from the
+                    # execute() runtime argument, not the merged bundle.overrides).
                     pin_env = {
                         k: str(v)
-                        for k, v in bundle.overrides.variable_values.items()
+                        for k, v in (runtime_overrides or Overrides()).variable_values.items()
                         if v is not None
                     }
                     dynamic_vars = self._actions_runner.run_pre(
@@ -334,6 +339,12 @@ class PJobExecutor:
                         action_env = _env_vars.copy()
                         if _bundle is not None and _bundle.variable:
                             action_env.update(_bundle.variable.values)
+                        # Runtime overrides must reach postExec {{var}} substitution
+                        # even when the PJob references no Variable config (#158 R3)
+                        if _bundle is not None:
+                            for k, v in _bundle.overrides.variable_values.items():
+                                if v is not None:
+                                    action_env.setdefault(k, str(v))
                         self._run_post_exec_actions(_pjob, result, action_env)
                 except Exception as e:
                     import traceback

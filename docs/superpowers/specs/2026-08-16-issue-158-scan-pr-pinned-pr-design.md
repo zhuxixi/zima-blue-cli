@@ -53,3 +53,22 @@ if pinned:
 ## Degradation
 
 - If pinned value is wrong (misconfigured manual run), agent gets a bad pr_url → review fails → postExec failure path labels zima:needs-fix. Same observable behavior as a stale PR today; no new failure mode.
+
+---
+
+## Revision (post CR rounds 1-3, 2026-08-17)
+
+The shipped behavior evolved through CR review; this section supersedes the
+original Component Contract where they differ:
+
+- **pr_diff IS populated** on the pinned path (direct `gh pr view`, no
+  search-index race). An empty diff or a raised exception (after 3 bounded
+  retries) is a SkipAction — never review an empty diff.
+- **Malformed pinned values** (non-numeric after `#` normalization) raise
+  SkipAction immediately; the message reports length only, never the raw value.
+- **Pin source is the runtime `execute()` overrides argument only** — static
+  Variable config values and PJob YAML `spec.overrides` never pin.
+- **postExec action_env** merges `overrides.variable_values` so `{{pr_number}}`
+  substitution works even when the PJob references no Variable config.
+- webhook server injects both `pr_number` and legacy `pr` during the
+  compatibility window.

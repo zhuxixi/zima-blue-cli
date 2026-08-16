@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import time
 from typing import Optional
 
 from zima.actions.base import ActionProvider
@@ -225,6 +226,9 @@ class ActionsRunner:
                 # overrides); static Variable config keys never pin (#158 R2).
                 pin_source = pin_env if pin_env is not None else env
                 pinned = (pin_source.get("pr_number") or pin_source.get("pr") or "").strip()
+                # Normalize the common "#123" copy-paste form (#158 R3).
+                if pinned.startswith("#"):
+                    pinned = pinned.lstrip("#").strip()
                 if pinned and not re.fullmatch(r"[0-9]+", pinned):
                     # Malformed manual input (typo in --set-var): fail fast.
                     # Only report the length, never echo the raw value (#158 R2).
@@ -247,13 +251,25 @@ class ActionsRunner:
                     # diff must NOT flow into a hollow review: fail fast with
                     # SkipAction (SKIPPED skips postExec, label stays for a
                     # re-run) instead of "reviewing" an empty diff (#158 R2).
-                    try:
-                        diff = provider.fetch_diff(repo, pinned)
-                    except Exception as e:  # noqa: BLE001 - skip, not fail
+                    # Transient gh failures get a short bounded retry first
+                    # (#158 R3): attempts 3x with 1s/2s backoff.
+                    diff = ""
+                    last_exc: Optional[Exception] = None
+                    for attempt in range(3):
+                        try:
+                            diff = provider.fetch_diff(repo, pinned)
+                            last_exc = None
+                            break
+                        except Exception as e:  # noqa: BLE001 - retry, then skip
+                            last_exc = e
+                            if attempt < 2:
+                                time.sleep(1.0 * (attempt + 1))
+                    if last_exc is not None:
                         raise SkipAction(
                             f"preExec scan_pr skipped — fetch_diff raised for "
-                            f"pinned PR #{pinned}: {e}"
-                        ) from e
+                            f"pinned PR #{pinned} after 3 attempts "
+                            f"(possibly transient — re-label to retry): {last_exc}"
+                        ) from last_exc
                     if not diff:
                         raise SkipAction(
                             f"preExec scan_pr skipped — fetch_diff returned an "
