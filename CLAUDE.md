@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Zima Blue CLI** is a Python-based AI Agent orchestration platform. It manages execution of AI agents (Kimi, Claude) through composable YAML configurations and Jinja2 prompt templates. Named after the sci-fi story about returning to simplicity.
 
+The repo also ships a pi-coding-agent skills package (GitHub issue-driven dev loop): root `package.json` is its pi package manifest (not npm), skills live under `pi/` (`github-issue-driven` / `issue-research` / `zima-pr-monitor` / `github-code-review-batch`), installed locally via `pi install <repo path>`; pi worktrees use `.pi/worktrees/` (gitignored).
+
 ## Development Commands
 
 ```bash
