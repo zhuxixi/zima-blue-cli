@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -646,6 +646,9 @@ class TestPinnedPrFlow:
             }
         )
 
+        mock_provider = MagicMock()
+        mock_provider.fetch_diff.return_value = "+patch"
+
         captured: dict = {}
 
         def fake_run(**kwargs):
@@ -659,8 +662,9 @@ class TestPinnedPrFlow:
             captured["text"] = text
             return (0, "done", "", 12345)
 
-        with patch.object(executor, "_run_command", side_effect=fake_run):
-            result = executor.execute("test-pjob", overrides=overrides)
+        with patch.object(executor._actions_runner._registry, "get", return_value=mock_provider):
+            with patch.object(executor, "_run_command", side_effect=fake_run):
+                result = executor.execute("test-pjob", overrides=overrides)
 
         assert result.status == ExecutionStatus.SUCCESS
         assert "https://github.com/owner/repo/pull/11" in captured["text"]
@@ -676,6 +680,9 @@ class TestPinnedPrFlow:
         executor = PJobExecutor()
         overrides = Overrides(variable_values={"repo": "owner/repo", "pr_number": "11"})
 
+        mock_provider = MagicMock()
+        mock_provider.fetch_diff.return_value = "+patch"
+
         captured: dict = {}
 
         def fake_run(**kwargs):
@@ -689,8 +696,9 @@ class TestPinnedPrFlow:
             captured["text"] = text
             return (0, "done", "", 12345)
 
-        with patch.object(executor, "_run_command", side_effect=fake_run):
-            result = executor.execute("test-pjob", overrides=overrides)
+        with patch.object(executor._actions_runner._registry, "get", return_value=mock_provider):
+            with patch.object(executor, "_run_command", side_effect=fake_run):
+                result = executor.execute("test-pjob", overrides=overrides)
 
         assert result.status == ExecutionStatus.SUCCESS
         assert "pull/11" in captured["text"]

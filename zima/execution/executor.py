@@ -214,8 +214,19 @@ class PJobExecutor:
                     for k, v in bundle.get_variable_values().items():
                         if v is not None:
                             pre_env.setdefault(k, str(v))
+                    # Runtime-injected variable values only (--set-var /
+                    # webhook spawn): the pinned-PR short-circuit must trust
+                    # these alone, never static Variable config values (#158).
+                    pin_env = {
+                        k: str(v)
+                        for k, v in bundle.overrides.variable_values.items()
+                        if v is not None
+                    }
                     dynamic_vars = self._actions_runner.run_pre(
-                        pjob.spec.actions, pre_env, workdir=bundle.work_dir
+                        pjob.spec.actions,
+                        pre_env,
+                        workdir=bundle.work_dir,
+                        pin_env=pin_env,
                     )
                     # Merge discovered vars into env (for postExec substitution)
                     # Skip keys that already exist in runtime overrides (higher priority)

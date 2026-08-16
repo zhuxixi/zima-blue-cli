@@ -171,7 +171,11 @@ class ActionsRunner:
         raise SkipAction(f"All {len(prs)} PR(s) recently attempted, skipping")
 
     def run_pre(
-        self, actions: ActionsConfig, env: dict[str, str], workdir: Optional[str] = None
+        self,
+        actions: ActionsConfig,
+        env: dict[str, str],
+        workdir: Optional[str] = None,
+        pin_env: Optional[dict[str, str]] = None,
     ) -> dict[str, str]:
         """Execute all preExec actions, return discovered variables.
 
@@ -179,6 +183,11 @@ class ActionsRunner:
             actions: Actions configuration from PJob.
             env: Environment dict for {{VAR}} substitution in action fields.
             workdir: Working directory for git_pull action (agent's workDir).
+            pin_env: Runtime-injected variable values only (``--set-var`` /
+                webhook spawn). When provided, the pinned-PR short-circuit
+                trusts only these — static Variable config values in ``env``
+                never pin (#158 R2). ``None`` falls back to reading ``env``
+                (direct callers / legacy behavior).
 
         Returns:
             Dictionary of discovered variables (e.g., pr_number, pr_url, pr_diff).
@@ -212,18 +221,17 @@ class ActionsRunner:
                 # lags a few seconds behind the just-delivered label event, so a
                 # rescan at trigger time can miss the PR that caused this very
                 # run (#158). No pin -> daemon polling path, behavior unchanged.
-                # Note: "pinned" only reads runtime-injected values here; a
-                # non-empty pr/pr_number key in a static Variable config would
-                # also pin (unlikely; logged below for visibility).
-                pinned = (env.get("pr_number") or env.get("pr") or "").strip()
+                # Only runtime-injected values pin (pin_env from the executor's
+                # overrides); static Variable config keys never pin (#158 R2).
+                pin_source = pin_env if pin_env is not None else env
+                pinned = (pin_source.get("pr_number") or pin_source.get("pr") or "").strip()
                 if pinned and not re.fullmatch(r"[0-9]+", pinned):
-                    # Malformed manual input (e.g. typo): fall back to the
-                    # scan path rather than building a bogus pr_url (#158 R1).
-                    print(
-                        f"Warning: pinned pr value '{pinned}' is not a number, "
-                        f"falling back to label rescan"
+                    # Malformed manual input (typo in --set-var): fail fast.
+                    # Only report the length, never echo the raw value (#158 R2).
+                    raise SkipAction(
+                        f"preExec scan_pr skipped — pinned pr value is not a "
+                        f"number (len={len(pinned)}), pjob={self._pjob_code or '?'}"
                     )
-                    pinned = ""
                 if pinned:
                     print(
                         f"scan_pr: pinned PR #{pinned} in {repo} "
@@ -235,13 +243,24 @@ class ActionsRunner:
                     discovered["pr_url"] = f"https://github.com/{repo}/pull/{pinned}"
                     # Keep the pr_diff contract of the scan path: fetch_diff
                     # reads the PR directly (gh pr view), not the search index,
-                    # so it does not reintroduce the #158 race. Degrade to an
-                    # empty diff with a warning instead of failing the run.
+                    # so it does not reintroduce the #158 race. An empty/failed
+                    # diff must NOT flow into a hollow review: fail fast with
+                    # SkipAction (SKIPPED skips postExec, label stays for a
+                    # re-run) instead of "reviewing" an empty diff (#158 R2).
                     try:
-                        discovered["pr_diff"] = provider.fetch_diff(repo, pinned)
-                    except Exception as e:  # noqa: BLE001 - degrade, not fail
-                        print(f"Warning: fetch_diff failed for pinned PR #{pinned}: {e}")
-                        discovered["pr_diff"] = ""
+                        diff = provider.fetch_diff(repo, pinned)
+                    except Exception as e:  # noqa: BLE001 - skip, not fail
+                        raise SkipAction(
+                            f"preExec scan_pr skipped — fetch_diff raised for "
+                            f"pinned PR #{pinned}: {e}"
+                        ) from e
+                    if not diff:
+                        raise SkipAction(
+                            f"preExec scan_pr skipped — fetch_diff returned an "
+                            f"empty diff for pinned PR #{pinned} (gh failure or "
+                            f"no patch); not reviewing without a diff"
+                        )
+                    discovered["pr_diff"] = diff
                     continue
                 prs = provider.scan_prs(repo, label)
                 if not prs:

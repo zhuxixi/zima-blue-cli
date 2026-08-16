@@ -526,18 +526,31 @@ class TestRunPrePinnedPr:
                 "pr_diff": "+diff",
             }
 
-    def test_pinned_fetch_diff_failure_degrades(self):
-        """fetch_diff raising during a pinned run degrades to empty diff."""
+    def test_pinned_fetch_diff_raising_raises_skip(self):
+        """fetch_diff raising during a pinned run -> SkipAction (label stays
+        for a re-run; no hollow review)."""
         runner = ActionsRunner()
         mock_provider = MagicMock()
         mock_provider.fetch_diff.side_effect = RuntimeError("gh down")
         with patch.object(runner._registry, "get", return_value=mock_provider):
-            result = runner.run_pre(self._make_actions(), {"pr_number": "11"})
-            assert result["pr_diff"] == ""
-            assert result["pr_number"] == "11"
+            with pytest.raises(SkipAction) as exc_info:
+                runner.run_pre(self._make_actions(), {"pr_number": "11"})
+            assert "fetch_diff raised" in str(exc_info.value)
 
-    def test_malformed_pinned_falls_back_to_rescan(self):
-        """Non-numeric pinned value falls back to the label-rescan path."""
+    def test_pinned_fetch_diff_empty_raises_skip(self):
+        """fetch_diff returning an empty string (gh check=False silent fail)
+        -> SkipAction; never review an empty diff (#158 R2)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.fetch_diff.return_value = ""
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with pytest.raises(SkipAction) as exc_info:
+                runner.run_pre(self._make_actions(), {"pr_number": "11"})
+            assert "empty diff" in str(exc_info.value)
+
+    def test_pin_env_is_the_only_pin_source_when_provided(self):
+        """With pin_env provided (executor path), a pr_number that exists only
+        in the merged env (static Variable config) must NOT pin (#158 R2)."""
         runner = ActionsRunner()
         mock_provider = MagicMock()
         mock_provider.scan_prs.return_value = [
@@ -545,9 +558,44 @@ class TestRunPrePinnedPr:
         ]
         mock_provider.fetch_diff.return_value = "d"
         with patch.object(runner._registry, "get", return_value=mock_provider):
-            result = runner.run_pre(self._make_actions(), {"pr_number": "abc"})
+            result = runner.run_pre(
+                self._make_actions(),
+                env={"pr_number": "11"},  # static config value in merged env
+                pin_env={},  # nothing runtime-injected
+            )
+            # No pin: the label rescan ran and discovered PR 42
             mock_provider.scan_prs.assert_called_once_with("owner/repo", "zima:needs-review")
             assert result["pr_number"] == "42"
+
+    def test_pin_env_pins_even_when_env_lacks_it(self):
+        """With pin_env provided, a runtime-only pr_number pins even though the
+        merged env does not carry it."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.fetch_diff.return_value = "+diff"
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(
+                self._make_actions(),
+                env={},
+                pin_env={"pr_number": "11"},
+            )
+            mock_provider.scan_prs.assert_not_called()
+            assert result["pr_number"] == "11"
+            assert result["pr_diff"] == "+diff"
+
+    def test_malformed_pinned_raises_skip(self):
+        """Non-numeric pinned value fails fast via SkipAction (no rescan, no
+        mixed state, raw value not echoed — only its length)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with pytest.raises(SkipAction) as exc_info:
+                runner.run_pre(self._make_actions(), {"pr_number": "abc"})
+            mock_provider.scan_prs.assert_not_called()
+            msg = str(exc_info.value)
+            assert "not a number" in msg
+            assert "abc" not in msg  # raw value never echoed
+            assert "len=3" in msg
 
     def test_pinned_pr_legacy_name(self):
         """env pr (legacy webhook name) also pins."""
