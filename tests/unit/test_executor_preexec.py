@@ -507,8 +507,8 @@ class TestPreExecIntegration:
             provider="github",
             pre_exec=[PreExecAction(type="scan_pr", repo="x/y", label="ready")],
         )
-        # Runtime env override for pr_number
-        pjob.spec.overrides = Overrides(env_vars={"pr_number": "OVERRIDE"})
+        # Runtime env override (non-pr key; pr keys have scan semantics, #158)
+        pjob.spec.overrides = Overrides(env_vars={"review_target": "OVERRIDE"})
         manager.save_config("pjob", "test-pjob", pjob.to_dict())
 
         executor = PJobExecutor()
@@ -516,14 +516,16 @@ class TestPreExecIntegration:
         with patch.object(
             executor._actions_runner,
             "run_pre",
-            return_value={"pr_number": "PREEXEC", "repo": "x/y"},
+            return_value={"review_target": "PREEXEC", "repo": "x/y"},
         ):
             with patch.object(executor, "_run_command") as mock_run:
                 mock_run.return_value = (0, "done", "", 12345)
                 result = executor.execute("test-pjob")
 
         # Runtime override should win over preExec in env_vars
-        assert result.env.get("pr_number") == "OVERRIDE"
+        # (uses a non-pr key: pr/pr_number keys have scan-specific semantics,
+        # see #158 — the actually-scanned PR wins there)
+        assert result.env.get("review_target") == "OVERRIDE"
 
     def test_preexec_substitutes_variable_config_values(self, isolated_zima_home):
         """Test that preExec {{var}} substitution includes VariableConfig values, not just env_vars.
@@ -866,3 +868,101 @@ class TestStaleOverrideCleanupCliPath(TestStaleOverrideCleanup):
         assert result.status == ExecutionStatus.SUCCESS
         assert "#42" in captured["text"]
         assert "999" not in captured["text"]
+
+
+class TestPrAliasRenderChannel:
+    """#158 R7: the {{pr}} alias channel and the envVars channel must render
+    the scanned PR, and empty defaults must not fire stale warnings."""
+
+    def _setup(self, manager, template, pjob_overrides):
+        from zima.models.variable import VariableConfig
+
+        agent = AgentConfig.create(
+            code="test-agent",
+            name="Test Agent",
+            agent_type="kimi",
+            parameters={"mockCommand": "echo hello"},
+        )
+        manager.save_config("agent", "test-agent", agent.to_dict())
+        workflow = WorkflowConfig.create(code="test-workflow", name="W", template=template)
+        manager.save_config("workflow", "test-workflow", workflow.to_dict())
+        var = VariableConfig.create(
+            code="test-var",
+            name="V",
+            values={"repo": "owner/repo", "pr_url": "", "pr_number": "", "pr": ""},
+        )
+        manager.save_config("variable", "test-var", var.to_dict())
+        pjob = PJobConfig.create(
+            code="test-pjob",
+            name="P",
+            agent="test-agent",
+            workflow="test-workflow",
+            variable="test-var",
+            overrides=pjob_overrides,
+        )
+        pjob.spec.actions = ActionsConfig(
+            provider="github",
+            pre_exec=[PreExecAction(type="scan_pr", repo="{{repo}}", label="zima:needs-review")],
+        )
+        manager.save_config("pjob", "test-pjob", pjob.to_dict())
+
+    def _run(self, capsys):
+        from zima.config.manager import ConfigManager
+
+        manager = ConfigManager()
+        self._setup(
+            manager,
+            template="review {{ pr_url }} #{{ pr_number }} pr={{ pr }}",
+            pjob_overrides={"variableValues": {"pr": "999"}},
+        )
+        executor = PJobExecutor()
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = [
+            {"number": "42", "title": "Fix", "url": "https://github.com/owner/repo/pull/42"}
+        ]
+        mock_provider.fetch_diff.return_value = "+diff"
+        captured: dict = {}
+
+        def fake_run(**kwargs):
+            cmd = kwargs["command"]
+            text = " ".join(cmd)
+            if "--prompt" in cmd:
+                text += "\n" + Path(cmd[cmd.index("--prompt") + 1]).read_text()
+            captured["text"] = text
+            return (0, "done", "", 12345)
+
+        with patch.object(executor._actions_runner._registry, "get", return_value=mock_provider):
+            with patch.object(executor, "_run_command", side_effect=fake_run):
+                result = executor.execute("test-pjob", overrides=Overrides())
+        out = capsys.readouterr().out
+        return result, captured["text"], out
+
+    def test_pr_alias_renders_scanned_pr(self, isolated_zima_home, capsys):
+        result, text, out = self._run(capsys)
+        assert result.status == ExecutionStatus.SUCCESS
+        assert "#42" in text
+        assert "pr=42" in text  # alias channel renders the scanned PR (#158 R7)
+        assert "999" not in text
+        assert "stale/empty" in out
+
+    def test_empty_defaults_do_not_warn(self, isolated_zima_home, capsys):
+        from zima.config.manager import ConfigManager
+
+        manager = ConfigManager()
+        self._setup(
+            manager,
+            template="review {{ pr_url }}",
+            pjob_overrides={"variableValues": {}},
+        )
+        executor = PJobExecutor()
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = [
+            {"number": "42", "title": "Fix", "url": "https://github.com/owner/repo/pull/42"}
+        ]
+        mock_provider.fetch_diff.return_value = "+diff"
+
+        with patch.object(executor._actions_runner._registry, "get", return_value=mock_provider):
+            with patch.object(executor, "_run_command", return_value=(0, "done", "", 12345)):
+                result = executor.execute("test-pjob", overrides=Overrides())
+        assert result.status == ExecutionStatus.SUCCESS
+        assert "stale/empty" not in capsys.readouterr().out

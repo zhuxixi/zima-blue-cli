@@ -644,6 +644,28 @@ class TestRunPrePinnedPr:
             mock_provider.scan_prs.assert_not_called()
             assert result["pr_number"] == "11"
 
+    def test_hash_only_pr_number_falls_through_to_alias(self):
+        """(pr_number='#', pr='11'): the '#'-only candidate does not block the
+        valid alias — pins 11 (#158 R7)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.fetch_diff.return_value = "+d"
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(self._make_actions(), {"pr_number": "#", "pr": "11"})
+            mock_provider.scan_prs.assert_not_called()
+            assert result["pr_number"] == "11"
+
+    def test_all_invalid_pin_candidates_raise_skip(self):
+        """(pr_number=' ', pr='#'): no valid candidate and one malformed ->
+        SkipAction (#158 R7)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with pytest.raises(SkipAction) as exc_info:
+                runner.run_pre(self._make_actions(), {"pr_number": " ", "pr": "#"})
+            mock_provider.scan_prs.assert_not_called()
+            assert "'#' prefix" in str(exc_info.value)
+
     def test_pinned_hash_only_raises_skip(self):
         """ "#" with no digits fails fast instead of silently unpinning (#158 R4)."""
         runner = ActionsRunner()

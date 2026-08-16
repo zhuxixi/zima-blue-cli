@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import os
 import shutil
 import subprocess
@@ -233,35 +234,55 @@ class PJobExecutor:
                         workdir=bundle.work_dir,
                         pin_env=pin_env,
                     )
-                    # A stale/empty pr value — whether it lives in static
-                    # spec.overrides, in the runtime overrides object, or in
-                    # the Variable config values it was deep-merged into —
-                    # must not pin rendering + postExec to a different (or
-                    # empty) PR than the one actually scanned (#158 R6).
+                    # A stale/empty pr value — wherever it lives (static
+                    # spec.overrides variableValues/envVars, the runtime
+                    # overrides object, the resolved env_vars, or the Variable
+                    # config values it was deep-merged into) — must not pin
+                    # rendering + postExec to a different (or empty) PR than
+                    # the one actually scanned (#158 R6/R7). Values are
+                    # REWRITTEN to the scanned number (not popped) so the
+                    # {{pr}} alias channel also renders it. The caller's
+                    # Overrides object is never mutated: we rebind copies.
                     # Scan-path execution with a non-empty runtime pr pin is
                     # impossible (the pinned branch short-circuits), so any
-                    # differing value here is static/legacy and safe to pop.
+                    # differing value here is static/legacy.
                     if "pr_number" in dynamic_vars:
                         _scanned_pr = normalize_pr_number(dynamic_vars["pr_number"])
-                        _holders = [bundle.overrides.variable_values]
-                        if bundle.variable:
-                            _holders.append(bundle.variable.values)
-                        _popped: list[str] = []
-                        for _holder in _holders:
+                        bundle.overrides = copy.copy(bundle.overrides)
+                        bundle.overrides.variable_values = dict(bundle.overrides.variable_values)
+                        bundle.overrides.env_vars = dict(bundle.overrides.env_vars)
+                        _changed: set = set()
+                        for _holder in (
+                            bundle.overrides.variable_values,
+                            bundle.overrides.env_vars,
+                            env_vars,
+                        ):
                             for _k in ("pr_number", "pr"):
-                                _raw = _holder.get(_k)
-                                if _raw is None:
+                                if _k not in _holder:
                                     continue
-                                if normalize_pr_number(_raw) == _scanned_pr:
+                                _norm_val = normalize_pr_number(_holder[_k])
+                                if _norm_val == _scanned_pr:
                                     continue
-                                _holder.pop(_k, None)
-                                _popped.append(_k)
-                        if _popped:
+                                _holder[_k] = _scanned_pr
+                                if _norm_val:
+                                    # Only genuinely stale (non-empty, differing)
+                                    # values warn; empty defaults backfill silently
+                                    _changed.add(_k)
+                        if bundle.variable:
+                            for _k in ("pr_number", "pr"):
+                                if _k in bundle.variable.values:
+                                    _norm_val = normalize_pr_number(bundle.variable.values[_k])
+                                    if _norm_val == _scanned_pr:
+                                        continue
+                                    bundle.variable.values[_k] = _scanned_pr
+                                    if _norm_val:
+                                        _changed.add(_k)
+                        if _changed:
                             print(
                                 f"Warning: stale/empty override/config value(s) "
-                                f"{_popped} differ from scanned pr_number="
-                                f"{_scanned_pr}; using the scanned value for "
-                                f"rendering and postExec"
+                                f"{sorted(_changed)} differ from scanned "
+                                f"pr_number={_scanned_pr}; using the scanned "
+                                f"value for rendering and postExec"
                             )
                     # Merge discovered vars into env (for postExec substitution)
                     # Skip keys that already exist in runtime overrides (higher priority)
