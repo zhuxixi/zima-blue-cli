@@ -269,7 +269,9 @@ class ActionsRunner:
                     )
                 # Length is part of validity, aligned with the executor's
                 # scan validation gate (<=64) so both layers agree (#158 R15)
-                if pinned and not (re.fullmatch(r"[0-9]+", pinned) and len(pinned) <= 64):
+                if pinned and not (
+                    re.fullmatch(r"[0-9]+", pinned) and len(pinned) <= PINNED_PR_MAX_LEN
+                ):
                     # Malformed manual input (typo in --set-var): fail fast.
                     # Only report the length, never echo the raw value (#158 R2).
                     raise SkipAction(
