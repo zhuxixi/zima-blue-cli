@@ -397,13 +397,36 @@ class PJobExecutor:
                     # included), the repo that flows into merge/inject/persist
                     # always passed the format+length gate — the invariant does
                     # not rely on run_pre always emitting both keys (#158 R19).
+                    _KEYS_PR = ("pr_number", "pr")
+
+                    def _pr_ok(value: str) -> bool:
+                        return bool(
+                            re.fullmatch(r"[0-9]+", value) and len(value) <= PR_NUMBER_MAX_LEN
+                        )
+
+                    for _pk in _KEYS_PR:
+                        # Alias-family single sink: a run_pre return shape with
+                        # pr (or pr-only) but no pr_number bypasses the gate
+                        # above; validate here or drop, mirroring the repo gate
+                        # (#158 R20: issue 67)
+                        if _pk in dynamic_vars:
+                            _pv = normalize_pr_number(dynamic_vars[_pk])
+                            if _pv and _pr_ok(_pv):
+                                dynamic_vars[_pk] = _pv
+                            else:
+                                print(
+                                    f"Warning: discovered {_pk} is invalid "
+                                    f"(non-numeric or overlong; len={len(_pv)}); "
+                                    f"dropping it (#158)"
+                                )
+                                dynamic_vars.pop(_pk, None)
                     if "repo" in dynamic_vars:
                         _dv_repo = str(dynamic_vars.get("repo") or "").strip()
                         if _dv_repo and _REPO_OK(_dv_repo):
                             dynamic_vars["repo"] = _dv_repo
                         else:
                             print(
-                                f"Warning: scan returned invalid repo "
+                                f"Warning: discovered repo is invalid "
                                 f"(format/length gate failed; len={len(_dv_repo)}); "
                                 f"dropping it — configured repo will be used (#158)"
                             )
