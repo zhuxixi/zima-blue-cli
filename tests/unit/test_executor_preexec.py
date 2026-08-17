@@ -952,8 +952,8 @@ class TestPrAliasRenderChannel:
     def test_empty_defaults_do_not_warn(self, isolated_zima_home, capsys, monkeypatch):
         # Ambient env (e.g. a CR harness exporting pr_number) must not turn
         # empty defaults into stale-warning triggers (#158 R17)
-        monkeypatch.delenv("pr_number", raising=False)
-        monkeypatch.delenv("pr", raising=False)
+        for _amb in ("pr_number", "pr", "repo"):
+            monkeypatch.delenv(_amb, raising=False)
         from zima.config.manager import ConfigManager
 
         manager = ConfigManager()
@@ -1031,8 +1031,8 @@ class TestPrRewriteEdgeCases:
         return result, captured.get("text", "")
 
     def test_hash_format_same_pr_rewritten_silently(self, isolated_zima_home, capsys, monkeypatch):
-        monkeypatch.delenv("pr_number", raising=False)
-        monkeypatch.delenv("pr", raising=False)
+        for _amb in ("pr_number", "pr", "repo"):
+            monkeypatch.delenv(_amb, raising=False)
         from zima.config.manager import ConfigManager
 
         manager = ConfigManager()
@@ -1306,7 +1306,7 @@ class TestInvalidScanDiscardedEntirely:
         assert result.scan_pr_result is None
         assert "discarding the scan result entirely" in capsys.readouterr().out
 
-    def test_valid_scan_persists_capped_values(self, isolated_zima_home):
+    def test_valid_scan_persists_validated_values(self, isolated_zima_home):
         """Valid scans persist the discovered values as-is: overlong values
         are rejected upstream by the validity gates (invalid-scan discard),
         so persistence itself never truncates (#158 R14)."""
@@ -1391,6 +1391,7 @@ class TestOverlongRepoDiscarded:
         # was dropped, pr_number still valid -> persisted pr only
         assert result.scan_pr_result is not None
         assert result.scan_pr_result["pr_number"] == "42"
+        assert result.scan_pr_result["repo"] == ""  # gate dropped it
 
     def test_repo_only_invalid_repo_no_crash(self, isolated_zima_home, capsys):
         """Provider returns a PR dict without a number: run_pre emits
@@ -1403,3 +1404,97 @@ class TestOverlongRepoDiscarded:
         assert "repo=owner/repo" in text
         assert result.scan_pr_result is None  # invalid scan persists nothing
         assert "invalid pr_number" in capsys.readouterr().out
+
+
+class TestSingleSinkPrAliasGate:
+    """#158 R21: pr-alias single-sink gate coverage (issue 69) + alias
+    reconciliation (issue 70) + raw-len reporting (issue 71)."""
+
+    def _run_with_discovered(self, isolated_zima_home, discovered):
+        from zima.config.manager import ConfigManager
+        from zima.models.variable import VariableConfig
+
+        manager = ConfigManager()
+        agent = AgentConfig.create(
+            code="test-agent",
+            name="A",
+            agent_type="kimi",
+            parameters={"mockCommand": "echo hello"},
+        )
+        manager.save_config("agent", "test-agent", agent.to_dict())
+        workflow = WorkflowConfig.create(
+            code="test-workflow", name="W", template="#{{ pr_number }} alias={{ pr }}"
+        )
+        manager.save_config("workflow", "test-workflow", workflow.to_dict())
+        var = VariableConfig.create(
+            code="test-var", name="V", values={"repo": "owner/repo", "pr_number": "", "pr": ""}
+        )
+        manager.save_config("variable", "test-var", var.to_dict())
+        pjob = PJobConfig.create(
+            code="test-pjob",
+            name="P",
+            agent="test-agent",
+            workflow="test-workflow",
+            variable="test-var",
+        )
+        pjob.spec.actions = ActionsConfig(
+            provider="github",
+            pre_exec=[PreExecAction(type="scan_pr", repo="{{repo}}", label="zima:needs-review")],
+        )
+        manager.save_config("pjob", "test-pjob", pjob.to_dict())
+
+        executor = PJobExecutor()
+        captured: dict = {}
+
+        def fake_run(**kwargs):
+            cmd = kwargs["command"]
+            text = " ".join(cmd)
+            if "--prompt" in cmd:
+                text += "\n" + Path(cmd[cmd.index("--prompt") + 1]).read_text()
+            captured["text"] = text
+            return (0, "done", "", 12345)
+
+        with patch.object(executor._actions_runner, "run_pre", return_value=discovered):
+            with patch.object(executor, "_run_command", side_effect=fake_run):
+                result = executor.execute("test-pjob", overrides=Overrides())
+        return result, captured.get("text", "")
+
+    def test_pr_only_valid_pin_accepted(self, isolated_zima_home):
+        """run_pre returns {'pr': '42'} only (no pr_number): the alias gate
+        validates and keeps it; template renders via the pr channel."""
+        result, text = self._run_with_discovered(isolated_zima_home, {"pr": "42"})
+        assert result.status == ExecutionStatus.SUCCESS
+        assert "alias=42" in text
+
+    def test_pr_only_invalid_dropped_with_raw_len(self, isolated_zima_home, capsys):
+        """'####' normalizes to empty: dropped with the RAW length (4) in the
+        warning, not len=0 (#158 R21)."""
+        result, _ = self._run_with_discovered(isolated_zima_home, {"pr": "####"})
+        assert result.status == ExecutionStatus.SUCCESS
+        assert "len=4" in capsys.readouterr().out
+
+    def test_overlong_pr_only_dropped(self, isolated_zima_home, capsys):
+        result, _ = self._run_with_discovered(isolated_zima_home, {"pr": "1" * 65})
+        assert result.status == ExecutionStatus.SUCCESS
+        assert "dropping it" in capsys.readouterr().out
+
+    def test_both_valid_pr_number_authoritative(self, isolated_zima_home):
+        """Both pr_number=42 and pr=99 valid: pr_number wins, pr synced (#158 R21)."""
+        result, text = self._run_with_discovered(
+            isolated_zima_home, {"pr_number": "42", "pr": "99"}
+        )
+        assert result.status == ExecutionStatus.SUCCESS
+        assert "#42" in text and "alias=42" in text
+        assert "99" not in text
+
+    def test_overlong_pr_diff_truncated_loudly(self, isolated_zima_home, capsys):
+        """A >1MiB discovered pr_diff is capped before entering env/render
+        (#158 R21)."""
+        from zima.execution.executor import _DISCOVERED_TEXT_MAX
+
+        result, _ = self._run_with_discovered(
+            isolated_zima_home, {"pr_number": "42", "pr_diff": "x" * (_DISCOVERED_TEXT_MAX + 5)}
+        )
+        assert result.status == ExecutionStatus.SUCCESS
+        out = capsys.readouterr().out
+        assert "pr_diff exceeds" in out

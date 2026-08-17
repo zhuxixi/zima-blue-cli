@@ -34,6 +34,12 @@ from zima.utils import generate_timestamp, get_zima_home
 _REPO_FORMAT = re.compile(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+")
 
 
+# Free-text scan values (pr_title/pr_url/pr_diff) entering the agent env /
+# templates are capped to keep E2BIG and render blowups off the table
+# (#158 R21). Diff text is the largest legitimate payload — 1 MiB headroom.
+_DISCOVERED_TEXT_MAX = 1_048_576
+
+
 def _REPO_OK(repo: str) -> bool:
     """Format+length gate for a stripped repo value (#158)."""
     return bool(_REPO_FORMAT.fullmatch(repo) and len(repo) <= REPO_MAX_LEN)
@@ -408,18 +414,26 @@ class PJobExecutor:
                         # Alias-family single sink: a run_pre return shape with
                         # pr (or pr-only) but no pr_number bypasses the gate
                         # above; validate here or drop, mirroring the repo gate
-                        # (#158 R20: issue 67)
+                        # (#158 R20: issue 67). len() reports the RAW input so
+                        # '####' (normalizes empty) is not reported as len=0
+                        # (#158 R21: issue 71).
                         if _pk in dynamic_vars:
-                            _pv = normalize_pr_number(dynamic_vars[_pk])
+                            _raw_pk = str(dynamic_vars[_pk])
+                            _pv = normalize_pr_number(_raw_pk)
                             if _pv and _pr_ok(_pv):
                                 dynamic_vars[_pk] = _pv
                             else:
                                 print(
                                     f"Warning: discovered {_pk} is invalid "
-                                    f"(non-numeric or overlong; len={len(_pv)}); "
+                                    f"(non-numeric or overlong; len={len(_raw_pk)}); "
                                     f"dropping it (#158)"
                                 )
                                 dynamic_vars.pop(_pk, None)
+                    # Alias reconciliation: with both pr_number and pr valid,
+                    # pr_number is authoritative (it won the gate above); a
+                    # differing pr is stale and silently synced (#158 R21)
+                    if "pr_number" in dynamic_vars and "pr" in dynamic_vars:
+                        dynamic_vars["pr"] = dynamic_vars["pr_number"]
                     if "repo" in dynamic_vars:
                         _dv_repo = str(dynamic_vars.get("repo") or "").strip()
                         if _dv_repo and _REPO_OK(_dv_repo):
@@ -431,6 +445,21 @@ class PJobExecutor:
                                 f"dropping it — configured repo will be used (#158)"
                             )
                             dynamic_vars.pop("repo", None)
+
+                    # Remaining scan-discovered values (pr_title / pr_url /
+                    # pr_diff) are provider/author-controlled free text: cap
+                    # them before they enter the agent subprocess env (E2BIG)
+                    # and Jinja2 rendering. A cap hit means a pathological
+                    # payload, so the value is truncated loudly (#158 R21).
+                    for _dk in [k for k in dynamic_vars if k.startswith("pr_")]:
+                        _dv = str(dynamic_vars[_dk])
+                        if len(_dv) > _DISCOVERED_TEXT_MAX:
+                            print(
+                                f"Warning: discovered {_dk} exceeds "
+                                f"{_DISCOVERED_TEXT_MAX} chars (len={len(_dv)}); "
+                                f"truncating (#158)"
+                            )
+                            dynamic_vars[_dk] = _dv[:_DISCOVERED_TEXT_MAX]
 
                     # Merge discovered vars into env (for postExec substitution)
                     # Skip keys that already exist in runtime overrides (higher priority)
