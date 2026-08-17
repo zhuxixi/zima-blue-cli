@@ -287,7 +287,7 @@ class TestPreExecIntegration:
         with patch.object(
             executor._actions_runner,
             "run_pre",
-            return_value={"repo": "preexec-repo", "extra": "preexec-value"},
+            return_value={"repo": "preexec/repo", "extra": "preexec-value"},
         ):
             with patch.object(executor, "_run_command") as mock_run:
                 mock_run.return_value = (0, "done", "", 12345)
@@ -346,15 +346,15 @@ class TestPreExecIntegration:
         with patch.object(
             executor._actions_runner,
             "run_pre",
-            return_value={"repo": "preexec-repo"},
+            return_value={"repo": "preexec/repo"},
         ):
             with patch.object(executor, "_run_command") as mock_run:
                 mock_run.return_value = (0, "done", "", 12345)
                 result = executor.execute("test-pjob")
 
         assert result.status == ExecutionStatus.SUCCESS
-        # preExec "preexec-repo" should override static "static-repo"
-        assert result.env.get("repo") == "preexec-repo"
+        # preExec "preexec/repo" should override static "static-repo"
+        assert result.env.get("repo") == "preexec/repo"
 
     def test_preexec_no_variable_creates_dynamic_var(self, isolated_zima_home):
         """Test that preExec dynamic vars work when PJob has no variable reference."""
@@ -1311,3 +1311,75 @@ class TestInvalidScanDiscardedEntirely:
         assert result.scan_pr_result is not None
         assert len(result.scan_pr_result["pr_number"]) <= 64
         assert len(result.scan_pr_result["repo"]) <= 256
+
+
+class TestOverlongRepoDiscarded:
+    """#158 R15: repo-side length gate coverage."""
+
+    def _run_with_action_repo(self, isolated_zima_home, action_repo):
+        from zima.config.manager import ConfigManager
+        from zima.models.variable import VariableConfig
+
+        manager = ConfigManager()
+        agent = AgentConfig.create(
+            code="test-agent",
+            name="A",
+            agent_type="kimi",
+            parameters={"mockCommand": "echo hello"},
+        )
+        manager.save_config("agent", "test-agent", agent.to_dict())
+        workflow = WorkflowConfig.create(code="test-workflow", name="W", template="repo={{ repo }}")
+        manager.save_config("workflow", "test-workflow", workflow.to_dict())
+        var = VariableConfig.create(code="test-var", name="V", values={"repo": "owner/repo"})
+        manager.save_config("variable", "test-var", var.to_dict())
+        pjob = PJobConfig.create(
+            code="test-pjob",
+            name="P",
+            agent="test-agent",
+            workflow="test-workflow",
+            variable="test-var",
+        )
+        pjob.spec.actions = ActionsConfig(
+            provider="github",
+            pre_exec=[PreExecAction(type="scan_pr", repo=action_repo, label="zima:needs-review")],
+        )
+        manager.save_config("pjob", "test-pjob", pjob.to_dict())
+
+        executor = PJobExecutor()
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = [{"number": "42", "title": "T", "url": "u"}]
+        mock_provider.fetch_diff.return_value = "+diff"
+        captured: dict = {}
+
+        def fake_run(**kwargs):
+            cmd = kwargs["command"]
+            text = " ".join(cmd)
+            if "--prompt" in cmd:
+                text += "\n" + Path(cmd[cmd.index("--prompt") + 1]).read_text()
+            captured["text"] = text
+            return (0, "done", "", 12345)
+
+        with patch.object(executor._actions_runner._registry, "get", return_value=mock_provider):
+            with patch.object(executor, "_run_command", side_effect=fake_run):
+                result = executor.execute("test-pjob", overrides=Overrides())
+        return result, captured.get("text", "")
+
+    def test_overlong_repo_renders_configured_value(self, isolated_zima_home):
+        """action_repo over 256 chars (format-valid but overlong) -> discovered
+        repo dropped; configured value renders (#158 R14/R15)."""
+        overlong_repo = "a" * 300 + "/b"
+        result, text = self._run_with_action_repo(isolated_zima_home, overlong_repo)
+        assert result.status == ExecutionStatus.SUCCESS
+        assert "repo=owner/repo" in text
+        assert "aaaa" not in text
+        # scan_pr_result persisted only when the repo gate passed; here repo
+        # was dropped, pr_number still valid -> persisted pr only
+        assert result.scan_pr_result is not None
+        assert result.scan_pr_result["pr_number"] == "42"
+
+    def test_repo_only_invalid_repo_no_crash(self, isolated_zima_home):
+        """No pr_number in dynamic_vars + malformed repo: hoisted gate still
+        drops the repo (independent of pr validation) (#158 R15)."""
+        result, text = self._run_with_action_repo(isolated_zima_home, "not a repo")
+        assert result.status == ExecutionStatus.SUCCESS
+        assert "repo=owner/repo" in text

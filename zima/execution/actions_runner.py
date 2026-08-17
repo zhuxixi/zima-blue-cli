@@ -256,12 +256,15 @@ class ActionsRunner:
                         "preExec scan_pr skipped — pinned pr value is only a "
                         f"'#' prefix with no digits, pjob={self._pjob_code or '?'}"
                     )
-                if pinned and not re.fullmatch(r"[0-9]+", pinned):
+                # Length is part of validity, aligned with the executor's
+                # scan validation gate (<=64) so both layers agree (#158 R15)
+                if pinned and not (re.fullmatch(r"[0-9]+", pinned) and len(pinned) <= 64):
                     # Malformed manual input (typo in --set-var): fail fast.
                     # Only report the length, never echo the raw value (#158 R2).
                     raise SkipAction(
                         f"preExec scan_pr skipped — pinned pr value is not a "
-                        f"number (len={len(pinned)}), pjob={self._pjob_code or '?'}"
+                        f"valid number (non-numeric or overlong; len={len(pinned)}), "
+                        f"pjob={self._pjob_code or '?'}"
                     )
                 if pinned:
                     print(

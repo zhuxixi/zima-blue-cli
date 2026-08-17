@@ -700,7 +700,7 @@ class TestRunPrePinnedPr:
                 runner.run_pre(self._make_actions(), {"pr_number": "abc"})
             mock_provider.scan_prs.assert_not_called()
             msg = str(exc_info.value)
-            assert "not a number" in msg
+            assert "not a valid number" in msg
             assert "abc" not in msg  # raw value never echoed
             assert "len=3" in msg
 
@@ -900,3 +900,14 @@ class TestActionsRunnerPreExecSkipLogic:
         with patch.object(runner._registry, "get", return_value=mock_provider):
             result = runner.run_pre(actions, {})
         assert result["pr_number"] == "10"
+
+    def test_overlong_pinned_fails_fast(self):
+        """A >64-digit pinned pr_number fails the length part of validity
+        (#158 R15, aligned with the executor scan gate)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with pytest.raises(SkipAction) as exc_info:
+                runner.run_pre(self._make_actions(), {"pr_number": "1" * 65})
+            mock_provider.scan_prs.assert_not_called()
+            assert "non-numeric or overlong" in str(exc_info.value)

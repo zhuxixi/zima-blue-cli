@@ -374,6 +374,16 @@ class PJobExecutor:
                                 # drop the key so env merge + inject keep the
                                 # configured value (no-op when absent) (#158 R12/R13)
                                 dynamic_vars.pop("repo", None)
+                    # Repo validation is independent of pr_number: validate
+                    # the discovered repo unconditionally so the persisted /
+                    # injected value always passed the format+length gate —
+                    # no reliance on run_pre setting both keys together (#158 R15)
+                    _dv_repo = str(dynamic_vars.get("repo") or "").strip()
+                    if "repo" in dynamic_vars and not (
+                        _dv_repo and _REPO_FORMAT.fullmatch(_dv_repo) and len(_dv_repo) <= 256
+                    ):
+                        dynamic_vars.pop("repo", None)
+
                     # Merge discovered vars into env (for postExec substitution)
                     # Skip keys that already exist in runtime overrides (higher priority)
                     for key, value in dynamic_vars.items():
@@ -508,9 +518,9 @@ class PJobExecutor:
                                 # non-numeric scan value must not be forced into
                                 # postExec substitution (#158 R9)
                                 print(
-                                    f"Warning: scan returned non-numeric pr_number "
-                                    f"(len={len(_scanned)}); skipping pr correction "
-                                    f"in postExec"
+                                    f"Warning: scan returned invalid pr_number "
+                                    f"(non-numeric or overlong; len={len(_scanned)}); "
+                                    f"skipping pr correction in postExec"
                                 )
                                 _scanned = ""
                             if _scanned:
