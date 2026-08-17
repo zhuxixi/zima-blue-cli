@@ -945,7 +945,11 @@ class TestPrAliasRenderChannel:
         assert "999" not in text
         assert "stale/empty" in out
 
-    def test_empty_defaults_do_not_warn(self, isolated_zima_home, capsys):
+    def test_empty_defaults_do_not_warn(self, isolated_zima_home, capsys, monkeypatch):
+        # Ambient env (e.g. a CR harness exporting pr_number) must not turn
+        # empty defaults into stale-warning triggers (#158 R17)
+        monkeypatch.delenv("pr_number", raising=False)
+        monkeypatch.delenv("pr", raising=False)
         from zima.config.manager import ConfigManager
 
         manager = ConfigManager()
@@ -1022,7 +1026,9 @@ class TestPrRewriteEdgeCases:
                 result = executor.execute("test-pjob", overrides=Overrides())
         return result, captured.get("text", "")
 
-    def test_hash_format_same_pr_rewritten_silently(self, isolated_zima_home, capsys):
+    def test_hash_format_same_pr_rewritten_silently(self, isolated_zima_home, capsys, monkeypatch):
+        monkeypatch.delenv("pr_number", raising=False)
+        monkeypatch.delenv("pr", raising=False)
         from zima.config.manager import ConfigManager
 
         manager = ConfigManager()
@@ -1297,7 +1303,9 @@ class TestInvalidScanDiscardedEntirely:
         assert "discarding the scan result entirely" in capsys.readouterr().out
 
     def test_valid_scan_persists_capped_values(self, isolated_zima_home):
-        """Valid scan persistence respects length caps (#158 R12)."""
+        """Valid scans persist the discovered values as-is: overlong values
+        are rejected upstream by the validity gates (invalid-scan discard),
+        so persistence itself never truncates (#158 R14)."""
         from zima.config.manager import ConfigManager
 
         manager = ConfigManager()
@@ -1378,8 +1386,55 @@ class TestOverlongRepoDiscarded:
         assert result.scan_pr_result["pr_number"] == "42"
 
     def test_repo_only_invalid_repo_no_crash(self, isolated_zima_home):
-        """No pr_number in dynamic_vars + malformed repo: hoisted gate still
-        drops the repo (independent of pr validation) (#158 R15)."""
-        result, text = self._run_with_action_repo(isolated_zima_home, "not a repo")
+        """Genuinely no pr_number in dynamic_vars (provider returns a PR dict
+        without a number) + malformed repo: the hoisted gate still drops the
+        repo — proving independence from pr validation (#158 R15/R17)."""
+
+        from zima.config.manager import ConfigManager
+        from zima.models.variable import VariableConfig
+
+        manager = ConfigManager()
+        agent = AgentConfig.create(
+            code="test-agent",
+            name="A",
+            agent_type="kimi",
+            parameters={"mockCommand": "echo hello"},
+        )
+        manager.save_config("agent", "test-agent", agent.to_dict())
+        workflow = WorkflowConfig.create(code="test-workflow", name="W", template="repo={{ repo }}")
+        manager.save_config("workflow", "test-workflow", workflow.to_dict())
+        var = VariableConfig.create(code="test-var", name="V", values={"repo": "owner/repo"})
+        manager.save_config("variable", "test-var", var.to_dict())
+        pjob = PJobConfig.create(
+            code="test-pjob",
+            name="P",
+            agent="test-agent",
+            workflow="test-workflow",
+            variable="test-var",
+        )
+        pjob.spec.actions = ActionsConfig(
+            provider="github",
+            pre_exec=[PreExecAction(type="scan_pr", repo="not a repo", label="zima:needs-review")],
+        )
+        manager.save_config("pjob", "test-pjob", pjob.to_dict())
+
+        executor = PJobExecutor()
+        mock_provider = MagicMock()
+        # No pr_number in the discovered dict
+        mock_provider.scan_prs.return_value = [{"title": "T", "url": "u"}]
+        mock_provider.fetch_diff.return_value = "+diff"
+        captured: dict = {}
+
+        def fake_run(**kwargs):
+            cmd = kwargs["command"]
+            text = " ".join(cmd)
+            if "--prompt" in cmd:
+                text += "\n" + Path(cmd[cmd.index("--prompt") + 1]).read_text()
+            captured["text"] = text
+            return (0, "done", "", 12345)
+
+        with patch.object(executor._actions_runner._registry, "get", return_value=mock_provider):
+            with patch.object(executor, "_run_command", side_effect=fake_run):
+                result = executor.execute("test-pjob", overrides=Overrides())
         assert result.status == ExecutionStatus.SUCCESS
-        assert "repo=owner/repo" in text
+        assert "repo=owner/repo" in captured["text"]

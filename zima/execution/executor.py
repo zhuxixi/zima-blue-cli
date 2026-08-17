@@ -26,6 +26,11 @@ from zima.utils import generate_timestamp, get_zima_home
 # repo allow-list). Scan-provided repo values must match before they may
 # drive rendering or postExec gh targets (#158).
 _REPO_FORMAT = re.compile(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+")
+# Max accepted lengths for scan-discovered / pinned values: an overlong
+# value is INVALID (not truncated) so persisted copies never diverge
+# from in-memory values (#158 R14/R15).
+_PR_NUMBER_MAX_LEN = 64
+_REPO_MAX_LEN = 256
 
 
 class ExecutionStatus(Enum):
@@ -260,7 +265,8 @@ class PJobExecutor:
                         # persisted copy can never diverge (truncate) from the
                         # in-memory value flowing through holders (#158 R14)
                         _scan_valid = bool(
-                            re.fullmatch(r"[0-9]+", _scanned_pr) and len(_scanned_pr) <= 64
+                            re.fullmatch(r"[0-9]+", _scanned_pr)
+                            and len(_scanned_pr) <= _PR_NUMBER_MAX_LEN
                         )
                         if not _scan_valid:
                             # Third-party providers (entry-point extension) may
@@ -289,7 +295,8 @@ class PJobExecutor:
                         else:
                             _scanned_repo = str(dynamic_vars.get("repo") or "").strip()
                             if _scanned_repo and not (
-                                _REPO_FORMAT.fullmatch(_scanned_repo) and len(_scanned_repo) <= 256
+                                _REPO_FORMAT.fullmatch(_scanned_repo)
+                                and len(_scanned_repo) <= _REPO_MAX_LEN
                             ):
                                 # Same trust boundary as the finally net: a
                                 # malformed repo never enters holders — it is
@@ -377,12 +384,24 @@ class PJobExecutor:
                     # Repo validation is independent of pr_number: validate
                     # the discovered repo unconditionally so the persisted /
                     # injected value always passed the format+length gate —
-                    # no reliance on run_pre setting both keys together (#158 R15)
-                    _dv_repo = str(dynamic_vars.get("repo") or "").strip()
-                    if "repo" in dynamic_vars and not (
-                        _dv_repo and _REPO_FORMAT.fullmatch(_dv_repo) and len(_dv_repo) <= 256
-                    ):
-                        dynamic_vars.pop("repo", None)
+                    # no reliance on run_pre setting both keys together. The
+                    # stored value is the STRIPPED form; a drop is loud
+                    # (parity with the pr_number paths) (#158 R15/R17).
+                    if "repo" in dynamic_vars:
+                        _dv_repo = str(dynamic_vars.get("repo") or "").strip()
+                        if (
+                            _dv_repo
+                            and _REPO_FORMAT.fullmatch(_dv_repo)
+                            and len(_dv_repo) <= _REPO_MAX_LEN
+                        ):
+                            dynamic_vars["repo"] = _dv_repo
+                        else:
+                            print(
+                                f"Warning: scan returned invalid repo value "
+                                f"(len={len(_dv_repo)}); dropping it — configured "
+                                f"repo will be used for rendering/postExec (#158)"
+                            )
+                            dynamic_vars.pop("repo", None)
 
                     # Merge discovered vars into env (for postExec substitution)
                     # Skip keys that already exist in runtime overrides (higher priority)
@@ -512,7 +531,8 @@ class PJobExecutor:
                             _spr = getattr(result, "scan_pr_result", None) or {}
                             _scanned = normalize_pr_number(_spr.get("pr_number") or "")
                             if _scanned and not (
-                                re.fullmatch(r"[0-9]+", _scanned) and len(_scanned) <= 64
+                                re.fullmatch(r"[0-9]+", _scanned)
+                                and len(_scanned) <= _PR_NUMBER_MAX_LEN
                             ):
                                 # Same validation as the pre-merge rewrite: a
                                 # non-numeric scan value must not be forced into
@@ -543,7 +563,8 @@ class PJobExecutor:
                             # substitution — a misbehaving provider cannot
                             # smuggle arbitrary strings into gh targets (#158 R10)
                             if not (
-                                _REPO_FORMAT.fullmatch(_scanned_repo) and len(_scanned_repo) <= 256
+                                _REPO_FORMAT.fullmatch(_scanned_repo)
+                                and len(_scanned_repo) <= _REPO_MAX_LEN
                             ):
                                 _scanned_repo = ""
                             _cur_repo = str(action_env.get("repo") or "").strip()
