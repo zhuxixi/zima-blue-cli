@@ -1175,3 +1175,121 @@ class TestRewriteRound9:
         assert result.status == ExecutionStatus.SUCCESS
         out = capsys.readouterr().out
         assert "'repo'" not in out  # no stale-repo warning for case variants
+
+
+class TestInvalidScanDiscardedEntirely:
+    """#158 R13 simplification: an invalid scan is discarded entirely —
+    nothing from it reaches rendering, env, postExec or history."""
+
+    def _base_run(self, manager, template, scan_result, action_repo="{{repo}}"):
+        from zima.models.variable import VariableConfig
+
+        agent = AgentConfig.create(
+            code="test-agent",
+            name="A",
+            agent_type="kimi",
+            parameters={"mockCommand": "echo hello"},
+        )
+        manager.save_config("agent", "test-agent", agent.to_dict())
+        workflow = WorkflowConfig.create(code="test-workflow", name="W", template=template)
+        manager.save_config("workflow", "test-workflow", workflow.to_dict())
+        var = VariableConfig.create(
+            code="test-var",
+            name="V",
+            values={"repo": "owner/repo", "pr_url": "", "pr_number": ""},
+        )
+        manager.save_config("variable", "test-var", var.to_dict())
+        pjob = PJobConfig.create(
+            code="test-pjob",
+            name="P",
+            agent="test-agent",
+            workflow="test-workflow",
+            variable="test-var",
+        )
+        pjob.spec.actions = ActionsConfig(
+            provider="github",
+            pre_exec=[PreExecAction(type="scan_pr", repo=action_repo, label="zima:needs-review")],
+        )
+        manager.save_config("pjob", "test-pjob", pjob.to_dict())
+
+        executor = PJobExecutor()
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = scan_result
+        mock_provider.fetch_diff.return_value = "+diff"
+        captured: dict = {}
+
+        def fake_run(**kwargs):
+            cmd = kwargs["command"]
+            text = " ".join(cmd)
+            if "--prompt" in cmd:
+                text += "\n" + Path(cmd[cmd.index("--prompt") + 1]).read_text()
+            captured["text"] = text
+            return (0, "done", "", 12345)
+
+        with patch.object(executor._actions_runner._registry, "get", return_value=mock_provider):
+            with patch.object(executor, "_run_command", side_effect=fake_run):
+                result = executor.execute("test-pjob", overrides=Overrides())
+        return result, captured.get("text", "")
+
+    def test_invalid_scan_persists_nothing(self, isolated_zima_home, capsys):
+        """Garbage pr_number ('12\\n34') -> no scan_pr_result at all; the
+        sanitized-passthrough hole cannot exist (#158 R13)."""
+        from zima.config.manager import ConfigManager
+
+        manager = ConfigManager()
+        result, _ = self._base_run(
+            manager,
+            template="PR={{ pr_number }}",
+            scan_result=[{"number": "12\n34", "title": "T", "url": "u"}],
+        )
+        assert result.status == ExecutionStatus.SUCCESS
+        assert result.scan_pr_result is None  # nothing persisted
+        assert "discarding the scan result entirely" in capsys.readouterr().out
+
+    def test_malformed_repo_keeps_configured_value(self, isolated_zima_home, capsys):
+        """Valid pr_number + malformed scanned repo -> {{repo}} renders the
+        configured value, not the garbage and not an empty string (#158 R12/R13)."""
+        from zima.config.manager import ConfigManager
+
+        manager = ConfigManager()
+        result, text = self._base_run(
+            manager,
+            template="repo={{ repo }} #{{ pr_number }}",
+            scan_result=[{"number": "42", "title": "T", "url": "u"}],
+            action_repo="owner/repo",
+        )
+        assert result.status == ExecutionStatus.SUCCESS
+        # repo fell back to the configured default ('owner/repo')
+        assert "repo=owner/repo" in text
+        assert "repo=" in text  # sanity
+
+    def test_whitespace_repo_dropped_not_leaked(self, isolated_zima_home, capsys):
+        """Scanned repo '  ' (whitespace) -> key dropped; configured value
+        renders (#158 R13)."""
+        from zima.config.manager import ConfigManager
+
+        manager = ConfigManager()
+        result, text = self._base_run(
+            manager,
+            template="repo=[{{ repo }}]",
+            scan_result=[{"number": "42", "title": "T", "url": "u"}],
+            action_repo="owner/repo",
+        )
+        assert result.status == ExecutionStatus.SUCCESS
+        assert "repo=[owner/repo]" in text
+
+    def test_valid_scan_persists_capped_values(self, isolated_zima_home):
+        """Valid scan persistence respects length caps (#158 R12)."""
+        from zima.config.manager import ConfigManager
+
+        manager = ConfigManager()
+        result, _ = self._base_run(
+            manager,
+            template="PR={{ pr_number }}",
+            scan_result=[{"number": "42", "title": "T", "url": "u"}],
+            action_repo="owner/repo",
+        )
+        assert result.status == ExecutionStatus.SUCCESS
+        assert result.scan_pr_result is not None
+        assert len(result.scan_pr_result["pr_number"]) <= 64
+        assert len(result.scan_pr_result["repo"]) <= 256

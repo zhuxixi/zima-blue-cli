@@ -28,13 +28,6 @@ from zima.utils import generate_timestamp, get_zima_home
 _REPO_FORMAT = re.compile(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+")
 
 
-def _sanitize_scan_value(value) -> str:
-    """Make an unvalidated provider string safe for history persistence:
-    printable characters only, capped at 64 (#158 R12)."""
-    text = "".join(ch for ch in str(value or "") if ch.isprintable())
-    return text[:64]
-
-
 class ExecutionStatus(Enum):
     """Execution status enum."""
 
@@ -265,28 +258,23 @@ class PJobExecutor:
                         _scan_valid = bool(re.fullmatch(r"[0-9]+", _scanned_pr))
                         if not _scan_valid:
                             # Third-party providers (entry-point extension) may
-                            # return PR dicts with missing/non-numeric numbers;
-                            # never let unvalidated scan output flow anywhere:
-                            # drop every scan-discovered key (pr aliases, repo,
-                            # and the pr_* family — prefix-based so future
-                            # run_pre discoveries are covered too) so merge-back
-                            # / injection / postExec all keep configured values
+                            # return PR dicts with missing/non-numeric numbers.
+                            # Single invariant: an invalid scan is discarded
+                            # ENTIRELY — every scan-discovered key (pr aliases,
+                            # repo, the pr_* family; prefix-based) is dropped so
+                            # merge-back / injection / postExec all keep
+                            # configured values, and NOTHING is persisted: no
+                            # skip-set registration, no history payload. A
+                            # persistently-broken provider is therefore retried
+                            # each cycle — accepted as the safer side of the
+                            # trade (retrying a broken scan can never act on a
+                            # wrong PR, unlike any partial trust of its
+                            # output) (#158 R13 simplification).
                             print(
                                 f"Warning: scan returned non-numeric pr_number "
-                                f"(len={len(_scanned_pr)}); dropping scan "
-                                f"values (#158 R8/R11)"
+                                f"(len={len(_scanned_pr)}); discarding the scan "
+                                f"result entirely (#158)"
                             )
-                            # Persist the RAW values for the failure skip-set
-                            # ONLY (sanitized — printable chars, 64-char cap —
-                            # before they reach history JSON, #158 R12): failed
-                            # runs still register (repo, raw_pr) so a
-                            # persistently-broken provider is not retried every
-                            # cycle. The finally net re-validates anything it
-                            # reads back from here before use (#158 R12).
-                            result.scan_pr_result = {
-                                "repo": _sanitize_scan_value(dynamic_vars.get("repo")),
-                                "pr_number": _sanitize_scan_value(dynamic_vars.get("pr_number")),
-                            }
                             dynamic_vars = {
                                 k: v
                                 for k, v in dynamic_vars.items()
@@ -294,15 +282,12 @@ class PJobExecutor:
                             }
                         else:
                             _scanned_repo = str(dynamic_vars.get("repo") or "").strip()
-                            _drop_repo = False
                             if _scanned_repo and not _REPO_FORMAT.fullmatch(_scanned_repo):
                                 # Same trust boundary as the finally net: a
-                                # malformed repo never enters holders — and is
-                                # dropped from dynamic_vars entirely so the
-                                # canonicalization below cannot write an empty
-                                # string over configured values (#158 R12)
+                                # malformed repo never enters holders — it is
+                                # dropped from dynamic_vars entirely below
+                                # (#158 R12/R13)
                                 _scanned_repo = ""
-                                _drop_repo = True
                             bundle.overrides = copy.copy(bundle.overrides)
                             bundle.overrides.variable_values = dict(
                                 bundle.overrides.variable_values
@@ -376,7 +361,10 @@ class PJobExecutor:
                             }
                             if _scanned_repo:
                                 dynamic_vars["repo"] = _scanned_repo
-                            elif _drop_repo:
+                            else:
+                                # Empty/whitespace-only/malformed scanned repo:
+                                # drop the key so env merge + inject keep the
+                                # configured value (no-op when absent) (#158 R12/R13)
                                 dynamic_vars.pop("repo", None)
                     # Merge discovered vars into env (for postExec substitution)
                     # Skip keys that already exist in runtime overrides (higher priority)
@@ -396,9 +384,11 @@ class PJobExecutor:
                         # would pollute the (repo, pr_number) failure skip-set
                         # with an empty/garbage key that never matches a real
                         # candidate PR (#158 R10)
+                        # Length caps mirror the history truncation
+                        # discipline (stdout 500 / error 2000) (#158 R12)
                         result.scan_pr_result = {
-                            "repo": dynamic_vars.get("repo", ""),
-                            "pr_number": dynamic_vars.get("pr_number", ""),
+                            "repo": str(dynamic_vars.get("repo") or "")[:256],
+                            "pr_number": str(dynamic_vars.get("pr_number") or "")[:64],
                         }
                 except SkipAction as e:
                     result.status = ExecutionStatus.SKIPPED
