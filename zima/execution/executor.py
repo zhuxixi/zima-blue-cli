@@ -255,7 +255,13 @@ class PJobExecutor:
                     _scan_valid = True  # no pr_number -> nothing to validate
                     if "pr_number" in dynamic_vars:
                         _scanned_pr = normalize_pr_number(dynamic_vars["pr_number"])
-                        _scan_valid = bool(re.fullmatch(r"[0-9]+", _scanned_pr))
+                        # Length limits are part of validity: an overlong value
+                        # is treated as invalid and discarded entirely, so the
+                        # persisted copy can never diverge (truncate) from the
+                        # in-memory value flowing through holders (#158 R14)
+                        _scan_valid = bool(
+                            re.fullmatch(r"[0-9]+", _scanned_pr) and len(_scanned_pr) <= 64
+                        )
                         if not _scan_valid:
                             # Third-party providers (entry-point extension) may
                             # return PR dicts with missing/non-numeric numbers.
@@ -282,7 +288,9 @@ class PJobExecutor:
                             }
                         else:
                             _scanned_repo = str(dynamic_vars.get("repo") or "").strip()
-                            if _scanned_repo and not _REPO_FORMAT.fullmatch(_scanned_repo):
+                            if _scanned_repo and not (
+                                _REPO_FORMAT.fullmatch(_scanned_repo) and len(_scanned_repo) <= 256
+                            ):
                                 # Same trust boundary as the finally net: a
                                 # malformed repo never enters holders — it is
                                 # dropped from dynamic_vars entirely below
@@ -377,18 +385,18 @@ class PJobExecutor:
                     # Merge discovered vars into bundle (for Jinja2 rendering)
                     bundle.inject_dynamic_vars(dynamic_vars)
                     # Persist scan_pr_result for skip logic (valid scans only;
-                    # invalid scans persisted their raw values in the branch
-                    # above, #158 R10/R11)
+                    # invalid scans persist nothing — see the branch above)
                     if _scan_valid and ("pr_number" in dynamic_vars or "repo" in dynamic_vars):
                         # Not persisted for invalid scans: a garbage pr_number
                         # would pollute the (repo, pr_number) failure skip-set
                         # with an empty/garbage key that never matches a real
                         # candidate PR (#158 R10)
-                        # Length caps mirror the history truncation
-                        # discipline (stdout 500 / error 2000) (#158 R12)
+                        # Values are already length-validated upstream
+                        # (<=64 / <=256), so the persisted copy is identical
+                        # to the in-memory one (#158 R14)
                         result.scan_pr_result = {
-                            "repo": str(dynamic_vars.get("repo") or "")[:256],
-                            "pr_number": str(dynamic_vars.get("pr_number") or "")[:64],
+                            "repo": str(dynamic_vars.get("repo") or ""),
+                            "pr_number": str(dynamic_vars.get("pr_number") or ""),
                         }
                 except SkipAction as e:
                     result.status = ExecutionStatus.SKIPPED
@@ -493,7 +501,9 @@ class PJobExecutor:
                             # empty-override bypass).
                             _spr = getattr(result, "scan_pr_result", None) or {}
                             _scanned = normalize_pr_number(_spr.get("pr_number") or "")
-                            if _scanned and not re.fullmatch(r"[0-9]+", _scanned):
+                            if _scanned and not (
+                                re.fullmatch(r"[0-9]+", _scanned) and len(_scanned) <= 64
+                            ):
                                 # Same validation as the pre-merge rewrite: a
                                 # non-numeric scan value must not be forced into
                                 # postExec substitution (#158 R9)
@@ -522,7 +532,9 @@ class PJobExecutor:
                             # Only a well-formed owner/name may drive postExec
                             # substitution — a misbehaving provider cannot
                             # smuggle arbitrary strings into gh targets (#158 R10)
-                            if not _REPO_FORMAT.fullmatch(_scanned_repo):
+                            if not (
+                                _REPO_FORMAT.fullmatch(_scanned_repo) and len(_scanned_repo) <= 256
+                            ):
                                 _scanned_repo = ""
                             _cur_repo = str(action_env.get("repo") or "").strip()
                             if (

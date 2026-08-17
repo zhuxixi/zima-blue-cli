@@ -1247,8 +1247,9 @@ class TestInvalidScanDiscardedEntirely:
         assert "discarding the scan result entirely" in capsys.readouterr().out
 
     def test_malformed_repo_keeps_configured_value(self, isolated_zima_home, capsys):
-        """Valid pr_number + malformed scanned repo -> {{repo}} renders the
-        configured value, not the garbage and not an empty string (#158 R12/R13)."""
+        """Valid pr_number + MALFORMED scanned repo (control chars, fails
+        _REPO_FORMAT) -> the key is dropped; {{repo}} renders the configured
+        value, not the garbage and not an empty string (#158 R12/R13/R14)."""
         from zima.config.manager import ConfigManager
 
         manager = ConfigManager()
@@ -1256,27 +1257,44 @@ class TestInvalidScanDiscardedEntirely:
             manager,
             template="repo={{ repo }} #{{ pr_number }}",
             scan_result=[{"number": "42", "title": "T", "url": "u"}],
-            action_repo="owner/repo",
+            action_repo="garbage\u0000repo/x",  # malformed: control char
         )
         assert result.status == ExecutionStatus.SUCCESS
-        # repo fell back to the configured default ('owner/repo')
-        assert "repo=owner/repo" in text
-        assert "repo=" in text  # sanity
+        assert "repo=owner/repo" in text  # configured default survives
+        assert "garbage" not in text
 
-    def test_whitespace_repo_dropped_not_leaked(self, isolated_zima_home, capsys):
-        """Scanned repo '  ' (whitespace) -> key dropped; configured value
-        renders (#158 R13)."""
+    def test_whitespace_repo_fails_fast(self, isolated_zima_home):
+        """A whitespace-only action repo never reaches the rewrite logic —
+        the pre-existing empty-repo guard in ActionsRunner fires first
+        (SkipAction, label untouched). Guards ordering locked (#158 R14)."""
         from zima.config.manager import ConfigManager
 
         manager = ConfigManager()
-        result, text = self._base_run(
+        result, _ = self._base_run(
             manager,
             template="repo=[{{ repo }}]",
             scan_result=[{"number": "42", "title": "T", "url": "u"}],
-            action_repo="owner/repo",
+            action_repo="   ",  # whitespace-only resolved repo
+        )
+        assert result.status == ExecutionStatus.SKIPPED
+        assert "repo resolved to empty" in str(result.stderr)
+
+    def test_overlong_valid_scan_discarded(self, isolated_zima_home, capsys):
+        """A >64-digit pr_number passes [0-9]+ but fails the length gate ->
+        discarded entirely, no persisted copy diverging from in-memory
+        values (#158 R14)."""
+        from zima.config.manager import ConfigManager
+
+        manager = ConfigManager()
+        overlong = "1" * 65
+        result, _ = self._base_run(
+            manager,
+            template="PR={{ pr_number }}",
+            scan_result=[{"number": overlong, "title": "T", "url": "u"}],
         )
         assert result.status == ExecutionStatus.SUCCESS
-        assert "repo=[owner/repo]" in text
+        assert result.scan_pr_result is None
+        assert "discarding the scan result entirely" in capsys.readouterr().out
 
     def test_valid_scan_persists_capped_values(self, isolated_zima_home):
         """Valid scan persistence respects length caps (#158 R12)."""
