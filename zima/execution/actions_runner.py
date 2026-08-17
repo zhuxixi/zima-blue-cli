@@ -41,7 +41,12 @@ def _matches_condition(condition: str, returncode: int) -> bool:
 # Max accepted length for a pinned PR number: overlong values are INVALID
 # (not truncated), keeping the runner and executor validation layers in
 # agreement (#158 R15/R17).
-PINNED_PR_MAX_LEN = 64
+# Max accepted lengths for scan-discovered / pinned values: an overlong
+# value is INVALID (not truncated) so persisted copies never diverge from
+# in-memory values (#158 R14-R19). Both validation layers import these.
+PR_NUMBER_MAX_LEN = 64
+REPO_MAX_LEN = 256
+PINNED_PR_MAX_LEN = PR_NUMBER_MAX_LEN  # back-compat alias
 
 
 def normalize_pr_number(value: str) -> str:

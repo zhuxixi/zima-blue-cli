@@ -15,7 +15,13 @@ from pathlib import Path
 from typing import Optional
 
 from zima.config.manager import ConfigManager
-from zima.execution.actions_runner import ActionsRunner, SkipAction, normalize_pr_number
+from zima.execution.actions_runner import (
+    PR_NUMBER_MAX_LEN,
+    REPO_MAX_LEN,
+    ActionsRunner,
+    SkipAction,
+    normalize_pr_number,
+)
 from zima.execution.history import ExecutionHistory
 from zima.models.config_bundle import ConfigBundle
 from zima.models.pjob import Overrides, PJobConfig
@@ -26,11 +32,11 @@ from zima.utils import generate_timestamp, get_zima_home
 # repo allow-list). Scan-provided repo values must match before they may
 # drive rendering or postExec gh targets (#158).
 _REPO_FORMAT = re.compile(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+")
-# Max accepted lengths for scan-discovered / pinned values: an overlong
-# value is INVALID (not truncated) so persisted copies never diverge
-# from in-memory values (#158 R14/R15).
-_PR_NUMBER_MAX_LEN = 64
-_REPO_MAX_LEN = 256
+
+
+def _REPO_OK(repo: str) -> bool:
+    """Format+length gate for a stripped repo value (#158)."""
+    return bool(_REPO_FORMAT.fullmatch(repo) and len(repo) <= REPO_MAX_LEN)
 
 
 class ExecutionStatus(Enum):
@@ -266,7 +272,7 @@ class PJobExecutor:
                         # in-memory value flowing through holders (#158 R14)
                         _scan_valid = bool(
                             re.fullmatch(r"[0-9]+", _scanned_pr)
-                            and len(_scanned_pr) <= _PR_NUMBER_MAX_LEN
+                            and len(_scanned_pr) <= PR_NUMBER_MAX_LEN
                         )
                         if not _scan_valid:
                             # Third-party providers (entry-point extension) may
@@ -296,7 +302,7 @@ class PJobExecutor:
                             _scanned_repo = str(dynamic_vars.get("repo") or "").strip()
                             if _scanned_repo and not (
                                 _REPO_FORMAT.fullmatch(_scanned_repo)
-                                and len(_scanned_repo) <= _REPO_MAX_LEN
+                                and len(_scanned_repo) <= REPO_MAX_LEN
                             ):
                                 # Same trust boundary as the finally net: a
                                 # malformed repo never enters holders — it is
@@ -378,15 +384,30 @@ class PJobExecutor:
                                 dynamic_vars["repo"] = _scanned_repo
                             else:
                                 # Empty/whitespace-only/malformed scanned repo:
-                                # drop the key so env merge + inject keep the
-                                # configured value (no-op when absent) (#158 R12/R13)
+                                # drop the key loudly so env merge + inject
+                                # keep the configured value (#158 R12/R13/R19)
+                                print(
+                                    "Warning: scan returned invalid repo "
+                                    "(format/length gate failed); dropping it "
+                                    "— configured repo will be used (#158)"
+                                )
                                 dynamic_vars.pop("repo", None)
-                    # NOTE: no separate unconditional repo gate here.
-                    # ActionsRunner.run_pre always emits repo together with
-                    # pr_number on both the pinned and scan paths, so the
-                    # validity gate below (pr-branch) already covers every
-                    # real input; an extra hoisted gate would be unreachable
-                    # dead code (#158 R18: issues 61, 63).
+                    # Single-sink repo gate: whatever shape run_pre returned
+                    # (repo with or without pr_number, third-party providers
+                    # included), the repo that flows into merge/inject/persist
+                    # always passed the format+length gate — the invariant does
+                    # not rely on run_pre always emitting both keys (#158 R19).
+                    if "repo" in dynamic_vars:
+                        _dv_repo = str(dynamic_vars.get("repo") or "").strip()
+                        if _dv_repo and _REPO_OK(_dv_repo):
+                            dynamic_vars["repo"] = _dv_repo
+                        else:
+                            print(
+                                f"Warning: scan returned invalid repo "
+                                f"(format/length gate failed; len={len(_dv_repo)}); "
+                                f"dropping it — configured repo will be used (#158)"
+                            )
+                            dynamic_vars.pop("repo", None)
 
                     # Merge discovered vars into env (for postExec substitution)
                     # Skip keys that already exist in runtime overrides (higher priority)
@@ -517,7 +538,7 @@ class PJobExecutor:
                             _scanned = normalize_pr_number(_spr.get("pr_number") or "")
                             if _scanned and not (
                                 re.fullmatch(r"[0-9]+", _scanned)
-                                and len(_scanned) <= _PR_NUMBER_MAX_LEN
+                                and len(_scanned) <= PR_NUMBER_MAX_LEN
                             ):
                                 # Same validation as the pre-merge rewrite: an
                                 # invalid (non-numeric or overlong) scan value
@@ -550,7 +571,7 @@ class PJobExecutor:
                             # smuggle arbitrary strings into gh targets (#158 R10)
                             if not (
                                 _REPO_FORMAT.fullmatch(_scanned_repo)
-                                and len(_scanned_repo) <= _REPO_MAX_LEN
+                                and len(_scanned_repo) <= REPO_MAX_LEN
                             ):
                                 _scanned_repo = ""
                             _cur_repo = str(action_env.get("repo") or "").strip()

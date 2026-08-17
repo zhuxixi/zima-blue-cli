@@ -759,7 +759,11 @@ class TestStaleOverrideCleanup:
         )
         manager.save_config("pjob", "test-pjob", pjob.to_dict())
 
-    def test_stale_static_override_loses_to_scanned_pr(self, isolated_zima_home, capsys):
+    def test_stale_static_override_loses_to_scanned_pr(
+        self, isolated_zima_home, capsys, monkeypatch
+    ):
+        for _amb in ("pr_number", "pr", "repo"):
+            monkeypatch.delenv(_amb, raising=False)
         from zima.config.manager import ConfigManager
 
         manager = ConfigManager()
