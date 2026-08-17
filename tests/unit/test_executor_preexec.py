@@ -1055,7 +1055,7 @@ class TestPrRewriteEdgeCases:
         )
         assert result.status == ExecutionStatus.SUCCESS
         out = capsys.readouterr().out
-        assert "non-numeric pr_number" in out
+        assert "invalid pr_number" in out
         assert "stale/empty" not in out  # rewrite skipped entirely
         # Holder value preserved (not overwritten with garbage)
         assert "999" in text
@@ -1324,7 +1324,7 @@ class TestInvalidScanDiscardedEntirely:
 class TestOverlongRepoDiscarded:
     """#158 R15: repo-side length gate coverage."""
 
-    def _run_with_action_repo(self, isolated_zima_home, action_repo):
+    def _run_with_action_repo(self, isolated_zima_home, action_repo, pr_number_in_result=True):
         from zima.config.manager import ConfigManager
         from zima.models.variable import VariableConfig
 
@@ -1355,7 +1355,10 @@ class TestOverlongRepoDiscarded:
 
         executor = PJobExecutor()
         mock_provider = MagicMock()
-        mock_provider.scan_prs.return_value = [{"number": "42", "title": "T", "url": "u"}]
+        pr_dict = {"title": "T", "url": "u"}
+        if pr_number_in_result:
+            pr_dict["number"] = "42"
+        mock_provider.scan_prs.return_value = [pr_dict]
         mock_provider.fetch_diff.return_value = "+diff"
         captured: dict = {}
 
@@ -1385,56 +1388,14 @@ class TestOverlongRepoDiscarded:
         assert result.scan_pr_result is not None
         assert result.scan_pr_result["pr_number"] == "42"
 
-    def test_repo_only_invalid_repo_no_crash(self, isolated_zima_home):
-        """Genuinely no pr_number in dynamic_vars (provider returns a PR dict
-        without a number) + malformed repo: the hoisted gate still drops the
-        repo — proving independence from pr validation (#158 R15/R17)."""
-
-        from zima.config.manager import ConfigManager
-        from zima.models.variable import VariableConfig
-
-        manager = ConfigManager()
-        agent = AgentConfig.create(
-            code="test-agent",
-            name="A",
-            agent_type="kimi",
-            parameters={"mockCommand": "echo hello"},
+    def test_repo_only_invalid_repo_no_crash(self, isolated_zima_home, capsys):
+        """Provider returns a PR dict without a number: run_pre emits
+        pr_number="" (key present, empty) -> the scan is INVALID and dropped
+        entirely, repo included; the configured repo renders (#158 R15/R18)."""
+        result, text = self._run_with_action_repo(
+            isolated_zima_home, "not a repo", pr_number_in_result=False
         )
-        manager.save_config("agent", "test-agent", agent.to_dict())
-        workflow = WorkflowConfig.create(code="test-workflow", name="W", template="repo={{ repo }}")
-        manager.save_config("workflow", "test-workflow", workflow.to_dict())
-        var = VariableConfig.create(code="test-var", name="V", values={"repo": "owner/repo"})
-        manager.save_config("variable", "test-var", var.to_dict())
-        pjob = PJobConfig.create(
-            code="test-pjob",
-            name="P",
-            agent="test-agent",
-            workflow="test-workflow",
-            variable="test-var",
-        )
-        pjob.spec.actions = ActionsConfig(
-            provider="github",
-            pre_exec=[PreExecAction(type="scan_pr", repo="not a repo", label="zima:needs-review")],
-        )
-        manager.save_config("pjob", "test-pjob", pjob.to_dict())
-
-        executor = PJobExecutor()
-        mock_provider = MagicMock()
-        # No pr_number in the discovered dict
-        mock_provider.scan_prs.return_value = [{"title": "T", "url": "u"}]
-        mock_provider.fetch_diff.return_value = "+diff"
-        captured: dict = {}
-
-        def fake_run(**kwargs):
-            cmd = kwargs["command"]
-            text = " ".join(cmd)
-            if "--prompt" in cmd:
-                text += "\n" + Path(cmd[cmd.index("--prompt") + 1]).read_text()
-            captured["text"] = text
-            return (0, "done", "", 12345)
-
-        with patch.object(executor._actions_runner._registry, "get", return_value=mock_provider):
-            with patch.object(executor, "_run_command", side_effect=fake_run):
-                result = executor.execute("test-pjob", overrides=Overrides())
         assert result.status == ExecutionStatus.SUCCESS
-        assert "repo=owner/repo" in captured["text"]
+        assert "repo=owner/repo" in text
+        assert result.scan_pr_result is None  # invalid scan persists nothing
+        assert "invalid pr_number" in capsys.readouterr().out

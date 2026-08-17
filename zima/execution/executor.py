@@ -283,9 +283,9 @@ class PJobExecutor:
                             # wrong PR, unlike any partial trust of its
                             # output) (#158 R13 simplification).
                             print(
-                                f"Warning: scan returned non-numeric pr_number "
-                                f"(len={len(_scanned_pr)}); discarding the scan "
-                                f"result entirely (#158)"
+                                f"Warning: scan returned invalid pr_number "
+                                f"(non-numeric or overlong; len={len(_scanned_pr)}); "
+                                f"discarding the scan result entirely (#158)"
                             )
                             dynamic_vars = {
                                 k: v
@@ -381,27 +381,12 @@ class PJobExecutor:
                                 # drop the key so env merge + inject keep the
                                 # configured value (no-op when absent) (#158 R12/R13)
                                 dynamic_vars.pop("repo", None)
-                    # Repo validation is independent of pr_number: validate
-                    # the discovered repo unconditionally so the persisted /
-                    # injected value always passed the format+length gate —
-                    # no reliance on run_pre setting both keys together. The
-                    # stored value is the STRIPPED form; a drop is loud
-                    # (parity with the pr_number paths) (#158 R15/R17).
-                    if "repo" in dynamic_vars:
-                        _dv_repo = str(dynamic_vars.get("repo") or "").strip()
-                        if (
-                            _dv_repo
-                            and _REPO_FORMAT.fullmatch(_dv_repo)
-                            and len(_dv_repo) <= _REPO_MAX_LEN
-                        ):
-                            dynamic_vars["repo"] = _dv_repo
-                        else:
-                            print(
-                                f"Warning: scan returned invalid repo value "
-                                f"(len={len(_dv_repo)}); dropping it — configured "
-                                f"repo will be used for rendering/postExec (#158)"
-                            )
-                            dynamic_vars.pop("repo", None)
+                    # NOTE: no separate unconditional repo gate here.
+                    # ActionsRunner.run_pre always emits repo together with
+                    # pr_number on both the pinned and scan paths, so the
+                    # validity gate below (pr-branch) already covers every
+                    # real input; an extra hoisted gate would be unreachable
+                    # dead code (#158 R18: issues 61, 63).
 
                     # Merge discovered vars into env (for postExec substitution)
                     # Skip keys that already exist in runtime overrides (higher priority)
@@ -534,9 +519,10 @@ class PJobExecutor:
                                 re.fullmatch(r"[0-9]+", _scanned)
                                 and len(_scanned) <= _PR_NUMBER_MAX_LEN
                             ):
-                                # Same validation as the pre-merge rewrite: a
-                                # non-numeric scan value must not be forced into
-                                # postExec substitution (#158 R9)
+                                # Same validation as the pre-merge rewrite: an
+                                # invalid (non-numeric or overlong) scan value
+                                # must not be forced into postExec substitution
+                                # (#158 R9/R18)
                                 print(
                                     f"Warning: scan returned invalid pr_number "
                                     f"(non-numeric or overlong; len={len(_scanned)}); "

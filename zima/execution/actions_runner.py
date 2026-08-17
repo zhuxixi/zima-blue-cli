@@ -38,6 +38,12 @@ def _matches_condition(condition: str, returncode: int) -> bool:
     return False
 
 
+# Max accepted length for a pinned PR number: overlong values are INVALID
+# (not truncated), keeping the runner and executor validation layers in
+# agreement (#158 R15/R17).
+PINNED_PR_MAX_LEN = 64
+
+
 def normalize_pr_number(value: str) -> str:
     """Normalize a user-supplied PR number: strip whitespace and a leading
     ``#`` (common copy-paste form). Returns "" for empty input."""
