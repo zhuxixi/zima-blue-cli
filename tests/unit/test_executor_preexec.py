@@ -1391,7 +1391,7 @@ class TestOverlongRepoDiscarded:
         # was dropped, pr_number still valid -> persisted pr only
         assert result.scan_pr_result is not None
         assert result.scan_pr_result["pr_number"] == "42"
-        assert result.scan_pr_result["repo"] == ""  # gate dropped it
+        assert "repo" not in result.scan_pr_result  # gate dropped it (#158 R22)
 
     def test_repo_only_invalid_repo_no_crash(self, isolated_zima_home, capsys):
         """Provider returns a PR dict without a number: run_pre emits

@@ -473,7 +473,9 @@ class PJobExecutor:
                     bundle.inject_dynamic_vars(dynamic_vars)
                     # Persist scan_pr_result for skip logic (valid scans only;
                     # invalid scans persist nothing — see the branch above)
-                    if _scan_valid and ("pr_number" in dynamic_vars or "repo" in dynamic_vars):
+                    _persistable_pr = normalize_pr_number(dynamic_vars.get("pr_number") or "")
+                    _persistable_repo = str(dynamic_vars.get("repo") or "").strip()
+                    if _scan_valid and (_persistable_pr or _persistable_repo):
                         # Not persisted for invalid scans: a garbage pr_number
                         # would pollute the (repo, pr_number) failure skip-set
                         # with an empty/garbage key that never matches a real
@@ -481,9 +483,15 @@ class PJobExecutor:
                         # Values are already length-validated upstream
                         # (<=64 / <=256), so the persisted copy is identical
                         # to the in-memory one (#158 R14)
+                        # Empty-string fields are omitted (not persisted as
+                        # dead skip-set entries, #158 R22)
                         result.scan_pr_result = {
-                            "repo": str(dynamic_vars.get("repo") or ""),
-                            "pr_number": str(dynamic_vars.get("pr_number") or ""),
+                            k: v
+                            for k, v in {
+                                "repo": _persistable_repo,
+                                "pr_number": _persistable_pr,
+                            }.items()
+                            if v
                         }
                 except SkipAction as e:
                     result.status = ExecutionStatus.SKIPPED

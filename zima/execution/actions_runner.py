@@ -280,9 +280,29 @@ class ActionsRunner:
                         f"pjob={self._pjob_code or '?'}"
                     )
                 if pinned:
+                    # Consume the pin: a PJob with multiple scan_pr actions
+                    # must not re-apply the same pin against every action's
+                    # repo (#158 R22). pin_env is executor-built; env (legacy
+                    # direct callers) is intentionally left untouched.
+                    if pin_env is not None:
+                        pin_env.pop("pr_number", None)
+                        pin_env.pop("pr", None)
+                    # Security re-check (#158 R22): the pin came from a
+                    # (locally re-signed) webhook event — on the public smee
+                    # channel that only proves "via the forwarder". Verify
+                    # the trigger label with a DIRECT API call (gh pr view,
+                    # no search-index race) before trusting it: a forged
+                    # pin for a PR that never carried zima:needs-review
+                    # must not drive postExec label/comment actions.
+                    if not provider.verify_pr_label(repo, pinned, label):
+                        raise SkipAction(
+                            f"preExec scan_pr skipped — pinned PR #{pinned} in "
+                            f"{repo} does not carry label '{label}' (direct "
+                            f"re-check failed or label absent)"
+                        )
                     print(
                         f"scan_pr: pinned PR #{pinned} in {repo} "
-                        f"(runtime-injected), skipping label rescan"
+                        f"(runtime-injected, label re-checked), skipping rescan"
                     )
                     discovered["repo"] = repo
                     discovered["pr_number"] = pinned
@@ -305,8 +325,13 @@ class ActionsRunner:
                         try:
                             diff = provider.fetch_diff(repo, pinned)
                             if diff:
+                                # Success (or a later empty attempt after an
+                                # early exception) clears the stale exception
+                                # so the final message reflects the LAST
+                                # failure mode, not an expired one (#158 R22)
                                 last_exc = None
                                 break
+                            last_exc = None  # empty result: not an exception
                         except Exception as e:  # noqa: BLE001 - retry, then skip
                             last_exc = e
                         if attempt < 2:

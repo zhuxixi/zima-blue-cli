@@ -583,9 +583,9 @@ class TestRunPrePinnedPr:
             assert result["pr_number"] == "11"
             assert result["pr_diff"] == "+diff"
 
-    def test_pinned_mixed_exception_then_empty_reports_both(self):
-        """Mixed retry sequence (raise, then empty) keeps the exception detail
-        and the re-label guidance (#158 R6)."""
+    def test_pinned_mixed_exception_then_empty_reports_last_mode(self):
+        """Mixed retry sequence (raise, then empty) reports the LAST failure
+        mode (empty diff), not the expired exception (#158 R22)."""
         runner = ActionsRunner()
         mock_provider = MagicMock()
         mock_provider.fetch_diff.side_effect = [RuntimeError("gh down"), "", ""]
@@ -594,7 +594,8 @@ class TestRunPrePinnedPr:
                 with pytest.raises(SkipAction) as exc_info:
                     runner.run_pre(self._make_actions(), {"pr_number": "11"})
             msg = str(exc_info.value)
-            assert "gh down" in msg
+            assert "empty diff" in msg
+            assert "gh down" not in msg  # expired exception not reported
             assert "re-label to retry" in msg
 
     def test_pinned_hash_prefix_normalized(self):
@@ -911,3 +912,58 @@ class TestActionsRunnerPreExecSkipLogic:
                 runner.run_pre(self._make_actions(), {"pr_number": "1" * 65})
             mock_provider.scan_prs.assert_not_called()
             assert "non-numeric or overlong" in str(exc_info.value)
+
+
+class TestPinnedLabelRecheck:
+    """#158 R22 security: the pinned fast path re-verifies the trigger label
+    via a direct API call before trusting an injected pin."""
+
+    def _make_actions(self, repo="owner/repo"):
+        return ActionsConfig(
+            pre_exec=[PreExecAction(type="scan_pr", repo=repo, label="zima:needs-review")]
+        )
+
+    def test_pinned_label_absent_raises_skip(self):
+        """A pin whose PR does NOT carry the label (forged event) is
+        rejected — no review, no postExec (#158 R22)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.verify_pr_label.return_value = False
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with pytest.raises(SkipAction) as exc_info:
+                runner.run_pre(self._make_actions(), {"pr_number": "11"})
+            mock_provider.verify_pr_label.assert_called_once_with(
+                "owner/repo", "11", "zima:needs-review"
+            )
+            mock_provider.fetch_diff.assert_not_called()
+            assert "does not carry label" in str(exc_info.value)
+
+    def test_pinned_label_present_proceeds(self):
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.verify_pr_label.return_value = True
+        mock_provider.fetch_diff.return_value = "+d"
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(self._make_actions(), {"pr_number": "11"})
+            assert result["pr_number"] == "11"
+
+    def test_pin_consumed_after_first_scan_action(self):
+        """Multi-action PJob: the second scan_pr action must NOT re-apply the
+        consumed pin against its own repo (#158 R22)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.verify_pr_label.return_value = True
+        mock_provider.fetch_diff.return_value = "+d"
+        mock_provider.scan_prs.return_value = [{"number": "42", "title": "T", "url": "u"}]
+        actions = ActionsConfig(
+            pre_exec=[
+                PreExecAction(type="scan_pr", repo="owner/one", label="zima:needs-review"),
+                PreExecAction(type="scan_pr", repo="owner/two", label="zima:needs-review"),
+            ]
+        )
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(actions, env={}, pin_env={"pr_number": "11"})
+            # First action pinned; second action fell back to its own label scan
+            mock_provider.verify_pr_label.assert_called_once()
+            assert mock_provider.scan_prs.call_count == 1
+            assert result["pr_number"] == "42"  # second action's scan won

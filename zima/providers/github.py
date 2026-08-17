@@ -90,6 +90,34 @@ class GitHubProvider(ActionProvider):
         )
         return result.stdout if result.returncode == 0 else ""
 
+    def verify_pr_label(self, repo: str, pr_number: str, label: str) -> bool:
+        """Verify a PR currently carries ``label`` via a DIRECT gh call.
+
+        ``gh pr view`` reads the PR straight from the API (no search-index
+        lag), so this re-check does not reintroduce the #158 race while
+        restoring the label gate that the pinned fast path must not skip
+        (#158 security).
+        """
+        result = self._run(
+            [
+                "pr",
+                "view",
+                pr_number,
+                "--repo",
+                repo,
+                "--json",
+                "labels",
+            ],
+            check=False,
+        )
+        if result.returncode != 0:
+            return False
+        try:
+            labels = json.loads(result.stdout or "{}").get("labels", [])
+        except json.JSONDecodeError:
+            return False
+        return any((lb or {}).get("name") == label for lb in labels if isinstance(lb, dict))
+
     def scan_prs(self, repo: str, label: str) -> list[dict]:
         """Scan PRs by label using gh CLI.
 
