@@ -16,22 +16,25 @@
 
 **为什么 requests `timeout=(10, 60)` 失效**：urllib3 读超时是「单次 recv 无数据的最长等待」。心跳帧每 30s 到达 → 每次 recv 都有数据 → 永不超时。TCP keepalive 同理（连接层活跃）。**必须应用层判据：最近收到字节时间。**
 
-**僵尸形态边界（review 补充，决定看门狗判据的覆盖范围）**：
+**僵尸形态与判定修正（CR round-1 推翻初判）**：
 
-| 形态 | 机制 | 心跳帧还发吗 | 「任何字节」看门狗有效？ |
-|------|------|-------------|------------------------|
-| **A. 无字节僵尸** | TCP 半开 / 中间设备静默丢包，服务端整条连接死亡 | 不发（发不出或到不了） | ✅ 180s 无字节必触发 |
-| **B. 脱钩僵尸** | EventBus 投递脱钩（redis 订阅丢失/多实例），但 KeepAlive 是独立内存 timer、持有 reply 引用，**与 bus listener 是两套** | **照发，每 30s** | ❌ last_activity 被心跳持续刷新，永不触发 |
+| 形态 | 机制 | 心跳帧还发吗 | 既有读超时 `(10,60)` | 「任何字节」看门狗 |
+|------|------|-------------|---------------------|------------------|
+| **A. 无字节僵尸** | TCP 半开 / 中间设备静默丢包，服务端整条连接死亡 | 不发 | **60s 内必抛 ReadTimeoutError** → backoff 重连（有日志） | ✅ 但冗余（读超时已兜底） |
+| **B. 脱钩僵尸** | EventBus 投递脱钩（redis 订阅丢失/多实例），但 KeepAlive 是独立内存 timer、持有 reply 引用，**与 bus listener 是两套** | **照发，每 30s** | 永不触发（心跳喂饱） | ❌ activity 被心跳持续刷新 |
 
-**本方案只覆盖形态 A。** 判定今日实证案例属于形态 A 的间接证据：若心跳帧持续到达客户端，`data: {}` 会被现有代码误转发 POST 到本地 server，server 解析失败会打 `[webhook] error handling delivery` 到 **stderr**（无缓冲，journal 必见）——journal 9h 无此类日志 → 心跳帧根本没到达 → 是无字节僵尸。
-
-形态 B 需要**主动探测**（客户端定期 self-POST 探测事件到 channel，验证自己的 SSE 连接能否收到回环），复杂度上台阶，列为非目标 + 后续 issue。
+**实证案例实为形态 B（CR round-1 修正初判）**，证据链：
+1. 若形态 A：读超时 60s 必抛异常 → journal 必有 `[smee] connection lost` 日志；实测 9h 零日志 → 形态 A 排除。
+2. 初判的反证（「心跳到达 → 误转发 `data:{}` → server 打 stderr」）**不成立**：server 处理链是 `json.loads("{}")` 成功 → `parse_pull_request_labeled({})` 返回 None → **静默 200 `{"ignored": true}`，无 stderr**（server.py `event is None` 分支）。形态 B 下 journal 同样干净。
+3. 结论：心跳每 30s 正常到达（读超时与字节看门狗均被喂饱），EventBus 投递脱钩（事件到不了）。**被动判据无法区分「脱钩」与「正常空闲」，必须主动探测。**
 
 **附带 bug（调研发现，issue 未提及）**：心跳帧 `data: {}` 会被 `parse_smee_event` 解析为 `{}`（非 None）→ 现有代码每 30s 向本地 server 转发一个 `{}` 空事件（有 secret 时重签 HMAC POST）。本地 server 会过滤掉，无实际危害，但应顺带修复。
 
-## 2. 修复方案（3 项 + 1 顺带）
+## 2. 修复方案（6 项）
 
-### 2.1 心跳看门狗（核心）— `zima/webhook/smee.py`
+### 2.1 字节级心跳看门狗（形态 A 防御）— `zima/webhook/smee.py`
+
+> CR round-1 定位修正：形态 A 下既有读超时 `(10,60)` 已免底（60s 必重连），本节看门狗价值降为防御层（更准的日志 + 读超时失效的边角场景）；真正修复实证失效模式的是 2.2 主动探测。
 
 **实现选项对比**：
 
@@ -64,7 +67,19 @@ _WATCHDOG_CHECK_INTERVAL = 15.0   # watchdog thread poll cadence
 _DEAD_AFTER = 180.0               # no bytes for this long -> stale connection
 ```
 
-### 2.2 心跳帧不再误转发（顺带修复）— `zima/webhook/smee.py`
+### 2.2 主动探测回环（形态 B 核心，CR round-1 新增）
+
+被动判据无法区分形态 B（心跳活跃、事件脱钩）与正常空闲，改为**端到端主动探测**：
+
+- 看门狗线程每 `_PROBE_INTERVAL = 300.0s` 向 smee channel **self-POST 探测事件** `{"_zima_probe": "<uuid4hex>"}`（POST 到 `smee_url` 本身，走 smee 正常投递路径）。
+- SSE 读循环识别回环：`event["body"]["_zima_probe"]` 匹配 pending 探测 id → 清除 pending，**不转发本地 server**（对 server 零噪音）。
+- 判据：pending 探测超 `_PROBE_TIMEOUT = 120.0s` 未回环 → 判定脱钩 → 打日志（含探测 id 与等待时长）→ `fired.set()` + `response.close()`（与字节看门狗同一重连路径）。
+- POST 失败（网络层）→ 打日志、不置 pending（无法判定脱钩），`_PROBE_INTERVAL` 后再试。
+- smee 回环延迟通常 <5s；检测延迟最坏 `PROBE_INTERVAL + PROBE_TIMEOUT` ≈ 7 分钟（对比修复前：永不）。
+- 探测事件在 smee 公开 channel 可见，但 payload 无秘密。
+- 常量模块级、monkeypatch 友好；`_PROBE_INTERVAL` 默认 300s 远大于单测时长，既有测试不受影响。
+
+### 2.3 心跳帧不再误转发（顺带修复）— `zima/webhook/smee.py`
 
 `parse_smee_event` 返回 `{}`（心跳 `data: {}`）时，循环内加：
 
@@ -76,18 +91,17 @@ if not event:          # skip smee.io keep-alive ping frames (data: {})
 
 不破坏 `test_fallback_when_no_body_key`（fallback 布局的真实事件含 action 等键，非空 dict）。
 
-### 2.3 stdout 实时可见 — 命令入口
+### 2.4 stdout 行缓冲 — 命令入口（防御性）
 
-`zima/commands/webhook.py` 的 serve 回调开头（server + smee 线程启动前）：
+`zima/commands/webhook.py` 的 serve 回调开头调用 `_enable_line_buffered_stdout()`。
 
-```python
-# Non-tty stdout is block-buffered; make [webhook] logs visible in journald.
-sys.stdout.reconfigure(line_buffering=True)
-```
+CR round-1 修正：server.py 三处 `[webhook]` 日志全部走 stderr（本就无缓冲），本项对它们无作用；保留仅作防御（启动横幅及未来可能的 stdout 日志），docstring 已据实修正。
 
-（`reconfigure(line_buffering=True)` 对 pipe 也生效，比 PYTHONUNBUFFERED 更不依赖部署环境；systemd unit 侧不加，避免双源。）
+### 2.5 看门狗线程自身异常须打日志（CR round-1）
 
-### 2.4 重连重放 — 不新增机制
+`_watch()` 外层 `except Exception` 不再静默 return——打 `[smee] watchdog thread died: ...` 到 stderr。否则看门狗意外死亡 = 僵尸检测无声失效，重演「静默丢失」原始故障模式。
+
+### 2.6 重连重放 — 不新增机制
 
 看门狗重连后 smee 重放缓存事件：**这是期望行为**（找回僵尸期丢失的事件）。重复触发受现有 60s dedup（repo#pr#head_sha#pjob）拦截；同 head 重复 CR 是 benign 浪费。**不扩展 dedup**（issue 的顺带评估项，结论：维持现状，spec 记录理由）。
 
@@ -97,27 +111,32 @@ sys.stdout.reconfigure(line_buffering=True)
 - 新增模块级：`_WATCHDOG_CHECK_INTERVAL`、`_DEAD_AFTER`、`SmeeWatchdogTimeout`。
 - `parse_smee_event` / `extract_smee_payload` — 不变。
 
+- 字节级看门狗量的是「读循环消费」而非「socket 到达」：forward POST 阻塞（≤10s）期间到达的字节不刷新 activity——长串 stalled POST 理论上可误杀健康连接（成本一次 benign 重连，已加注释说明）。
+- 探测线程职责合并在看门狗线程内：探测 POST 阻塞（≤10s）最多延迟一次检查，可接受。
+
 ## 4. 降级路径
 
-- 看门狗线程任何异常（理论上不会）→ 线程捕获后 return，主循环不受影响（降级为现状行为）。
-- `response.close()` 失败/无效 → iter_lines 继续阻塞 → 下次检查再 close（无害）。
+- 看门狗线程任何异常 → 打 stderr 日志后退出（不杀主循环，降级为现状行为）。
+- `response.close()` 失败/无效 → 循环重试 close（单次跨线程 close 不一定打断 C 级阻塞 recv）；读超时 60s 最终兜底。
+- 探测 POST 失败 → 不动作（无法判定），下轮再试。
 
 ## 5. 非目标
 
 - 不修 smee.io 服务端（外部服务）。
 - 不做 TCP keepalive 参数调优（无效路径）。
-- **不覆盖形态 B 脱钩僵尸的主动探测**（有心跳无事件场景；需 self-POST 回环探测，开后续 issue 跟踪）。
-- 不扩展 dedup 键（见 2.4）。
-- 不改 systemd unit 文件（在 repo 外，运维侧；代码侧 reconfigure 已覆盖需求）。
+- 不扩展 dedup 键（见 2.6）。
+- 不改 systemd unit 文件（在 repo 外，运维侧）。
 
 ## 6. 测试计划
 
 **单测（tests/unit/test_webhook_smee.py，TDD 先写失败测试）**：
-1. `test_watchdog_closes_stale_connection`：FakeResponse.iter_lines 阻塞（用 Event/无限等待），monkeypatch `time.monotonic` 或直接让 iter_lines 在收到 close 后返回 → 断言 watchdog 触发日志 + response.close 被调用 + 走 backoff 重连。
-2. `test_watchdog_survives_heartbeats`：iter_lines 持续 yield 心跳行（每 <180s 有数据）→ 不触发 close。
-3. `test_watchdog_iter_lines_returns_cleanly`：close 后 iter_lines 正常返回（不抛异常）→ 仍走重连路径（watchdog_fired 分支）。
-4. `test_skips_empty_heartbeat_event`：`data: {}` 行 → 不 POST。
-5. 既有 10 个测试全绿（无回归）。
+1. `test_watchdog_closes_stale_connection`：零字节流 → 字节看门狗触发 close + 日志 + backoff 重连（形态 A 防御）。
+2. `test_watchdog_survives_heartbeats`：心跳持续 → 不触发（0.02s pace vs 0.3s 阈值，15x margin 防 CI flake）。
+3. `test_watchdog_iter_lines_exception_path`：close 后 iter_lines 抛异常 → 仍走 backoff。
+4. `test_probe_timeout_closes_detached_connection`：心跳活跃但探测无回环（形态 B）→ close + 重连；探测事件不转发本地。
+5. `test_probe_echo_keeps_connection_alive`：探测回环正常 → 不 close、探测帧不转发。
+6. `test_skips_empty_heartbeat_event`：`data: {}` 不 POST。
+7. 既有 10 个测试全绿（无回归）。
 
 **集成/验收（issue Acceptance）**：
 - [ ] SSE 流 180s 级无字节 → 主动断开重连，日志含静默时长
@@ -126,5 +145,5 @@ sys.stdout.reconfigure(line_buffering=True)
 
 ## 7. 风险与回滚
 
-- 误杀健康连接：DEAD_AFTER=180s 远大于心跳 30s，误杀仅发生在服务端停发心跳且无事件的病态（正是目标场景）；重连成本 = 一次 backoff（1s）+ 事件重放（dedup 拦截）。
+- 探测误判：回环延迟 <5s vs 超时 120s，margin 24x；smee 整体故障时探测 POST 本身失败（不置 pending），不误杀。
 - 回滚：单文件 revert `zima/webhook/smee.py` + `zima/commands/webhook.py` 两处。

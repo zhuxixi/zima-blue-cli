@@ -582,12 +582,376 @@ git commit -m "style: black formatting (#163)" || true
 
 ---
 
-## 验收映射（spec §6）
+## CR Round-1 Follow-up（2026-08-19）
+
+CR 推翻形态判定（实证案例是形态 B：心跳照发、EventBus 脱钩；读超时与字节看门狗均被心跳喂饱），新增 Task 5/6。
+
+---
+
+### Task 5: 主动探测回环（形态 B 核心修复）
+
+**Files:**
+- Modify: `zima/webhook/smee.py`（`_start_watchdog` 签名与循环 + 读循环探测识别）
+- Test: `tests/unit/test_webhook_smee.py`
+
+**Interfaces:**
+- Consumes: Task 2 的看门狗骨架。
+- Produces:
+  - `_PROBE_INTERVAL: float = 300.0`、`_PROBE_TIMEOUT: float = 120.0`（模块常量）
+  - `_start_watchdog(response, smee_url, activity, probe_pending, stop_event, fired_event) -> None`（签名变化：新增 `smee_url`、`probe_pending`）
+  - `probe_pending: list` —— 共享可变容器，元素为 `None` 或 `(probe_id, sent_monotonic)` 元组；读循环清除，看门狗线程写入。
+
+- [ ] **Step 1: 写失败测试（2 个）**
+
+```python
+    def test_probe_timeout_closes_detached_connection(self, monkeypatch, capsys):
+        """Heartbeats flowing but probe never echoes back (detached EventBus)
+        -> watchdog closes the connection. Core fix for the observed #163
+        failure mode (form B)."""
+        monkeypatch.setattr("zima.webhook.smee._WATCHDOG_CHECK_INTERVAL", 0.05)
+        monkeypatch.setattr("zima.webhook.smee._DEAD_AFTER", 999.0)  # byte watchdog off
+        monkeypatch.setattr("zima.webhook.smee._PROBE_INTERVAL", 0.05)
+        monkeypatch.setattr("zima.webhook.smee._PROBE_TIMEOUT", 0.2)
+
+        get_calls = []
+        close_calls = []
+        probe_posts = []
+        target_posts = []
+        stream_closed = threading.Event()
+        sleeps = []
+        pace = threading.Event()
+
+        class FakeResponse:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def close(self):
+                close_calls.append(None)
+                stream_closed.set()
+
+            def iter_lines(self):
+                # Form B: heartbeat frames keep arriving (byte watchdog stays
+                # fed), but no probe echo ever comes back.
+                while not stream_closed.is_set():
+                    yield b"data: {}"
+                    pace.wait(0.02)
+
+        class FakePostResponse:
+            status_code = 200
+            text = "ok"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        def fake_get(*args, **kwargs):
+            get_calls.append(None)
+            if len(get_calls) > 1:
+                raise requests.RequestException("stop loop")
+            return FakeResponse()
+
+        def fake_post(url, json=None, data=None, headers=None, timeout=None):
+            if url.startswith("https://smee.io"):
+                probe_posts.append(json)
+            else:
+                target_posts.append(json)
+            return FakePostResponse()
+
+        def fake_sleep(seconds):
+            sleeps.append(seconds)
+            raise RuntimeError("stop loop")
+
+        monkeypatch.setattr("zima.webhook.smee.requests.get", fake_get)
+        monkeypatch.setattr("zima.webhook.smee.requests.post", fake_post)
+        monkeypatch.setattr("zima.webhook.smee.time.sleep", fake_sleep)
+
+        try:
+            run_smee_client("https://smee.io/test", "http://127.0.0.1:8765/webhook")
+        except RuntimeError:
+            pass
+
+        assert probe_posts  # probe was sent to the smee channel
+        assert "_zima_probe" in probe_posts[0]
+        assert close_calls  # probe timeout closed the detached connection
+        assert target_posts == []  # nothing forwarded to the local server
+        assert sleeps == [1.0]
+        err = capsys.readouterr().err
+        assert "probe" in err and "closing detached connection" in err
+
+    def test_probe_echo_keeps_connection_alive(self, monkeypatch, capsys):
+        """A probe echo that round-trips clears the pending probe; the
+        connection stays up and the probe frame is never forwarded."""
+        monkeypatch.setattr("zima.webhook.smee._WATCHDOG_CHECK_INTERVAL", 0.05)
+        monkeypatch.setattr("zima.webhook.smee._DEAD_AFTER", 999.0)
+        monkeypatch.setattr("zima.webhook.smee._PROBE_INTERVAL", 0.05)
+        monkeypatch.setattr("zima.webhook.smee._PROBE_TIMEOUT", 10.0)
+
+        get_calls = []
+        close_calls = []
+        probe_ids = []
+        echo_sent = threading.Event()
+        pace = threading.Event()
+        target_posts = []
+
+        class FakeResponse:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def close(self):
+                close_calls.append(None)
+
+            def iter_lines(self):
+                deadline = time.monotonic() + 0.6
+                while time.monotonic() < deadline:
+                    if probe_ids and not echo_sent.is_set():
+                        echo = {"body": {"_zima_probe": probe_ids[0]}}
+                        echo_sent.set()
+                        yield "data: " + json.dumps(echo)
+                    else:
+                        yield b"data: {}"
+                    pace.wait(0.02)
+
+        class FakePostResponse:
+            status_code = 200
+            text = "ok"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        def fake_get(*args, **kwargs):
+            get_calls.append(None)
+            if len(get_calls) > 1:
+                raise requests.RequestException("stop loop")
+            return FakeResponse()
+
+        def fake_post(url, json=None, data=None, headers=None, timeout=None):
+            if url.startswith("https://smee.io"):
+                if json and "_zima_probe" in json:
+                    probe_ids.append(json["_zima_probe"])
+            else:
+                target_posts.append(json)
+            return FakePostResponse()
+
+        def fake_sleep(seconds):
+            raise RuntimeError("stop loop")
+
+        monkeypatch.setattr("zima.webhook.smee.requests.get", fake_get)
+        monkeypatch.setattr("zima.webhook.smee.requests.post", fake_post)
+        monkeypatch.setattr("zima.webhook.smee.time.sleep", fake_sleep)
+
+        try:
+            run_smee_client("https://smee.io/test", "http://127.0.0.1:8765/webhook")
+        except RuntimeError:
+            pass
+
+        assert probe_ids  # probe was sent
+        assert echo_sent.is_set()  # echo was delivered back over the SSE stream
+        assert close_calls == []  # echo cleared the pending probe, no close
+        assert target_posts == []  # probe frame was not forwarded
+        err = capsys.readouterr().err
+        assert "watchdog" not in err
+```
+
+注意：iter_lines 混 yield str/bytes（回环帧 str、心跳 bytes）——`raw_line.decode` 对 str 会抛 AttributeError！统一 bytes：回环帧用 `("data: " + json.dumps(echo)).encode()`。
+
+- [ ] **Step 2: 跑测试确认失败**
+
+```bash
+uv run pytest tests/unit/test_webhook_smee.py -k probe -v
+```
+
+Expected: FAIL（`_PROBE_INTERVAL` AttributeError / `_start_watchdog` 签名不匹配 TypeError）。
+
+- [ ] **Step 3: 实现**
+
+`zima/webhook/smee.py` 顶部加 `import uuid`；常量区 `_DEAD_AFTER` 后加：
+
+```python
+# Probe: form-B zombies (heartbeats flowing, EventBus detached) are
+# indistinguishable from healthy idle by passive checks -- only an active
+# round-trip probe detects them. Self-POST a probe event to the channel every
+# _PROBE_INTERVAL; it must echo back over our SSE stream within _PROBE_TIMEOUT.
+_PROBE_INTERVAL = 300.0
+_PROBE_TIMEOUT = 120.0
+```
+
+`_start_watchdog` 改为：
+
+```python
+def _start_watchdog(
+    response: requests.Response,
+    smee_url: str,
+    activity: list,
+    probe_pending: list,
+    stop_event: threading.Event,
+    fired_event: threading.Event,
+) -> None:
+    """Start a daemon thread that closes ``response`` when the stream is stale.
+
+    Two liveness criteria (checked every ``_WATCHDOG_CHECK_INTERVAL``):
+
+    - Bytes: ``activity[0]`` (last received line) older than ``_DEAD_AFTER``
+      -> no-bytes zombie (form A). Read timeout already covers this; the
+      watchdog is defense-in-depth with better logging.
+    - Probe: every ``_PROBE_INTERVAL`` self-POST ``{"_zima_probe": <uuid>}``
+      to the smee channel; if no matching echo arrives within
+      ``_PROBE_TIMEOUT``, the connection is detached from the event bus
+      (form B). Probe echoes are consumed by the read loop (never forwarded).
+
+    ``activity``/``probe_pending`` are one-element lists shared with the read
+    loop (mutable container -- a plain local reassignment would not be
+    visible to this thread). ``fired_event`` is set before closing so the
+    read loop can tell a watchdog kill apart from a clean stream end.
+    """
+
+    def _close_stale(message: str) -> None:
+        if not fired_event.is_set():
+            fired_event.set()
+            print(message, file=sys.stderr)
+        try:
+            response.close()
+        except Exception:  # noqa: BLE001 - close is best-effort
+            pass
+
+    def _watch() -> None:
+        last_probe_sent = time.monotonic()  # fresh connection: no immediate probe
+        try:
+            while not stop_event.wait(_WATCHDOG_CHECK_INTERVAL):
+                now = time.monotonic()
+                age = now - activity[0]
+                if age > _DEAD_AFTER:
+                    _close_stale(
+                        f"[smee] watchdog: no SSE data for {age:.0f}s, closing stale connection"
+                    )
+                    continue
+                pending = probe_pending[0]
+                if pending is not None:
+                    probe_id, sent_at = pending
+                    pending_age = now - sent_at
+                    if pending_age > _PROBE_TIMEOUT:
+                        _close_stale(
+                            f"[smee] watchdog: probe {probe_id} got no echo for "
+                            f"{pending_age:.0f}s, closing detached connection"
+                        )
+                    continue
+                if now - last_probe_sent > _PROBE_INTERVAL:
+                    probe_id = uuid.uuid4().hex
+                    try:
+                        requests.post(
+                            smee_url, json={"_zima_probe": probe_id}, timeout=10
+                        )
+                        probe_pending[0] = (probe_id, now)
+                    except Exception as exc:  # noqa: BLE001 - network-level failure
+                        # Cannot judge detachment; log and retry next interval.
+                        print(
+                            f"[smee] watchdog: probe POST failed ({exc})",
+                            file=sys.stderr,
+                        )
+                    last_probe_sent = now
+        except Exception as exc:  # noqa: BLE001 - log before dying (#163 CR)
+            print(f"[smee] watchdog thread died: {exc}", file=sys.stderr)
+
+    threading.Thread(target=_watch, daemon=True).start()
+```
+
+`run_smee_client` 循环接线（`_start_watchdog` 调用处 + 读循环探测识别）：
+
+```python
+                activity = [time.monotonic()]
+                probe_pending: list = [None]
+                stop_watchdog = threading.Event()
+                watchdog_fired = threading.Event()
+                _start_watchdog(
+                    response, smee_url, activity, probe_pending, stop_watchdog, watchdog_fired
+                )
+```
+
+读循环里 `if not event: continue` 之后、`extract_smee_payload` 之前：
+
+```python
+                        # Probe echo: a healthy connection delivers our own
+                        # probe back. Consume it here -- never forward.
+                        probe_body = event.get("body")
+                        if isinstance(probe_body, dict) and "_zima_probe" in probe_body:
+                            pending = probe_pending[0]
+                            if pending and probe_body["_zima_probe"] == pending[0]:
+                                probe_pending[0] = None
+                            continue
+```
+
+- [ ] **Step 4: 跑测试确认通过 + 全文件回归（连跑 3 次防 flake）**
+
+```bash
+for i in 1 2 3; do uv run pytest tests/unit/test_webhook_smee.py -q | tail -1; done
+```
+
+Expected: 3 次全绿（23 个）。既有测试不受影响（`_PROBE_INTERVAL` 默认 300s >> 测试时长）。
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add zima/webhook/smee.py tests/unit/test_webhook_smee.py
+git commit -m "fix(webhook): active probe round-trip detects EventBus-detached smee connections (#163)"
+```
+
+---
+
+### Task 6: CR round-1 剩余修复（watchdog 死亡日志 + docstring 修正）
+
+**Files:**
+- Modify: `zima/webhook/smee.py`（`_watch` 外层 except 打日志——已含在 Task 5 实现里，此处仅验证）、`zima/commands/webhook.py`（docstring）
+- Test: 无新测试（Task 3 的测试已覆盖行为）
+
+- [ ] **Step 1: 修 `_enable_line_buffered_stdout` docstring**
+
+```python
+def _enable_line_buffered_stdout() -> None:
+    """Make stdout line-buffered as a defense for stdout prints.
+
+    The server's [webhook] runtime logs go to stderr (already unbuffered);
+    stdout only carries the startup banner and any future stdout prints,
+    which would otherwise be block-buffered under systemd/journald (#163).
+    """
+```
+
+- [ ] **Step 2: 验证 + commit**
+
+```bash
+uv run pytest tests/unit/test_webhook_command.py -q
+git add zima/commands/webhook.py
+git commit -m "docs(webhook): correct _enable_line_buffered_stdout docstring (#163)"
+```
+
+---
+
+## 验收映射（spec §6，CR round-1 更新）
 
 | Acceptance | 覆盖 |
 |---|---|
-| 180s 无字节 → 主动断开重连 + 日志含静默时长 | Task 2 测试 1/3（单测）+ 合并后实网验收（部署观察） |
-| 手动 kill 连接 → 看门狗恢复 | 合并后实网验收（iptables DROP smee.io 模拟） |
-| 单测 mock「心跳后停住」 | Task 2 测试 1 |
-| journal 实时可见 stdout | Task 3 |
+| 形态 B（实证失效模式）：探测无回环 → 主动断开重连 + 日志 | Task 5 测试 1（单测）+ 合并后实网验收 |
+| 形态 A：180s 无字节 → 主动断开重连 + 日志含静默时长 | Task 2 测试 1/3（防御层；读超时 60s 已免底） |
+| 心跳持续 / 探测回环正常 → 不误杀 | Task 2 测试 2 + Task 5 测试 2 |
+| 看门狗自身死亡有日志 | Task 5/6（_watch 外层 except 打 stderr） |
+| 单测 mock「心跳后停住」「心跳在但无回环」 | Task 2 测试 1、Task 5 测试 1 |
 | backoff 无回归 | Task 2 测试 2 + 既有 backoff 测试 |
