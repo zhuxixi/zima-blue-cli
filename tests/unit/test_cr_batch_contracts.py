@@ -222,10 +222,43 @@ class TestStatusReport:
         out = _run_json(_script("render_status_report.py"), _status_input(status))
         lines = out.splitlines()
         assert lines[0] == "=== CR Batch Status Report ==="
-        assert lines[-1] == "================================"
+        # #176: the report block still ends with the ruler; the machine-readable
+        # <zima-review> XML follows it as a trailer.
+        assert "================================" in lines
+        assert lines[-1] == "</zima-review>"
         status_lines = [ln for ln in lines if ln.startswith("Status:")]
         assert len(status_lines) == 1
         assert status_lines[0] == f"Status: {status}"
+
+    def _parsed(self, payload: dict):
+        from zima.review.parser import ReviewParser
+
+        out = _run_json(_script("render_status_report.py"), payload)
+        return out, ReviewParser.parse(out)
+
+    def test_xml_trailer_needs_fix_parses_to_needs_fix(self):
+        d = _status_input("NEEDS_FIX")
+        d["open_count"] = 3
+        out, parsed = self._parsed(d)
+        assert "<zima-review>" in out
+        assert parsed.verdict == "needs_fix"
+        assert parsed.summary
+
+    def test_xml_trailer_pass_parses_to_approved(self):
+        out, parsed = self._parsed(_status_input("PASS"))
+        assert parsed.verdict == "approved"
+
+    def test_xml_trailer_no_new_commits_with_open_issues_is_needs_fix(self):
+        d = _status_input("NO_NEW_COMMITS")
+        d["open_count"] = 2
+        _, parsed = self._parsed(d)
+        assert parsed.verdict == "needs_fix"
+
+    def test_xml_trailer_no_new_commits_with_zero_open_is_approved(self):
+        d = _status_input("NO_NEW_COMMITS")
+        d["open_count"] = 0
+        _, parsed = self._parsed(d)
+        assert parsed.verdict == "approved"
 
     def test_invalid_status_exits_nonzero(self):
         proc = _run(_script("render_status_report.py"), json.dumps(_status_input("BOGUS")))
@@ -792,5 +825,5 @@ class TestCoverageLines:
         out = _run_json(_script("render_status_report.py"), _status_input("PASS"))
         assert "Diff truncated" not in out
         assert "Coverage" not in out
-        # footer still last
-        assert out.splitlines()[-1] == "================================"
+        # report block still ends with the ruler; #176 XML trailer follows it
+        assert out.splitlines()[-1] == "</zima-review>"
