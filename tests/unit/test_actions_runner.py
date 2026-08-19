@@ -979,3 +979,40 @@ class TestPinnedLabelRecheck:
                 runner.run_pre(self._make_actions(), {"pr_number": "11"})
             mock_provider.fetch_diff.assert_not_called()
             assert "does not carry label" in str(exc_info.value)
+
+    def test_pinned_runtime_repo_override_wins(self):
+        """Runtime repo override (webhook --set-var=repo) beats a literal
+        action.repo when they differ (#158 R23: issue 8)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.verify_pr_label.return_value = True
+        mock_provider.fetch_diff.return_value = "+d"
+        actions = ActionsConfig(
+            pre_exec=[PreExecAction(type="scan_pr", repo="literal/repo", label="zima:needs-review")]
+        )
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(
+                actions,
+                env={},
+                pin_env={"pr_number": "11", "repo": "runtime/repo"},
+            )
+            assert result["repo"] == "runtime/repo"
+            assert result["pr_url"] == "https://github.com/runtime/repo/pull/11"
+
+    def test_pinned_malformed_runtime_repo_ignored(self):
+        """A malformed runtime repo override is not adopted; the action repo
+        stands (#158 R23: issue 8)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.verify_pr_label.return_value = True
+        mock_provider.fetch_diff.return_value = "+d"
+        actions = ActionsConfig(
+            pre_exec=[PreExecAction(type="scan_pr", repo="literal/repo", label="zima:needs-review")]
+        )
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(
+                actions,
+                env={},
+                pin_env={"pr_number": "11", "repo": "not a repo"},
+            )
+            assert result["repo"] == "literal/repo"

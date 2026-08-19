@@ -16,11 +16,11 @@ from typing import Optional
 
 from zima.config.manager import ConfigManager
 from zima.execution.actions_runner import (
-    PR_NUMBER_MAX_LEN,
-    REPO_MAX_LEN,
     ActionsRunner,
     SkipAction,
     normalize_pr_number,
+    pr_number_ok,
+    repo_ok,
 )
 from zima.execution.history import ExecutionHistory
 from zima.models.config_bundle import ConfigBundle
@@ -31,18 +31,11 @@ from zima.utils import generate_timestamp, get_zima_home
 # Well-formed owner/name (same charset contract as zima.webhook.payload's
 # repo allow-list). Scan-provided repo values must match before they may
 # drive rendering or postExec gh targets (#158).
-_REPO_FORMAT = re.compile(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+")
-
 
 # Free-text scan values (pr_title/pr_url/pr_diff) entering the agent env /
 # templates are capped to keep E2BIG and render blowups off the table
 # (#158 R21). Diff text is the largest legitimate payload — 1 MiB headroom.
 _DISCOVERED_TEXT_MAX = 1_048_576
-
-
-def _REPO_OK(repo: str) -> bool:
-    """Format+length gate for a stripped repo value (#158)."""
-    return bool(_REPO_FORMAT.fullmatch(repo) and len(repo) <= REPO_MAX_LEN)
 
 
 class ExecutionStatus(Enum):
@@ -276,10 +269,7 @@ class PJobExecutor:
                         # is treated as invalid and discarded entirely, so the
                         # persisted copy can never diverge (truncate) from the
                         # in-memory value flowing through holders (#158 R14)
-                        _scan_valid = bool(
-                            re.fullmatch(r"[0-9]+", _scanned_pr)
-                            and len(_scanned_pr) <= PR_NUMBER_MAX_LEN
-                        )
+                        _scan_valid = pr_number_ok(_scanned_pr)
                         if not _scan_valid:
                             # Third-party providers (entry-point extension) may
                             # return PR dicts with missing/non-numeric numbers.
@@ -306,10 +296,7 @@ class PJobExecutor:
                             }
                         else:
                             _scanned_repo = str(dynamic_vars.get("repo") or "").strip()
-                            if _scanned_repo and not (
-                                _REPO_FORMAT.fullmatch(_scanned_repo)
-                                and len(_scanned_repo) <= REPO_MAX_LEN
-                            ):
+                            if _scanned_repo and not repo_ok(_scanned_repo):
                                 # Same trust boundary as the finally net: a
                                 # malformed repo never enters holders — it is
                                 # dropped from dynamic_vars entirely below
@@ -405,10 +392,7 @@ class PJobExecutor:
                     # not rely on run_pre always emitting both keys (#158 R19).
                     _KEYS_PR = ("pr_number", "pr")
 
-                    def _pr_ok(value: str) -> bool:
-                        return bool(
-                            re.fullmatch(r"[0-9]+", value) and len(value) <= PR_NUMBER_MAX_LEN
-                        )
+                    # pr validity via the shared predicate (issue 3)
 
                     for _pk in _KEYS_PR:
                         # Alias-family single sink: a run_pre return shape with
@@ -420,7 +404,7 @@ class PJobExecutor:
                         if _pk in dynamic_vars:
                             _raw_pk = str(dynamic_vars[_pk])
                             _pv = normalize_pr_number(_raw_pk)
-                            if _pv and _pr_ok(_pv):
+                            if _pv and pr_number_ok(_pv):
                                 dynamic_vars[_pk] = _pv
                             else:
                                 print(
@@ -440,9 +424,18 @@ class PJobExecutor:
                     )
                     if _auth_pr and "pr" in dynamic_vars:
                         dynamic_vars["pr"] = _auth_pr
+                    if "pr_url" in dynamic_vars:
+                        _pu = str(dynamic_vars.get("pr_url") or "").strip()
+                        if not (_pu.startswith("https://") or _pu.startswith("http://")):
+                            print(
+                                f"Warning: discovered pr_url is invalid "
+                                f"(scheme gate failed; len={len(_pu)}); "
+                                f"dropping it (#158 R23)"
+                            )
+                            dynamic_vars.pop("pr_url", None)
                     if "repo" in dynamic_vars:
                         _dv_repo = str(dynamic_vars.get("repo") or "").strip()
-                        if _dv_repo and _REPO_OK(_dv_repo):
+                        if _dv_repo and repo_ok(_dv_repo):
                             dynamic_vars["repo"] = _dv_repo
                         else:
                             print(
@@ -602,10 +595,7 @@ class PJobExecutor:
                             # empty-override bypass).
                             _spr = getattr(result, "scan_pr_result", None) or {}
                             _scanned = normalize_pr_number(_spr.get("pr_number") or "")
-                            if _scanned and not (
-                                re.fullmatch(r"[0-9]+", _scanned)
-                                and len(_scanned) <= PR_NUMBER_MAX_LEN
-                            ):
+                            if _scanned and not pr_number_ok(_scanned):
                                 # Same validation as the pre-merge rewrite: an
                                 # invalid (non-numeric or overlong) scan value
                                 # must not be forced into postExec substitution
@@ -635,10 +625,7 @@ class PJobExecutor:
                             # Only a well-formed owner/name may drive postExec
                             # substitution — a misbehaving provider cannot
                             # smuggle arbitrary strings into gh targets (#158 R10)
-                            if not (
-                                _REPO_FORMAT.fullmatch(_scanned_repo)
-                                and len(_scanned_repo) <= REPO_MAX_LEN
-                            ):
+                            if not repo_ok(_scanned_repo):
                                 _scanned_repo = ""
                             _cur_repo = str(action_env.get("repo") or "").strip()
                             if (
@@ -824,8 +811,6 @@ class PJobExecutor:
         if os.name != "nt":
             return cmd
 
-        import re
-
         sq = "'"
         # Replace && only when NOT inside single or double quotes
         pattern = (
@@ -990,7 +975,6 @@ class PJobExecutor:
 
     def _save_output(self, result: ExecutionResult, output_options) -> None:
         """Save output to file."""
-        import re
         from datetime import datetime
 
         # Process template variables in path

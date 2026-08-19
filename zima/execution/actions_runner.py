@@ -49,6 +49,26 @@ REPO_MAX_LEN = 256
 PINNED_PR_MAX_LEN = PR_NUMBER_MAX_LEN  # back-compat alias
 
 
+# Well-formed owner/name (same charset contract as zima.webhook.payload's
+# repo allow-list) (#158).
+REPO_FORMAT = re.compile(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+")
+
+
+def pr_number_ok(value: str) -> bool:
+    """The single pr-number validity predicate shared by every gate:
+    numeric AND within the max length. Overlong/invalid values are
+    rejected, never truncated (#158 R23: issue 3)."""
+    v = normalize_pr_number(value)
+    return bool(v) and bool(re.fullmatch(r"[0-9]+", v)) and len(v) <= PR_NUMBER_MAX_LEN
+
+
+def repo_ok(value: str) -> bool:
+    """The single repo validity predicate: stripped owner/name matching
+    REPO_FORMAT AND within the max length (#158 R23: issue 3)."""
+    v = str(value or "").strip()
+    return bool(v) and bool(REPO_FORMAT.fullmatch(v)) and len(v) <= REPO_MAX_LEN
+
+
 def normalize_pr_number(value: str) -> str:
     """Normalize a user-supplied PR number: strip whitespace and a leading
     ``#`` (common copy-paste form). Returns "" for empty input."""
@@ -269,9 +289,7 @@ class ActionsRunner:
                     )
                 # Length is part of validity, aligned with the executor's
                 # scan validation gate (<=64) so both layers agree (#158 R15)
-                if pinned and not (
-                    re.fullmatch(r"[0-9]+", pinned) and len(pinned) <= PINNED_PR_MAX_LEN
-                ):
+                if pinned and not pr_number_ok(pinned):
                     # Malformed manual input (typo in --set-var): fail fast.
                     # Only report the length, never echo the raw value (#158 R2).
                     raise SkipAction(
@@ -280,6 +298,18 @@ class ActionsRunner:
                         f"pjob={self._pjob_code or '?'}"
                     )
                 if pinned:
+                    # Runtime repo override (webhook --set-var=repo) is more
+                    # authoritative than a literal action.repo when they
+                    # differ (broadcast-mode mismatch protection) (#158 R23:
+                    # issue 8). Only a well-formed repo may be adopted.
+                    _pin_repo = ((pin_env or {}).get("repo") or "").strip()
+                    if _pin_repo and repo_ok(_pin_repo) and _pin_repo != repo:
+                        print(
+                            f"Warning: runtime repo override differs from "
+                            f"action repo; using the runtime value (len="
+                            f"{len(_pin_repo)}) (#158)"
+                        )
+                        repo = _pin_repo
                     # Consume the pin: a PJob with multiple scan_pr actions
                     # must not re-apply the same pin against every action's
                     # repo (#158 R22). pin_env is executor-built; env (legacy
