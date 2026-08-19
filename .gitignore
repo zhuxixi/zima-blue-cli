@@ -70,3 +70,8 @@ pytest_output.txt
 # arch-audit artifacts (generated, not source)
 deps.json
 metrics.json
+
+# Agent local directories (not source)
+.pi-subagents/
+.pi/subagents/
+plans/
