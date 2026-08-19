@@ -71,7 +71,7 @@ The core design is composability through seven YAML-based configuration types:
 - **`zima/execution/background_runner.py`** — Background PJob execution in detached process.
 - **`zima/execution/history.py`** — Execution history tracking with PID recording.
 - **`zima/execution/actions_runner.py`** — `ActionsRunner`: executes preExec actions before agent starts and postExec actions after agent exit. Supports `SkipAction` to short-circuit execution when preExec finds no work.
-- **`zima/actions/base.py`** — `ActionProvider` ABC — interface all providers implement (add_label, remove_label, post_comment, fetch_diff, scan_prs).
+- **`zima/actions/base.py`** — `ActionProvider` ABC — interface all providers implement (add_label, remove_label, post_comment, fetch_diff, scan_prs, verify_pr_label — fail-closed by default).
 - **`zima/actions/registry.py`** — `ProviderRegistry`: discovers providers (built-in github + external) via the `zima.action_providers` entry-point group.
 - **`zima/actions/exceptions.py`** — `ProviderNotFoundError`, `ProviderError`.
 - **`zima/providers/__init__.py`** — provider adapters package (concrete `GitHubProvider` lives in `github.py`); built-ins register via the `zima.action_providers` entry-point in `pyproject.toml`.

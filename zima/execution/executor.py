@@ -429,11 +429,17 @@ class PJobExecutor:
                                     f"dropping it (#158)"
                                 )
                                 dynamic_vars.pop(_pk, None)
-                    # Alias reconciliation: with both pr_number and pr valid,
-                    # pr_number is authoritative (it won the gate above); a
-                    # differing pr is stale and silently synced (#158 R21)
-                    if "pr_number" in dynamic_vars and "pr" in dynamic_vars:
-                        dynamic_vars["pr"] = dynamic_vars["pr_number"]
+                    # Alias reconciliation: pr_number is authoritative (it
+                    # won the gate above or is the runtime override — which
+                    # has the HIGHEST precedence and also wins here); a
+                    # differing pr is stale and silently synced (#158 R21/R23)
+                    _auth_pr = normalize_pr_number(
+                        bundle.overrides.variable_values.get("pr_number")
+                        or dynamic_vars.get("pr_number")
+                        or ""
+                    )
+                    if _auth_pr and "pr" in dynamic_vars:
+                        dynamic_vars["pr"] = _auth_pr
                     if "repo" in dynamic_vars:
                         _dv_repo = str(dynamic_vars.get("repo") or "").strip()
                         if _dv_repo and _REPO_OK(_dv_repo):

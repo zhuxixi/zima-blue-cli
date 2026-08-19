@@ -98,18 +98,26 @@ class GitHubProvider(ActionProvider):
         restoring the label gate that the pinned fast path must not skip
         (#158 security).
         """
-        result = self._run(
-            [
-                "pr",
-                "view",
-                pr_number,
-                "--repo",
-                repo,
-                "--json",
-                "labels",
-            ],
-            check=False,
-        )
+        try:
+            result = self._run(
+                [
+                    "pr",
+                    "view",
+                    pr_number,
+                    "--repo",
+                    repo,
+                    "--json",
+                    "labels",
+                ],
+                check=False,
+            )
+        except Exception as e:  # noqa: BLE001 - verification must fail closed
+            # TimeoutExpired / FileNotFoundError (gh missing in a spawned
+            # env) / OSError — the re-check must NEVER raise into the
+            # preExec path: fail closed and let the run SkipAction so the
+            # label stays for a re-trigger (#158 R23).
+            print(f"Warning: verify_pr_label raised ({e}); failing closed")
+            return False
         if result.returncode != 0:
             return False
         try:

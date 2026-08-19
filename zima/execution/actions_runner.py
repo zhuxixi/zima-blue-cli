@@ -294,7 +294,15 @@ class ActionsRunner:
                     # no search-index race) before trusting it: a forged
                     # pin for a PR that never carried zima:needs-review
                     # must not drive postExec label/comment actions.
-                    if not provider.verify_pr_label(repo, pinned, label):
+                    try:
+                        _label_ok = provider.verify_pr_label(repo, pinned, label)
+                    except Exception as e:  # noqa: BLE001 - fail closed
+                        # Third-party provider implementations may raise
+                        # despite the ABC fail-closed default; the re-check
+                        # must never propagate (#158 R23)
+                        _label_ok = False
+                        print(f"Warning: verify_pr_label raised ({e}); failing closed")
+                    if not _label_ok:
                         raise SkipAction(
                             f"preExec scan_pr skipped — pinned PR #{pinned} in "
                             f"{repo} does not carry label '{label}' (direct "

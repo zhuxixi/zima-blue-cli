@@ -967,3 +967,15 @@ class TestPinnedLabelRecheck:
             mock_provider.verify_pr_label.assert_called_once()
             assert mock_provider.scan_prs.call_count == 1
             assert result["pr_number"] == "42"  # second action's scan won
+
+    def test_pinned_verify_raising_fails_closed(self):
+        """verify_pr_label raising (gh timeout/missing) must fail closed via
+        SkipAction, never propagate into the preExec path (#158 R23)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.verify_pr_label.side_effect = RuntimeError("gh gone")
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with pytest.raises(SkipAction) as exc_info:
+                runner.run_pre(self._make_actions(), {"pr_number": "11"})
+            mock_provider.fetch_diff.assert_not_called()
+            assert "does not carry label" in str(exc_info.value)
