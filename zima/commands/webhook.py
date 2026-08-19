@@ -66,6 +66,19 @@ def _run_smee_forwarder(smee_url: str, target_url: str, secret: Optional[str]) -
         time.sleep(1)
 
 
+def _enable_line_buffered_stdout() -> None:
+    """Make stdout line-buffered as a defense for stdout prints.
+
+    The server's [webhook] runtime logs go to stderr (already unbuffered);
+    stdout only carries the startup banner and any future stdout prints,
+    which would otherwise be block-buffered under systemd/journald (#163).
+    """
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except (AttributeError, ValueError, OSError):
+        pass
+
+
 @app.callback()
 def serve(
     ctx: typer.Context,
@@ -97,6 +110,8 @@ def serve(
     """Run webhook server and optionally connect to smee.io."""
     if ctx.invoked_subcommand is not None:
         return
+
+    _enable_line_buffered_stdout()
 
     # Fail-closed on signature verification by default: refuse to run without a
     # secret unless --allow-no-secret is explicitly passed. smee.io channels are
