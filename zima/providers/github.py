@@ -84,7 +84,7 @@ class GitHubProvider(ActionProvider):
             The diff patch as a string, or empty string on failure.
         """
         result = self._run(
-            ["pr", "view", issue, "--repo", repo, "--patch"],
+            ["pr", "diff", issue, "--repo", repo],
             capture=True,
             check=False,
         )

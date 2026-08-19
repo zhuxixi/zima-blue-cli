@@ -110,11 +110,10 @@ class TestGitHubProvider:
             assert args == [
                 "gh",
                 "pr",
-                "view",
+                "diff",
                 "123",
                 "--repo",
                 "owner/repo",
-                "--patch",
             ]
 
     def test_fetch_diff_failure_returns_empty(self):
