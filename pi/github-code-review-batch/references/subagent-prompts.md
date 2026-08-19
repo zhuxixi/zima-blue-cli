@@ -1,5 +1,7 @@
 # SubAgent Definitions and Prompt Templates
 
+> **pi 派发方式**：本文件的 prompt 模板在 pi 下通过 `subagent` 工具派发——`agent: "reviewer"`（或项目自定义审查 agent）、`context: "fresh"`，task 字段填下方模板并代入输入变量。并行 fanout 用 subagent 工具的 `workflowScript` `runs.all`（见 [flow.md Step 4](flow.md#step-4)）。
+
 本文件定义 7 个 sub-agent 的输入契约、输出 schema、任务要求和推荐 prompt 模板。
 
 > **severity（#119）**：所有产出 issue 的 agent（claude-compliance-checker / agents-compliance-checker / bug-scanner / logic-analyzer，以及 delta-reviewer 的 `new_issues`）必须为每个 issue 给出 `severity: critical | high | medium | low`，判定口径见 [flow.md Step 4](flow.md#step-4)。下游 `build_review_body.py` 按 severity 排序，状态报告据此计算 `Critical issues` 与 `Verdict`。
