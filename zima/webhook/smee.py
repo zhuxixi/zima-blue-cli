@@ -170,19 +170,22 @@ def _start_watchdog(
                     continue
                 if now - last_probe_sent > _PROBE_INTERVAL:
                     probe_id = uuid.uuid4().hex
+                    # Register the pending probe BEFORE the POST returns: smee
+                    # emits the event (echo) before sending the POST response,
+                    # so the echo can reach the read loop first (#166 CR R2).
+                    probe_pending[0] = (probe_id, now)
                     try:
                         requests.post(smee_url, json={"_zima_probe": probe_id}, timeout=10)
-                        probe_pending[0] = (probe_id, now)
                     except Exception as exc:  # noqa: BLE001 - network-level failure
-                        # Cannot judge detachment; log and retry next interval.
+                        # POST never reached smee: no echo will come, so clear
+                        # the pending slot instead of waiting for a timeout.
+                        probe_pending[0] = None
                         print(f"[smee] watchdog: probe POST failed ({exc})", file=sys.stderr)
                     last_probe_sent = now
         except Exception as exc:  # noqa: BLE001 - log before dying (#163 CR)
             # A silently dead watchdog would re-create the original #163
             # failure mode (silent event loss), so always log before exiting.
             print(f"[smee] watchdog thread died: {exc}", file=sys.stderr)
-
-    threading.Thread(target=_watch, daemon=True).start()
 
     threading.Thread(target=_watch, daemon=True).start()
 

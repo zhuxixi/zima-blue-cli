@@ -806,7 +806,8 @@ class TestRunSmeeClient:
         except RuntimeError:
             pass
 
-        assert probe_posts  # probe was sent to the smee channel
+        assert len(probe_posts) == 1  # exactly one probe: one watchdog thread,
+        # and no new probe while a pending one awaits its echo/timeout
         assert "_zima_probe" in probe_posts[0]
         assert close_calls  # probe timeout closed the detached connection
         assert target_posts == []  # nothing forwarded to the local server
