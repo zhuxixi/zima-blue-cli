@@ -14,13 +14,7 @@ from datetime import date
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = (
-    _REPO_ROOT
-    / "pi"
-    / "github-code-review-batch"
-    / "scripts"
-    / "apply_suppressions.py"
-)
+SCRIPT = _REPO_ROOT / "pi" / "github-code-review-batch" / "scripts" / "apply_suppressions.py"
 
 sys.path.insert(0, str(SCRIPT.parent))
 import apply_suppressions as asu  # noqa: E402

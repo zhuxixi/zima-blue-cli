@@ -15,13 +15,7 @@ import sys
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = (
-    _REPO_ROOT
-    / "pi"
-    / "github-code-review-batch"
-    / "scripts"
-    / "run_tool_layer.py"
-)
+SCRIPT = _REPO_ROOT / "pi" / "github-code-review-batch" / "scripts" / "run_tool_layer.py"
 
 _spec = importlib.util.spec_from_file_location("run_tool_layer", SCRIPT)
 rtl = importlib.util.module_from_spec(_spec)
@@ -139,10 +133,7 @@ class TestFilesScoping:
         assert "a.py" in cmds[0] and "b/c.py" in cmds[0]
 
     def test_output_intersected_to_files(self):
-        raw = (
-            "src/changed.py:10: unused import os\n"
-            "scripts/legacy.py:3: old debt\n"
-        )
+        raw = "src/changed.py:10: unused import os\n" "scripts/legacy.py:3: old debt\n"
         issues = rtl.parse_diagnostics("ruff", raw)
         scoped = rtl.filter_to_files(issues, ["src/changed.py"])
         assert len(scoped) == 1
