@@ -71,7 +71,7 @@ The core design is composability through seven YAML-based configuration types:
 - **`zima/execution/background_runner.py`** — Background PJob execution in detached process.
 - **`zima/execution/history.py`** — Execution history tracking with PID recording.
 - **`zima/execution/actions_runner.py`** — `ActionsRunner`: executes preExec actions before agent starts and postExec actions after agent exit. Supports `SkipAction` to short-circuit execution when preExec finds no work.
-- **`zima/actions/base.py`** — `ActionProvider` ABC — interface all providers implement (add_label, remove_label, post_comment, fetch_diff, scan_prs).
+- **`zima/actions/base.py`** — `ActionProvider` ABC — interface all providers implement (add_label, remove_label, post_comment, fetch_diff, scan_prs, verify_pr_label — fail-closed by default).
 - **`zima/actions/registry.py`** — `ProviderRegistry`: discovers providers (built-in github + external) via the `zima.action_providers` entry-point group.
 - **`zima/actions/exceptions.py`** — `ProviderNotFoundError`, `ProviderError`.
 - **`zima/providers/__init__.py`** — provider adapters package (concrete `GitHubProvider` lives in `github.py`); built-ins register via the `zima.action_providers` entry-point in `pyproject.toml`.
@@ -118,7 +118,7 @@ zima pjob run <code>
 - **`zima webhook-server --pjob <code> [--smee-url <url>] [--secret <secret>]`** runs a local HTTP server on `--port` (default `8765`).
 - When `--smee-url` is provided, a background thread connects to smee.io via SSE and forwards events to `http://127.0.0.1:<port>/webhook`.
 - **Trust model**: when smee drops `rawBody`, the forwarder re-signs events locally (PR #150) — HMAC then authenticates "the local forwarder", not "GitHub origin"; the smee channel is publicly readable, so injected events are possible (guards: zima:needs-review label only, repo allow-list, 60s dedup)
-- The server verifies `X-Hub-Signature-256` when `--secret` is set, filters for `zima:needs-review` labels, and spawns `zima pjob run <code> --set-var=repo=... --set-var=pr=... --set-var=head_sha=...` for each configured PJob.
+- The server verifies `X-Hub-Signature-256` when `--secret` is set, filters for `zima:needs-review` labels, and spawns `zima pjob run <code> --set-var=repo=... --set-var=pr_number=... --set-var=pr=... --set-var=head_sha=...` for each configured PJob (pr_number is the consumed name; bare pr is a temporary compatibility alias).
 - **Multi-repo routing** (`--repo`, repeated): bind each `--pjob` to a repo in order — `--pjob A --repo owner1/repo1 --pjob B --repo owner2/repo2`. An event then fires only the PJob whose repo matches (case-insensitive); events for unbound repos are ignored (logged), not broadcast. Omit `--repo` entirely to keep legacy broadcast mode (one PJob set, any repo). One smee channel + one server + one unit can serve many repos this way.
 - Example configs are in `examples/webhook/`, including sample agents, workflows, variables, envs, and PJobs for both Claude and Kimi code review.
 

@@ -498,6 +498,284 @@ class TestActionsRunnerPreExec:
         assert result == {}
 
 
+class TestRunPrePinnedPr:
+    """Pinned-PR short-circuit (#158): env pr_number/pr set by the webhook
+    spawn or manual --set-var means the exact PR is known — skip the label
+    rescan (GitHub search index lags the just-delivered label event)."""
+
+    def _make_actions(self, repo="owner/repo"):
+        return ActionsConfig(
+            pre_exec=[PreExecAction(type="scan_pr", repo=repo, label="zima:needs-review")]
+        )
+
+    def test_pinned_pr_number_skips_rescan(self):
+        """env pr_number pinned -> provider.scan_prs NOT called, values constructed."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.fetch_diff.return_value = "+diff"
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(self._make_actions(), {"pr_number": "11"})
+            mock_provider.scan_prs.assert_not_called()
+            # pr_diff contract is kept (direct gh pr view, no search-index race)
+            mock_provider.fetch_diff.assert_called_once_with("owner/repo", "11")
+            assert result == {
+                "repo": "owner/repo",
+                "pr_number": "11",
+                "pr_title": "",
+                "pr_url": "https://github.com/owner/repo/pull/11",
+                "pr_diff": "+diff",
+            }
+
+    def test_pinned_fetch_diff_raising_raises_skip(self):
+        """fetch_diff raising during a pinned run -> SkipAction (label stays
+        for a re-run; no hollow review)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.fetch_diff.side_effect = RuntimeError("gh down")
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with pytest.raises(SkipAction) as exc_info:
+                runner.run_pre(self._make_actions(), {"pr_number": "11"})
+            assert "fetch_diff raised" in str(exc_info.value)
+
+    def test_pinned_fetch_diff_empty_raises_skip(self):
+        """fetch_diff returning an empty string (gh check=False silent fail)
+        -> SkipAction; never review an empty diff (#158 R2)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.fetch_diff.return_value = ""
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with pytest.raises(SkipAction) as exc_info:
+                runner.run_pre(self._make_actions(), {"pr_number": "11"})
+            assert "empty diff" in str(exc_info.value)
+
+    def test_pin_env_is_the_only_pin_source_when_provided(self):
+        """With pin_env provided (executor path), a pr_number that exists only
+        in the merged env (static Variable config) must NOT pin (#158 R2)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = [
+            {"number": "42", "title": "Fix", "url": "https://github.com/o/r/pull/42"}
+        ]
+        mock_provider.fetch_diff.return_value = "d"
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(
+                self._make_actions(),
+                env={"pr_number": "11"},  # static config value in merged env
+                pin_env={},  # nothing runtime-injected
+            )
+            # No pin: the label rescan ran and discovered PR 42
+            mock_provider.scan_prs.assert_called_once_with("owner/repo", "zima:needs-review")
+            assert result["pr_number"] == "42"
+
+    def test_pin_env_pins_even_when_env_lacks_it(self):
+        """With pin_env provided, a runtime-only pr_number pins even though the
+        merged env does not carry it."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.fetch_diff.return_value = "+diff"
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(
+                self._make_actions(),
+                env={},
+                pin_env={"pr_number": "11"},
+            )
+            mock_provider.scan_prs.assert_not_called()
+            assert result["pr_number"] == "11"
+            assert result["pr_diff"] == "+diff"
+
+    def test_pinned_mixed_exception_then_empty_reports_last_mode(self):
+        """Mixed retry sequence (raise, then empty) reports the LAST failure
+        mode (empty diff), not the expired exception (#158 R22)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.fetch_diff.side_effect = [RuntimeError("gh down"), "", ""]
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with patch("zima.execution.actions_runner.time.sleep"):
+                with pytest.raises(SkipAction) as exc_info:
+                    runner.run_pre(self._make_actions(), {"pr_number": "11"})
+            msg = str(exc_info.value)
+            assert "empty diff" in msg
+            assert "gh down" not in msg  # expired exception not reported
+            assert "re-label to retry" in msg
+
+    def test_pinned_hash_prefix_normalized(self):
+        """ "#11" (common copy-paste form) normalizes to 11 and pins (#158 R3)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.fetch_diff.return_value = "+d"
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(self._make_actions(), {"pr_number": "#11"})
+            mock_provider.scan_prs.assert_not_called()
+            assert result["pr_number"] == "11"
+            assert result["pr_url"].endswith("/pull/11")
+
+    def test_pinned_fetch_diff_retries_then_raises_skip(self):
+        """fetch_diff raising twice then succeeding still completes (#158 R3)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.fetch_diff.side_effect = [
+            RuntimeError("gh down"),
+            RuntimeError("gh down"),
+            "+diff",
+        ]
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with patch("zima.execution.actions_runner.time.sleep") as mock_sleep:
+                result = runner.run_pre(self._make_actions(), {"pr_number": "11"})
+            assert mock_sleep.call_count == 2
+            assert result["pr_diff"] == "+diff"
+
+    def test_pin_env_not_provided_reads_env(self):
+        """Legacy direct callers (pin_env=None) still read merged env —
+        backwards compatibility for library use."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.fetch_diff.return_value = "+d"
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(self._make_actions(), {"pr_number": "11"})
+            assert result["pr_number"] == "11"
+
+    def test_whitespace_pr_number_does_not_shadow_alias(self):
+        """pr_number=' ' (manual typo) is treated as absent; a valid legacy
+        pr value still pins (#158 R6)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.fetch_diff.return_value = "+d"
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(self._make_actions(), {"pr_number": " ", "pr": "11"})
+            mock_provider.scan_prs.assert_not_called()
+            assert result["pr_number"] == "11"
+
+    def test_hash_only_pr_number_falls_through_to_alias(self):
+        """(pr_number='#', pr='11'): the '#'-only candidate does not block the
+        valid alias — pins 11 (#158 R7)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.fetch_diff.return_value = "+d"
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(self._make_actions(), {"pr_number": "#", "pr": "11"})
+            mock_provider.scan_prs.assert_not_called()
+            assert result["pr_number"] == "11"
+
+    def test_all_invalid_pin_candidates_raise_skip(self):
+        """(pr_number=' ', pr='#'): no valid candidate and one malformed ->
+        SkipAction (#158 R7)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with pytest.raises(SkipAction) as exc_info:
+                runner.run_pre(self._make_actions(), {"pr_number": " ", "pr": "#"})
+            mock_provider.scan_prs.assert_not_called()
+            assert "'#' prefix" in str(exc_info.value)
+
+    def test_pinned_hash_only_raises_skip(self):
+        """ "#" with no digits fails fast instead of silently unpinning (#158 R4)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with pytest.raises(SkipAction) as exc_info:
+                runner.run_pre(self._make_actions(), {"pr_number": "#"})
+            mock_provider.scan_prs.assert_not_called()
+            assert "'#' prefix" in str(exc_info.value)
+
+    def test_pinned_empty_diff_retries_then_skips(self):
+        """Empty diff results also retry (gh check=False silent fail) and end
+        in SkipAction, never a hollow review (#158 R4)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.fetch_diff.return_value = ""
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with patch("zima.execution.actions_runner.time.sleep") as mock_sleep:
+                with pytest.raises(SkipAction) as exc_info:
+                    runner.run_pre(self._make_actions(), {"pr_number": "11"})
+            assert mock_provider.fetch_diff.call_count == 3
+            assert mock_sleep.call_count == 2
+            assert "empty diff" in str(exc_info.value)
+
+    def test_malformed_pinned_raises_skip(self):
+        """Non-numeric pinned value fails fast via SkipAction (no rescan, no
+        mixed state, raw value not echoed — only its length)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with pytest.raises(SkipAction) as exc_info:
+                runner.run_pre(self._make_actions(), {"pr_number": "abc"})
+            mock_provider.scan_prs.assert_not_called()
+            msg = str(exc_info.value)
+            assert "not a valid number" in msg
+            assert "abc" not in msg  # raw value never echoed
+            assert "len=3" in msg
+
+    def test_pinned_pr_legacy_name(self):
+        """env pr (legacy webhook name) also pins."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(self._make_actions(), {"pr": "11"})
+            mock_provider.scan_prs.assert_not_called()
+            assert result["pr_number"] == "11"
+
+    def test_pinned_pr_number_wins_over_legacy(self):
+        """Both set -> pr_number takes precedence."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(self._make_actions(), {"pr_number": "11", "pr": "22"})
+            assert result["pr_number"] == "11"
+
+    def test_pinned_pr_number_stripped(self):
+        """Whitespace-only padding around the pinned value is stripped."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(self._make_actions(), {"pr_number": " 11 "})
+            assert result["pr_number"] == "11"
+
+    def test_empty_pinned_falls_back_to_rescan(self):
+        """pr_number set but empty -> original rescan path (with results)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = [
+            {"number": "42", "title": "Fix", "url": "https://github.com/o/r/pull/42"}
+        ]
+        mock_provider.fetch_diff.return_value = "diff content"
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(self._make_actions(), {"pr_number": ""})
+            mock_provider.scan_prs.assert_called_once_with("owner/repo", "zima:needs-review")
+            assert result["pr_number"] == "42"
+
+    def test_no_pinned_calls_scan_prs(self):
+        """No pinned vars at all -> scan_prs called (regression lock)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = [
+            {"number": "42", "title": "Fix", "url": "https://github.com/o/r/pull/42"}
+        ]
+        mock_provider.fetch_diff.return_value = "d"
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            runner.run_pre(self._make_actions(), {})
+            mock_provider.scan_prs.assert_called_once()
+
+    def test_pinned_with_empty_repo_still_skips(self):
+        """Guard order: empty-repo guard precedes the pinned branch."""
+        runner = ActionsRunner()
+        actions = self._make_actions(repo="")
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with pytest.raises(SkipAction) as exc_info:
+                runner.run_pre(actions, {"pr_number": "11"})
+            assert "repo resolved to empty" in str(exc_info.value)
+
+    def test_pinned_wins_over_empty_rescan(self):
+        """The #158 bug itself: pinned set + rescan would return [] -> no SkipAction."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.scan_prs.return_value = []
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(self._make_actions(), {"pr_number": "11"})
+            mock_provider.scan_prs.assert_not_called()
+            assert result["pr_number"] == "11"
+
+
 class TestActionsRunnerPreExecSkipLogic:
     def _make_actions(self, repo="owner/repo", label="zima:needs-review"):
         return ActionsConfig(pre_exec=[PreExecAction(type="scan_pr", repo=repo, label=label)])
@@ -623,3 +901,118 @@ class TestActionsRunnerPreExecSkipLogic:
         with patch.object(runner._registry, "get", return_value=mock_provider):
             result = runner.run_pre(actions, {})
         assert result["pr_number"] == "10"
+
+    def test_overlong_pinned_fails_fast(self):
+        """A >64-digit pinned pr_number fails the length part of validity
+        (#158 R15, aligned with the executor scan gate)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with pytest.raises(SkipAction) as exc_info:
+                runner.run_pre(self._make_actions(), {"pr_number": "1" * 65})
+            mock_provider.scan_prs.assert_not_called()
+            assert "non-numeric or overlong" in str(exc_info.value)
+
+
+class TestPinnedLabelRecheck:
+    """#158 R22 security: the pinned fast path re-verifies the trigger label
+    via a direct API call before trusting an injected pin."""
+
+    def _make_actions(self, repo="owner/repo"):
+        return ActionsConfig(
+            pre_exec=[PreExecAction(type="scan_pr", repo=repo, label="zima:needs-review")]
+        )
+
+    def test_pinned_label_absent_raises_skip(self):
+        """A pin whose PR does NOT carry the label (forged event) is
+        rejected — no review, no postExec (#158 R22)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.verify_pr_label.return_value = False
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with pytest.raises(SkipAction) as exc_info:
+                runner.run_pre(self._make_actions(), {"pr_number": "11"})
+            mock_provider.verify_pr_label.assert_called_once_with(
+                "owner/repo", "11", "zima:needs-review"
+            )
+            mock_provider.fetch_diff.assert_not_called()
+            assert "does not carry label" in str(exc_info.value)
+
+    def test_pinned_label_present_proceeds(self):
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.verify_pr_label.return_value = True
+        mock_provider.fetch_diff.return_value = "+d"
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(self._make_actions(), {"pr_number": "11"})
+            assert result["pr_number"] == "11"
+
+    def test_pin_consumed_after_first_scan_action(self):
+        """Multi-action PJob: the second scan_pr action must NOT re-apply the
+        consumed pin against its own repo (#158 R22)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.verify_pr_label.return_value = True
+        mock_provider.fetch_diff.return_value = "+d"
+        mock_provider.scan_prs.return_value = [{"number": "42", "title": "T", "url": "u"}]
+        actions = ActionsConfig(
+            pre_exec=[
+                PreExecAction(type="scan_pr", repo="owner/one", label="zima:needs-review"),
+                PreExecAction(type="scan_pr", repo="owner/two", label="zima:needs-review"),
+            ]
+        )
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(actions, env={}, pin_env={"pr_number": "11"})
+            # First action pinned; second action fell back to its own label scan
+            mock_provider.verify_pr_label.assert_called_once()
+            assert mock_provider.scan_prs.call_count == 1
+            assert result["pr_number"] == "42"  # second action's scan won
+
+    def test_pinned_verify_raising_fails_closed(self):
+        """verify_pr_label raising (gh timeout/missing) must fail closed via
+        SkipAction, never propagate into the preExec path (#158 R23)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.verify_pr_label.side_effect = RuntimeError("gh gone")
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            with pytest.raises(SkipAction) as exc_info:
+                runner.run_pre(self._make_actions(), {"pr_number": "11"})
+            mock_provider.fetch_diff.assert_not_called()
+            assert "does not carry label" in str(exc_info.value)
+
+    def test_pinned_runtime_repo_override_wins(self):
+        """Runtime repo override (webhook --set-var=repo) beats a literal
+        action.repo when they differ (#158 R23: issue 8)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.verify_pr_label.return_value = True
+        mock_provider.fetch_diff.return_value = "+d"
+        actions = ActionsConfig(
+            pre_exec=[PreExecAction(type="scan_pr", repo="literal/repo", label="zima:needs-review")]
+        )
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(
+                actions,
+                env={},
+                pin_env={"pr_number": "11", "repo": "runtime/repo"},
+            )
+            assert result["repo"] == "runtime/repo"
+            assert result["pr_url"] == "https://github.com/runtime/repo/pull/11"
+
+    def test_pinned_malformed_runtime_repo_ignored(self):
+        """A malformed runtime repo override is not adopted; the action repo
+        stands (#158 R23: issue 8)."""
+        runner = ActionsRunner()
+        mock_provider = MagicMock()
+        mock_provider.verify_pr_label.return_value = True
+        mock_provider.fetch_diff.return_value = "+d"
+        actions = ActionsConfig(
+            pre_exec=[PreExecAction(type="scan_pr", repo="literal/repo", label="zima:needs-review")]
+        )
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            result = runner.run_pre(
+                actions,
+                env={},
+                pin_env={"pr_number": "11", "repo": "not a repo"},
+            )
+            assert result["repo"] == "literal/repo"

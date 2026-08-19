@@ -69,7 +69,7 @@ def test_labeled_event_triggers_both_pjobs(webhook_server, monkeypatch):
     assert calls[0][5] == "claude-cr"
     assert calls[1][5] == "kimi-cr"
     assert "--set-var=repo=owner/repo" in calls[0]
-    assert "--set-var=pr=99" in calls[0]
+    assert "--set-var=pr_number=99" in calls[0]
     assert "--set-var=head_sha=deadbeef" in calls[0]
 
 

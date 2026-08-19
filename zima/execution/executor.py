@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import copy
 import os
+import re
 import shutil
 import subprocess
 import uuid
@@ -13,12 +15,27 @@ from pathlib import Path
 from typing import Optional
 
 from zima.config.manager import ConfigManager
-from zima.execution.actions_runner import ActionsRunner, SkipAction
+from zima.execution.actions_runner import (
+    ActionsRunner,
+    SkipAction,
+    normalize_pr_number,
+    pr_number_ok,
+    repo_ok,
+)
 from zima.execution.history import ExecutionHistory
 from zima.models.config_bundle import ConfigBundle
 from zima.models.pjob import Overrides, PJobConfig
 from zima.review.parser import ReviewParser
 from zima.utils import generate_timestamp, get_zima_home
+
+# Well-formed owner/name (same charset contract as zima.webhook.payload's
+# repo allow-list). Scan-provided repo values must match before they may
+# drive rendering or postExec gh targets (#158).
+
+# Free-text scan values (pr_title/pr_url/pr_diff) entering the agent env /
+# templates are capped to keep E2BIG and render blowups off the table
+# (#158 R21). Diff text is the largest legitimate payload — 1 MiB headroom.
+_DISCOVERED_TEXT_MAX = 1_048_576
 
 
 class ExecutionStatus(Enum):
@@ -188,6 +205,9 @@ class PJobExecutor:
         )
         self._actions_runner._pjob_code = pjob_code
         temp_dir: Optional[Path] = None
+        # Runtime-only overrides (execute() argument): the pinned-PR
+        # short-circuit must trust these alone (#158 R3).
+        runtime_overrides = overrides
 
         try:
             # 1. Load PJob configuration
@@ -214,9 +234,238 @@ class PJobExecutor:
                     for k, v in bundle.get_variable_values().items():
                         if v is not None:
                             pre_env.setdefault(k, str(v))
+                    # Runtime-injected variable values only (--set-var /
+                    # webhook spawn): the pinned-PR short-circuit must trust
+                    # these alone — never static Variable config values nor
+                    # PJob YAML spec.overrides (#158 R3: build from the
+                    # execute() runtime argument, not the merged bundle.overrides).
+                    pin_env = {
+                        k: str(v)
+                        for k, v in (runtime_overrides or Overrides()).variable_values.items()
+                        if v is not None
+                    }
                     dynamic_vars = self._actions_runner.run_pre(
-                        pjob.spec.actions, pre_env, workdir=bundle.work_dir
+                        pjob.spec.actions,
+                        pre_env,
+                        workdir=bundle.work_dir,
+                        pin_env=pin_env,
                     )
+                    # A stale/empty pr value — wherever it lives (static
+                    # spec.overrides variableValues/envVars, the runtime
+                    # overrides object, the resolved env_vars, or the Variable
+                    # config values it was deep-merged into) — must not pin
+                    # rendering + postExec to a different (or empty) PR than
+                    # the one actually scanned (#158 R6/R7). Values are
+                    # REWRITTEN to the scanned number (not popped) so the
+                    # {{pr}} alias channel also renders it. The caller's
+                    # Overrides object is never mutated: we rebind copies.
+                    # Scan-path execution with a non-empty runtime pr pin is
+                    # impossible (the pinned branch short-circuits), so any
+                    # differing value here is static/legacy.
+                    _scan_valid = True  # no pr_number -> nothing to validate
+                    if "pr_number" in dynamic_vars:
+                        _scanned_pr = normalize_pr_number(dynamic_vars["pr_number"])
+                        # Length limits are part of validity: an overlong value
+                        # is treated as invalid and discarded entirely, so the
+                        # persisted copy can never diverge (truncate) from the
+                        # in-memory value flowing through holders (#158 R14)
+                        _scan_valid = pr_number_ok(_scanned_pr)
+                        if not _scan_valid:
+                            # Third-party providers (entry-point extension) may
+                            # return PR dicts with missing/non-numeric numbers.
+                            # Single invariant: an invalid scan is discarded
+                            # ENTIRELY — every scan-discovered key (pr aliases,
+                            # repo, the pr_* family; prefix-based) is dropped so
+                            # merge-back / injection / postExec all keep
+                            # configured values, and NOTHING is persisted: no
+                            # skip-set registration, no history payload. A
+                            # persistently-broken provider is therefore retried
+                            # each cycle — accepted as the safer side of the
+                            # trade (retrying a broken scan can never act on a
+                            # wrong PR, unlike any partial trust of its
+                            # output) (#158 R13 simplification).
+                            print(
+                                f"Warning: scan returned invalid pr_number "
+                                f"(non-numeric or overlong; len={len(_scanned_pr)}); "
+                                f"discarding the scan result entirely (#158)"
+                            )
+                            dynamic_vars = {
+                                k: v
+                                for k, v in dynamic_vars.items()
+                                if k not in ("pr_number", "pr", "repo") and not k.startswith("pr_")
+                            }
+                        else:
+                            _scanned_repo = str(dynamic_vars.get("repo") or "").strip()
+                            if _scanned_repo and not repo_ok(_scanned_repo):
+                                # Same trust boundary as the finally net: a
+                                # malformed repo never enters holders — it is
+                                # dropped from dynamic_vars entirely below
+                                # (#158 R12/R13)
+                                _scanned_repo = ""
+                            bundle.overrides = copy.copy(bundle.overrides)
+                            bundle.overrides.variable_values = dict(
+                                bundle.overrides.variable_values
+                            )
+                            bundle.overrides.env_vars = dict(bundle.overrides.env_vars)
+                            if bundle.variable:
+                                bundle.variable = copy.copy(bundle.variable)
+                                bundle.variable.values = dict(bundle.variable.values)
+                            _changed: set = set()
+                            for _holder in (
+                                bundle.overrides.variable_values,
+                                bundle.overrides.env_vars,
+                                env_vars,
+                            ):
+                                for _k in ("pr_number", "pr"):
+                                    if _k not in _holder:
+                                        continue
+                                    _raw = str(_holder[_k])
+                                    if _raw == _scanned_pr:
+                                        continue  # already in canonical form
+                                    _holder[_k] = _scanned_pr
+                                    # Warn only when the normalized value points
+                                    # at a DIFFERENT PR; same-PR format variants
+                                    # ('#123', padded) rewrite silently (#158 R8)
+                                    if normalize_pr_number(_raw) != _scanned_pr and _raw.strip():
+                                        _changed.add(_k)
+                                _cur_repo_h = str(_holder.get("repo") or "").strip()
+                                if (
+                                    _scanned_repo
+                                    and _cur_repo_h
+                                    and _cur_repo_h.lower() != _scanned_repo.lower()
+                                ):
+                                    _holder["repo"] = _scanned_repo
+                                    _changed.add("repo")
+                            if bundle.variable:
+                                for _k in ("pr_number", "pr"):
+                                    if _k in bundle.variable.values:
+                                        _raw = str(bundle.variable.values[_k])
+                                        if _raw == _scanned_pr:
+                                            continue
+                                        bundle.variable.values[_k] = _scanned_pr
+                                        if (
+                                            normalize_pr_number(_raw) != _scanned_pr
+                                            and _raw.strip()
+                                        ):
+                                            _changed.add(_k)
+                                _cur_repo_v = str(bundle.variable.values.get("repo") or "").strip()
+                                if (
+                                    _scanned_repo
+                                    and _cur_repo_v
+                                    and _cur_repo_v.lower() != _scanned_repo.lower()
+                                ):
+                                    bundle.variable.values["repo"] = _scanned_repo
+                                    _changed.add("repo")
+                            if _changed:
+                                print(
+                                    f"Warning: stale/empty override/config value(s) "
+                                    f"{sorted(_changed)} differ from scanned "
+                                    f"pr_number={_scanned_pr}; using the scanned "
+                                    f"value for rendering and postExec"
+                                )
+                            # Canonicalize the scan values themselves so the
+                            # later inject_dynamic_vars cannot overwrite the
+                            # holder rewrites with the raw ('#N', padded) forms
+                            # (#158 R9/R10). A repo rejected by the format gate
+                            # is removed entirely — never backfilled as ""
+                            # over configured values (#158 R12).
+                            dynamic_vars = {
+                                **dynamic_vars,
+                                "pr_number": _scanned_pr,
+                            }
+                            if _scanned_repo:
+                                dynamic_vars["repo"] = _scanned_repo
+                            else:
+                                # Empty/whitespace-only/malformed scanned repo:
+                                # drop the key loudly so env merge + inject
+                                # keep the configured value (#158 R12/R13/R19)
+                                print(
+                                    "Warning: scan returned invalid repo "
+                                    "(format/length gate failed); dropping it "
+                                    "— configured repo will be used (#158)"
+                                )
+                                dynamic_vars.pop("repo", None)
+                    # Single-sink repo gate: whatever shape run_pre returned
+                    # (repo with or without pr_number, third-party providers
+                    # included), the repo that flows into merge/inject/persist
+                    # always passed the format+length gate — the invariant does
+                    # not rely on run_pre always emitting both keys (#158 R19).
+                    _KEYS_PR = ("pr_number", "pr")
+
+                    # pr validity via the shared predicate (issue 3)
+
+                    for _pk in _KEYS_PR:
+                        # Alias-family single sink: a run_pre return shape with
+                        # pr (or pr-only) but no pr_number bypasses the gate
+                        # above; validate here or drop, mirroring the repo gate
+                        # (#158 R20: issue 67). len() reports the RAW input so
+                        # '####' (normalizes empty) is not reported as len=0
+                        # (#158 R21: issue 71).
+                        if _pk in dynamic_vars:
+                            _raw_pk = str(dynamic_vars[_pk])
+                            _pv = normalize_pr_number(_raw_pk)
+                            if _pv and pr_number_ok(_pv):
+                                dynamic_vars[_pk] = _pv
+                            else:
+                                print(
+                                    f"Warning: discovered {_pk} is invalid "
+                                    f"(non-numeric or overlong; len={len(_raw_pk)}); "
+                                    f"dropping it (#158)"
+                                )
+                                dynamic_vars.pop(_pk, None)
+                    # Alias reconciliation: pr_number is authoritative (it
+                    # won the gate above or is the runtime override — which
+                    # has the HIGHEST precedence and also wins here); a
+                    # differing pr is stale and silently synced (#158 R21/R23)
+                    _auth_pr = normalize_pr_number(
+                        bundle.overrides.variable_values.get("pr_number")
+                        or dynamic_vars.get("pr_number")
+                        or ""
+                    )
+                    # The authoritative value must itself be valid before it
+                    # may override the alias (#158 R24: issue 18)
+                    if not pr_number_ok(_auth_pr):
+                        _auth_pr = ""
+                    if _auth_pr and "pr" in dynamic_vars:
+                        dynamic_vars["pr"] = _auth_pr
+                    if "pr_url" in dynamic_vars:
+                        _pu = str(dynamic_vars.get("pr_url") or "").strip()
+                        if _pu and not (
+                            _pu.lower().startswith("https://") or _pu.lower().startswith("http://")
+                        ):
+                            print(
+                                f"Warning: discovered pr_url is invalid "
+                                f"(scheme gate failed; len={len(_pu)}); "
+                                f"dropping it (#158 R23/R24)"
+                            )
+                            dynamic_vars.pop("pr_url", None)
+                    if "repo" in dynamic_vars:
+                        _dv_repo = str(dynamic_vars.get("repo") or "").strip()
+                        if _dv_repo and repo_ok(_dv_repo):
+                            dynamic_vars["repo"] = _dv_repo
+                        else:
+                            print(
+                                f"Warning: discovered repo is invalid "
+                                f"(format/length gate failed; len={len(_dv_repo)}); "
+                                f"dropping it — configured repo will be used (#158)"
+                            )
+                            dynamic_vars.pop("repo", None)
+
+                    # Remaining scan-discovered values (pr_title / pr_url /
+                    # pr_diff) are provider/author-controlled free text: cap
+                    # them before they enter the agent subprocess env (E2BIG)
+                    # and Jinja2 rendering. A cap hit means a pathological
+                    # payload, so the value is truncated loudly (#158 R21).
+                    for _dk in [k for k in dynamic_vars if k.startswith("pr_")]:
+                        _dv = str(dynamic_vars[_dk])
+                        if len(_dv) > _DISCOVERED_TEXT_MAX:
+                            print(
+                                f"Warning: discovered {_dk} exceeds "
+                                f"{_DISCOVERED_TEXT_MAX} chars (len={len(_dv)}); "
+                                f"truncating (#158)"
+                            )
+                            dynamic_vars[_dk] = _dv[:_DISCOVERED_TEXT_MAX]
+
                     # Merge discovered vars into env (for postExec substitution)
                     # Skip keys that already exist in runtime overrides (higher priority)
                     for key, value in dynamic_vars.items():
@@ -227,11 +476,27 @@ class PJobExecutor:
                             env_vars[key] = value
                     # Merge discovered vars into bundle (for Jinja2 rendering)
                     bundle.inject_dynamic_vars(dynamic_vars)
-                    # Persist scan_pr_result for skip logic
-                    if "pr_number" in dynamic_vars:
+                    # Persist scan_pr_result for skip logic (valid scans only;
+                    # invalid scans persist nothing — see the branch above)
+                    _persistable_pr = normalize_pr_number(dynamic_vars.get("pr_number") or "")
+                    _persistable_repo = str(dynamic_vars.get("repo") or "").strip()
+                    if _scan_valid and (_persistable_pr or _persistable_repo):
+                        # Not persisted for invalid scans: a garbage pr_number
+                        # would pollute the (repo, pr_number) failure skip-set
+                        # with an empty/garbage key that never matches a real
+                        # candidate PR (#158 R10)
+                        # Values are already length-validated upstream
+                        # (<=64 / <=256), so the persisted copy is identical
+                        # to the in-memory one (#158 R14)
+                        # Empty-string fields are omitted (not persisted as
+                        # dead skip-set entries, #158 R22)
                         result.scan_pr_result = {
-                            "repo": dynamic_vars.get("repo", ""),
-                            "pr_number": dynamic_vars["pr_number"],
+                            k: v
+                            for k, v in {
+                                "repo": _persistable_repo,
+                                "pr_number": _persistable_pr,
+                            }.items()
+                            if v
                         }
                 except SkipAction as e:
                     result.status = ExecutionStatus.SKIPPED
@@ -323,6 +588,63 @@ class PJobExecutor:
                         action_env = _env_vars.copy()
                         if _bundle is not None and _bundle.variable:
                             action_env.update(_bundle.variable.values)
+                        # Runtime overrides must reach postExec {{var}} substitution
+                        # even when the PJob references no Variable config (#158 R3)
+                        if _bundle is not None:
+                            for k, v in _bundle.overrides.variable_values.items():
+                                if v is not None:
+                                    action_env.setdefault(k, str(v))
+                            # Safety net on top of the pre-merge stale-key pop:
+                            # whatever pr/pr_number value action_env ended up
+                            # with, the actually-scanned PR must win (#158 R4/R6:
+                            # alias symmetry, '#'-normalization, no raw echo,
+                            # empty-override bypass).
+                            _spr = getattr(result, "scan_pr_result", None) or {}
+                            _scanned = normalize_pr_number(_spr.get("pr_number") or "")
+                            if _scanned and not pr_number_ok(_scanned):
+                                # Same validation as the pre-merge rewrite: an
+                                # invalid (non-numeric or overlong) scan value
+                                # must not be forced into postExec substitution
+                                # (#158 R9/R18)
+                                print(
+                                    f"Warning: scan returned invalid pr_number "
+                                    f"(non-numeric or overlong; len={len(_scanned)}); "
+                                    f"skipping pr correction in postExec"
+                                )
+                                _scanned = ""
+                            if _scanned:
+                                for _k in ("pr_number", "pr"):
+                                    _cur = normalize_pr_number(action_env.get(_k) or "")
+                                    if _cur != _scanned:
+                                        if _cur:
+                                            print(
+                                                f"Warning: override {_k} (len={len(_cur)}) "
+                                                f"differs from scanned pr_number={_scanned}; "
+                                                f"using the scanned value for postExec"
+                                            )
+                                        action_env[_k] = _scanned
+                            # Repo correction is independent of pr_number
+                            # validity (#158 R9); case-insensitive — GitHub repo
+                            # paths are case-insensitive, format-only variants
+                            # must not warn (#158 R9)
+                            _scanned_repo = str(_spr.get("repo") or "").strip()
+                            # Only a well-formed owner/name may drive postExec
+                            # substitution — a misbehaving provider cannot
+                            # smuggle arbitrary strings into gh targets (#158 R10)
+                            if not repo_ok(_scanned_repo):
+                                _scanned_repo = ""
+                            _cur_repo = str(action_env.get("repo") or "").strip()
+                            if (
+                                _scanned_repo
+                                and _cur_repo
+                                and _cur_repo.lower() != _scanned_repo.lower()
+                            ):
+                                print(
+                                    f"Warning: override repo differs from scanned "
+                                    f"repo={_scanned_repo}; using the scanned "
+                                    f"value for postExec"
+                                )
+                                action_env["repo"] = _scanned_repo
                         self._run_post_exec_actions(_pjob, result, action_env)
                 except Exception as e:
                     import traceback
@@ -495,8 +817,6 @@ class PJobExecutor:
         if os.name != "nt":
             return cmd
 
-        import re
-
         sq = "'"
         # Replace && only when NOT inside single or double quotes
         pattern = (
@@ -661,7 +981,6 @@ class PJobExecutor:
 
     def _save_output(self, result: ExecutionResult, output_options) -> None:
         """Save output to file."""
-        import re
         from datetime import datetime
 
         # Process template variables in path

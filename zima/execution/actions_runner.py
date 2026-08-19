@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
+import time
 from typing import Optional
 
 from zima.actions.base import ActionProvider
@@ -34,6 +36,46 @@ def _matches_condition(condition: str, returncode: int) -> bool:
     if condition == "failure":
         return returncode != 0
     return False
+
+
+# Max accepted length for a pinned PR number: overlong values are INVALID
+# (not truncated), keeping the runner and executor validation layers in
+# agreement (#158 R15/R17).
+# Max accepted lengths for scan-discovered / pinned values: an overlong
+# value is INVALID (not truncated) so persisted copies never diverge from
+# in-memory values (#158 R14-R19). Both validation layers import these.
+PR_NUMBER_MAX_LEN = 64
+REPO_MAX_LEN = 256
+PINNED_PR_MAX_LEN = PR_NUMBER_MAX_LEN  # back-compat alias
+
+
+# Well-formed owner/name (same charset contract as zima.webhook.payload's
+# repo allow-list) (#158).
+REPO_FORMAT = re.compile(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+")
+
+
+def pr_number_ok(value: str) -> bool:
+    """The single pr-number validity predicate shared by every gate:
+    numeric AND within the max length. Overlong/invalid values are
+    rejected, never truncated (#158 R23: issue 3)."""
+    v = normalize_pr_number(value)
+    return bool(v) and bool(re.fullmatch(r"[0-9]+", v)) and len(v) <= PR_NUMBER_MAX_LEN
+
+
+def repo_ok(value: str) -> bool:
+    """The single repo validity predicate: stripped owner/name matching
+    REPO_FORMAT AND within the max length (#158 R23: issue 3)."""
+    v = str(value or "").strip()
+    return bool(v) and bool(REPO_FORMAT.fullmatch(v)) and len(v) <= REPO_MAX_LEN
+
+
+def normalize_pr_number(value: str) -> str:
+    """Normalize a user-supplied PR number: strip whitespace and a leading
+    ``#`` (common copy-paste form). Returns "" for empty input."""
+    v = str(value or "").strip()
+    if v.startswith("#"):
+        v = v.lstrip("#").strip()
+    return v
 
 
 class ActionsRunner:
@@ -170,7 +212,11 @@ class ActionsRunner:
         raise SkipAction(f"All {len(prs)} PR(s) recently attempted, skipping")
 
     def run_pre(
-        self, actions: ActionsConfig, env: dict[str, str], workdir: Optional[str] = None
+        self,
+        actions: ActionsConfig,
+        env: dict[str, str],
+        workdir: Optional[str] = None,
+        pin_env: Optional[dict[str, str]] = None,
     ) -> dict[str, str]:
         """Execute all preExec actions, return discovered variables.
 
@@ -178,6 +224,11 @@ class ActionsRunner:
             actions: Actions configuration from PJob.
             env: Environment dict for {{VAR}} substitution in action fields.
             workdir: Working directory for git_pull action (agent's workDir).
+            pin_env: Runtime-injected variable values only (``--set-var`` /
+                webhook spawn). When provided, the pinned-PR short-circuit
+                trusts only these — static Variable config values in ``env``
+                never pin (#158 R2). ``None`` falls back to reading ``env``
+                (direct callers / legacy behavior).
 
         Returns:
             Dictionary of discovered variables (e.g., pr_number, pr_url, pr_diff).
@@ -206,6 +257,150 @@ class ActionsRunner:
                         f"preExec scan_pr skipped — label resolved to empty "
                         f"(pjob={self._pjob_code or '?'}, original='{action.label}')"
                     )
+                # Caller pinned the exact PR (webhook event / manual --set-var):
+                # trust it instead of rescanning the label. GitHub's search index
+                # lags a few seconds behind the just-delivered label event, so a
+                # rescan at trigger time can miss the PR that caused this very
+                # run (#158). No pin -> daemon polling path, behavior unchanged.
+                # Only runtime-injected values pin (pin_env from the executor's
+                # overrides); static Variable config keys never pin (#158 R2).
+                pin_source = pin_env if pin_env is not None else env
+                # Normalize the common "#123" copy-paste form (#158 R3).
+                # pr_number wins over the legacy pr name; whitespace-only
+                # values are treated as absent so they cannot shadow a valid
+                # alias value, and '#'-only candidates also fall through to
+                # the next name — SkipAction fires only when NO candidate
+                # yields a valid number (#158 R6/R7).
+                pinned = ""
+                _malformed_pin = False
+                for _pin_key in ("pr_number", "pr"):
+                    _raw = str(pin_source.get(_pin_key) or "").strip()
+                    if not _raw:
+                        continue
+                    _norm = normalize_pr_number(_raw)
+                    if _norm:
+                        pinned = _norm
+                        break
+                    _malformed_pin = True
+                if _malformed_pin and not pinned:
+                    raise SkipAction(
+                        "preExec scan_pr skipped — pinned pr value is only a "
+                        f"'#' prefix with no digits, pjob={self._pjob_code or '?'}"
+                    )
+                # Length is part of validity, aligned with the executor's
+                # scan validation gate (<=64) so both layers agree (#158 R15)
+                if pinned and not pr_number_ok(pinned):
+                    # Malformed manual input (typo in --set-var): fail fast.
+                    # Only report the length, never echo the raw value (#158 R2).
+                    raise SkipAction(
+                        f"preExec scan_pr skipped — pinned pr value is not a "
+                        f"valid number (non-numeric or overlong; len={len(pinned)}), "
+                        f"pjob={self._pjob_code or '?'}"
+                    )
+                if pinned:
+                    # Runtime repo override (webhook --set-var=repo) is more
+                    # authoritative than a literal action.repo when they
+                    # differ (broadcast-mode mismatch protection) (#158 R23:
+                    # issue 8). Only a well-formed repo may be adopted.
+                    _pin_repo = ((pin_env or {}).get("repo") or "").strip()
+                    if _pin_repo and not repo_ok(_pin_repo):
+                        # A malformed runtime repo must not be silently
+                        # ignored: the action.repo continues, but the operator
+                        # deserves to know (#158 R24: issue 21)
+                        print(
+                            f"Warning: runtime repo override is malformed "
+                            f"(len={len(_pin_repo)}); using the action repo "
+                            f"(#158)"
+                        )
+                    elif _pin_repo and repo_ok(_pin_repo) and _pin_repo.lower() != repo.lower():
+                        # Case-insensitive: GitHub owner/repo paths are
+                        # case-insensitive; a case-only variant must not
+                        # trigger an adopt (#158 R24: issue 20)
+                        print(
+                            f"Warning: runtime repo override differs from "
+                            f"action repo; using the runtime value (len="
+                            f"{len(_pin_repo)}) (#158)"
+                        )
+                        repo = _pin_repo
+                    # Consume the pin: a PJob with multiple scan_pr actions
+                    # must not re-apply the same pin against every action's
+                    # repo (#158 R22). pin_env is executor-built; env (legacy
+                    # direct callers) is intentionally left untouched.
+                    if pin_env is not None:
+                        pin_env.pop("pr_number", None)
+                        pin_env.pop("pr", None)
+                    # Security re-check (#158 R22): the pin came from a
+                    # (locally re-signed) webhook event — on the public smee
+                    # channel that only proves "via the forwarder". Verify
+                    # the trigger label with a DIRECT API call (gh pr view,
+                    # no search-index race) before trusting it: a forged
+                    # pin for a PR that never carried zima:needs-review
+                    # must not drive postExec label/comment actions.
+                    try:
+                        _label_ok = provider.verify_pr_label(repo, pinned, label)
+                    except Exception as e:  # noqa: BLE001 - fail closed
+                        # Third-party provider implementations may raise
+                        # despite the ABC fail-closed default; the re-check
+                        # must never propagate (#158 R23)
+                        _label_ok = False
+                        print(f"Warning: verify_pr_label raised ({e}); failing closed")
+                    if not _label_ok:
+                        raise SkipAction(
+                            f"preExec scan_pr skipped — pinned PR #{pinned} in "
+                            f"{repo} does not carry label '{label}' (direct "
+                            f"re-check failed or label absent)"
+                        )
+                    print(
+                        f"scan_pr: pinned PR #{pinned} in {repo} "
+                        f"(runtime-injected, label re-checked), skipping rescan"
+                    )
+                    discovered["repo"] = repo
+                    discovered["pr_number"] = pinned
+                    discovered["pr_title"] = ""
+                    discovered["pr_url"] = f"https://github.com/{repo}/pull/{pinned}"
+                    # Keep the pr_diff contract of the scan path: fetch_diff
+                    # reads the PR directly (gh pr view), not the search index,
+                    # so it does not reintroduce the #158 race. An empty/failed
+                    # diff must NOT flow into a hollow review: fail fast with
+                    # SkipAction (SKIPPED skips postExec, label stays for a
+                    # re-run) instead of "reviewing" an empty diff (#158 R2).
+                    # Transient gh failures get a short bounded retry first
+                    # (#158 R3/R4): attempts 3x with 1s/2s backoff. An empty
+                    # string ALSO retries — GitHubProvider.fetch_diff returns
+                    # "" for gh non-zero exit (check=False), so rate-limit /
+                    # network blips surface as empty, not raised.
+                    diff = ""
+                    last_exc: Optional[Exception] = None
+                    for attempt in range(3):
+                        try:
+                            diff = provider.fetch_diff(repo, pinned)
+                            if diff:
+                                # Success (or a later empty attempt after an
+                                # early exception) clears the stale exception
+                                # so the final message reflects the LAST
+                                # failure mode, not an expired one (#158 R22)
+                                last_exc = None
+                                break
+                            last_exc = None  # empty result: not an exception
+                        except Exception as e:  # noqa: BLE001 - retry, then skip
+                            last_exc = e
+                        if attempt < 2:
+                            time.sleep(1.0 * (attempt + 1))
+                    if last_exc is not None:
+                        raise SkipAction(
+                            f"preExec scan_pr skipped — fetch_diff raised for "
+                            f"pinned PR #{pinned} after 3 attempts "
+                            f"(possibly transient — re-label to retry): {last_exc}"
+                        ) from last_exc
+                    if not diff:
+                        raise SkipAction(
+                            f"preExec scan_pr skipped — fetch_diff returned an "
+                            f"empty diff for pinned PR #{pinned} (gh failed or "
+                            f"no patch); not reviewing without a diff — "
+                            f"re-label to retry"
+                        )
+                    discovered["pr_diff"] = diff
+                    continue
                 prs = provider.scan_prs(repo, label)
                 if not prs:
                     raise SkipAction(f"No PRs found with label '{label}' in {repo}")
