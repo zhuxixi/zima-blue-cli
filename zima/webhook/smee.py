@@ -248,7 +248,9 @@ def run_smee_client(smee_url: str, target_url: str, secret: Optional[str] = None
                                             f"[smee] forward got {resp.status_code}: {resp.text}",
                                             file=sys.stderr,
                                         )
-                        except Exception as exc:  # noqa: BLE001 - skip the bad event, keep the stream
+                        except (
+                            Exception
+                        ) as exc:  # noqa: BLE001 - skip the bad event, keep the stream
                             # Broaden beyond RequestException so a malformed event
                             # (e.g. UnicodeEncodeError on raw_body.encode) skips this
                             # event instead of dropping the whole SSE stream/reconnecting.
