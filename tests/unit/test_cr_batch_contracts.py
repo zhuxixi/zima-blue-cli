@@ -278,6 +278,75 @@ class TestReviewBody:
 # ---------------------------------------------------------------------------
 
 
+class TestRound1MetadataDefaults:
+    """#173: Round-1 must not report new_count=0 when issues were found.
+
+    Round-1 semantics: every discovered issue is new. render_round_1 prints
+    "Found N issues" from `issues[]`; metadata `new_count` must use the same
+    count (open, non-acknowledged) when the caller did not pass explicit
+    new_count / new_issues.
+    """
+
+    def _meta(self, out: str) -> dict:
+        start = out.index("<!-- pi-cr-meta")
+        end = out.index("-->", start)
+        return json.loads(out[start + len("<!-- pi-cr-meta") : end].strip())
+
+    def test_round1_new_count_defaults_to_open_issues(self):
+        payload = {
+            "round": 1,
+            "pr_number": 123,
+            "head_sha": HEAD_SHA_A,
+            "previous_head_sha": None,
+            "repo_owner": "owner",
+            "repo_name": "repo",
+            "timestamp": "2026-06-17T10:00:00Z",
+            "issues": [
+                {
+                    "id": "issue-1",
+                    "description": "bug one",
+                    "reason": "bug",
+                    "file": "a.py",
+                    "lines": "1-2",
+                    "status": "open",
+                    "first_round": 1,
+                },
+                {
+                    "id": "issue-2",
+                    "description": "bug two",
+                    "reason": "logic",
+                    "file": "b.py",
+                    "lines": "3-4",
+                    "status": "open",
+                    "first_round": 1,
+                },
+                {
+                    "id": "issue-3",
+                    "description": "logic flaw",
+                    "reason": "logic",
+                    "file": "c.py",
+                    "lines": "5-6",
+                    "status": "open",
+                    "first_round": 1,
+                },
+            ],
+        }
+        out = _run_json(_script("build_review_body.py"), payload)
+        meta = self._meta(out)
+        # Round-1 reality: all issues are open discoveries — metadata and the
+        # rendered "Found N issues" must agree.
+        assert meta["new_count"] == 3
+        assert meta["total_issues"] == 3
+        assert "Found 3 issues" in out
+
+    def test_round1_explicit_new_count_still_wins(self):
+        payload = dict(ROUND1_INPUT)
+        payload["new_count"] = 7
+        out = _run_json(_script("build_review_body.py"), payload)
+        meta = self._meta(out)
+        assert meta["new_count"] == 7
+
+
 class TestRoundTrip:
     def test_build_then_parse_preserves_round_and_sha(self):
         body = _run_json(_script("build_review_body.py"), ROUND2_INPUT)

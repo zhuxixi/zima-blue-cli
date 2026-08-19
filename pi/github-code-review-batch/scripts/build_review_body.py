@@ -76,7 +76,17 @@ def build_metadata(d: dict) -> str:
         ),
     )
     payload["resolved_count"] = d.get("resolved_count", len(d.get("resolved_issues", [])))
-    payload["new_count"] = d.get("new_count", len(d.get("new_issues", [])))
+    # #173: Round-1 semantics — every discovered issue is new. render_round_1
+    # prints "Found N issues" from `issues[]`, so the metadata default must use
+    # the same count (open, non-acknowledged) instead of `len(new_issues)` (0
+    # when the caller only fills `issues[]`), which contradicted the rendered
+    # Part B and misled downstream consumers (daemon/fix-agent) into reading
+    # "no new issues this round". Explicit `new_count` still wins.
+    if d.get("round") == 1:
+        default_new_count = payload["total_issues"]
+    else:
+        default_new_count = len(d.get("new_issues", []))
+    payload["new_count"] = d.get("new_count", default_new_count)
     payload["acknowledged_count"] = d.get(
         "acknowledged_count", len(d.get("acknowledged_issues", []))
     )
