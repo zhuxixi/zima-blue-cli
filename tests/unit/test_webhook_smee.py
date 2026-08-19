@@ -492,3 +492,69 @@ class TestRunSmeeClient:
 
         err = capsys.readouterr().err
         assert "forward got 500: boom" in err
+
+    def test_skips_empty_heartbeat_event(self, monkeypatch):
+        """smee.io keep-alive ping frames (data: {}) must not be forwarded.
+
+        smee.io sends ``event: ping\ndata: {}`` every 30s (lib/keep-alive.js).
+        parse_smee_event returns {} for that line, which used to be forwarded
+        as a real event (noise POST every 30s; re-signed when secret is set).
+        """
+        get_calls = []
+        posts = []
+
+        class FakeResponse:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def iter_lines(self):
+                return [
+                    b"id: 1",
+                    b"event: ping",
+                    b"data: {}",
+                    b'data: {"body": {"action": "labeled"}, "rawBody": "{\\"action\\":\\"labeled\\"}", "headers": {"x-hub-signature-256": "sha256=sig"}}',
+                ]
+
+        def fake_get(*args, **kwargs):
+            get_calls.append(None)
+            if len(get_calls) > 1:
+                raise requests.RequestException("stop loop")
+            return FakeResponse()
+
+        class FakePostResponse:
+            status_code = 200
+            text = "ok"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        def fake_post(url, json=None, data=None, headers=None, timeout=None):
+            posts.append((url, json, data, headers, timeout))
+            return FakePostResponse()
+
+        def fake_sleep(seconds):
+            raise RuntimeError("stop loop")
+
+        monkeypatch.setattr("zima.webhook.smee.requests.get", fake_get)
+        monkeypatch.setattr("zima.webhook.smee.requests.post", fake_post)
+        monkeypatch.setattr("zima.webhook.smee.time.sleep", fake_sleep)
+
+        try:
+            run_smee_client("https://smee.io/test", "http://127.0.0.1:8765/webhook")
+        except RuntimeError:
+            pass
+
+        # Only the real event is forwarded; the {} heartbeat is skipped.
+        assert len(posts) == 1
+        assert posts[0][2] == b'{"action":"labeled"}'

@@ -127,7 +127,9 @@ def run_smee_client(smee_url: str, target_url: str, secret: Optional[str] = None
                         continue
                     line = raw_line.decode("utf-8")
                     event = parse_smee_event(line)
-                    if event is None:
+                    if not event:
+                        # Skip smee.io keep-alive ping frames (data: {}) and
+                        # non-data/blank/undecodable lines (None).
                         continue
                     body, headers, raw_body = extract_smee_payload(event)
                     try:
