@@ -26,9 +26,7 @@ import sys
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS = (
-    _REPO_ROOT / "pi" / "github-code-review-batch" / "scripts"
-)
+SCRIPTS = _REPO_ROOT / "pi" / "github-code-review-batch" / "scripts"
 
 HEAD_SHA_A = "a" * 40
 HEAD_SHA_B = "b" * 40
