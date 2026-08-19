@@ -2,7 +2,7 @@
 name: github-code-review-batch
 description: |
   对 GitHub Pull Request 进行批量/调度式代码审查（一次性短会话，非监听模式），
-  Claude Code 端。多 Agent 并行检查 CLAUDE.md / AGENTS.md 合规性、bug 和逻辑安全问题，
+  pi-coding-agent 端。多 Agent 并行检查 CLAUDE.md / AGENTS.md 合规性、bug 和逻辑安全问题，
   通过 issue 验证机制过滤误报。状态通过 PR 评论的 metadata 持久化，
   供外部调度器（如 zima daemon）交替调度 CR/fix agent。
 
@@ -12,11 +12,11 @@ description: |
   触发词: "batch review pr", "review pr batch", "scheduled review pr"
 ---
 
-# GitHub Code Review Batch (Claude Code)
+# GitHub Code Review Batch (pi-coding-agent)
 
 GitHub PR 批量/调度代码审查工具，**非监听模式**。
 
-本 Skill 是**双 CR Agent 交叉验证体系**的一部分：Claude Code 和 Kimi CLI 分别独立审查同一 PR，互相校验审查结论。两个 Agent 的审查结果通过各自的 HTML metadata（`cc-cr-meta` / `kimi-cr-meta`）独立持久化，**互不干扰**——两边读取评论流时严格忽略对方的 metadata 评论，保证交叉验证的独立性。
+本 Skill 是 **pi-coding-agent 单 agent 审查**：每次调用独立审查 PR，结论通过 `<!-- pi-cr-meta -->` HTML metadata 持久化，供增量审查与外部调度器读取。历史 cc 版评论（`cc-cr-meta` / `Generated with Claude Code`）与 kimi 版评论（`kimi-cr-meta`）在增量解析时严格忽略——各 harness 的审查历史互不干扰。
 
 **与监听模式的区别**：
 - 每次调用都是独立短会话，执行完立即结束，不启动 background watcher
@@ -41,7 +41,7 @@ PR 编号提取规则（依次尝试）：
 - `#123` 格式
 - 直接数字 `456`
 - `owner/repo#123` 格式
-- 都未提供 → 使用 `Bash` 执行 `gh pr view --json number` 获取当前分支关联的 PR
+- 都未提供 → 使用 `bash` 执行 `gh pr view --json number` 获取当前分支关联的 PR
 - 当前分支也无关联 PR → 提示用户明确提供 PR 编号
 
 ## 前置要求
@@ -74,8 +74,8 @@ PR 编号提取规则（依次尝试）：
 
 ## 关键约束（why 优先）
 
-- **`Bash` 执行所有 `gh` 和 `git` 命令**：保持环境无关性。`gh` CLI 是不依赖 MCP 的最大公约数，跨调度器/容器/裸机都能跑
-- **`Agent` 启动所有审查/验证 sub-agent**：本 skill 需要的并行+独立上下文执行语义，其他工具（如内联 LLM 调用）保证不了
+- **`bash` 执行所有 `gh` 和 `git` 命令**：保持环境无关性。`gh` CLI 是不依赖 MCP 的最大公约数，跨调度器/容器/裸机都能跑
+- **`subagent` 启动所有审查/验证 subagent**：用 subagent 工具的 `workflowScript` + `runs.all` 并行 fanout（`agent: "reviewer"`、`context: "fresh"`），获得与独立上下文执行等价的语义；并行派发细节见 [flow.md Step 4](references/flow.md#step-4)
 - **不依赖任何 MCP 工具（如 `pull_request_read`、`add_issue_comment`）**：保持 skill 在不同环境间可移植，避免对接环境时被 MCP 配置卡住
 - **每轮发布新评论，不编辑旧评论**：metadata 是审查历史的事实记录，覆写会丢失中间状态——下游 fix agent 与人类 reviewer 都依赖完整的轮次链
 - **Acknowledged issues 不计入 open**：尊重 committer 决策，避免跨轮反复打扰；调度器只对真正 open 的 issues 调度 fix agent
@@ -85,7 +85,7 @@ PR 编号提取规则（依次尝试）：
 每次执行（除 [Step 1](references/flow.md#step-1)/[Step 7](references/flow.md#step-7) 提前终止外）必须产出三个产物：
 
 1. **终端 Markdown review 报告**（[Step 8](references/flow.md#step-8)）
-2. **PR 评论**（[Step 9](references/flow.md#step-9)）：由 `scripts/build_review_body.py` 生成，包含 `<!-- cc-cr-meta ... -->` 机器可读 header + 人类可读 Round-N 部分。完整样例见 [output-examples.md](references/output-examples.md)
+2. **PR 评论**（[Step 9](references/flow.md#step-9)）：由 `scripts/build_review_body.py` 生成，包含 `<!-- pi-cr-meta ... -->` 机器可读 header + 人类可读 Round-N 部分。完整样例见 [output-examples.md](references/output-examples.md)
 3. **终端状态报告**（[Step 10](references/flow.md#step-10)）：由 `scripts/render_status_report.py` 生成，三态：
    - `NEEDS_FIX` — 仍有 open issues 需要修复
    - `PASS` — 无 open issues（可能有 acknowledged）
