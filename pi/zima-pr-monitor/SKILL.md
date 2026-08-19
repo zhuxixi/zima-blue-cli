@@ -1,6 +1,6 @@
 ---
 name: zima-pr-monitor
-description: Use when monitoring a PR under Zima Blue dual-bot (cc + kimi) code review — after creating a PR and adding zima:needs-review, when polling or babysitting CR results, parsing cc-cr-meta/kimi-cr-meta review bodies, or deciding if a PR has converged and is mergeable.
+description: Use when monitoring a PR under Zima Blue dual-bot (cc + kimi) code review — after creating a PR and adding zima:needs-review, when polling or babysitting CR results, parsing cc-cr-meta/pi-cr-meta/kimi-cr-meta review bodies, or deciding if a PR has converged and is mergeable.
 ---
 
 # Zima PR Monitor
@@ -14,7 +14,7 @@ gh pr create --base main --title "..." --body "..."
 gh pr edit <N> --add-label zima:needs-review   # Zima daemon 扫到 → 同时触发 cc + kimi 双 bot
 ```
 - Zima daemon ~45min 一个 review cycle。
-- 双 bot 同账号发 review，区分靠 body 的 HTML meta：`<!-- cc-cr-meta {...} -->` / `<!-- kimi-cr-meta {...} -->`，字段含 `round` / `new_count` / `resolved_count` / `issues[]`（每条 status: resolved/acknowledged/open）。
+- 双 bot 同账号发 review，区分靠 body 的 HTML meta：`<!-- cc-cr-meta {...} -->`（cc 版） / `<!-- pi-cr-meta {...} -->`（pi 版，github-code-review-batch 适配后主力） / `<!-- kimi-cr-meta {...} -->`（kimi 版，已停用），字段含 `round` / `new_count` / `resolved_count` / `issues[]`（每条 status: resolved/acknowledged/open）。
 
 ## 轮询节律
 - 距下个 ~45min cycle 远 → 惰性 ~30min 一次；
