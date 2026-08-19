@@ -347,6 +347,112 @@ class TestRound1MetadataDefaults:
         assert meta["new_count"] == 7
 
 
+class TestLowSeveritySuppressedInPartB:
+    """#168: severity=low must not enter the human-readable PR comment.
+
+    Part B lists/filters low findings and appends an explicit suppression
+    note; metadata keeps the full issues[] (low included) as the factual
+    record, so counts there stay comprehensive.
+    """
+
+    def _issue(self, id_: str, sev: str) -> dict:
+        return {
+            "id": id_,
+            "description": f"finding {id_}",
+            "reason": "bug",
+            "file": "a.py",
+            "lines": "1-2",
+            "status": "open",
+            "first_round": 1,
+            "severity": sev,
+        }
+
+    def test_round1_low_filtered_from_part_b_kept_in_metadata(self):
+        payload = {
+            "round": 1,
+            "pr_number": 123,
+            "head_sha": HEAD_SHA_A,
+            "previous_head_sha": None,
+            "repo_owner": "owner",
+            "repo_name": "repo",
+            "timestamp": "2026-06-17T10:00:00Z",
+            "issues": [
+                self._issue("i1", "medium"),
+                self._issue("i2", "low"),
+            ],
+        }
+        out = _run_json(_script("build_review_body.py"), payload)
+        part_b = out.split("-->", 1)[1]  # human-readable section only
+        assert "Found 1 issue" in part_b
+        assert "finding i2" not in part_b  # low suppressed from Part B
+        assert "finding i1" in part_b
+        assert "1 low-severity finding" in part_b  # explicit suppression note
+        # metadata stays the factual record: both issues present
+        start = out.index("<!-- pi-cr-meta")
+        end = out.index("-->", start)
+        meta = json.loads(out[start + len("<!-- pi-cr-meta") : end].strip())
+        assert meta["total_issues"] == 2
+        assert meta["new_count"] == 2
+        assert len(meta["issues"]) == 2
+
+    def test_round1_all_low_still_notes_suppression(self):
+        payload = {
+            "round": 1,
+            "pr_number": 123,
+            "head_sha": HEAD_SHA_A,
+            "previous_head_sha": None,
+            "repo_owner": "owner",
+            "repo_name": "repo",
+            "timestamp": "2026-06-17T10:00:00Z",
+            "issues": [self._issue("i1", "low"), self._issue("i2", "low")],
+        }
+        out = _run_json(_script("build_review_body.py"), payload)
+        part_b = out.split("-->", 1)[1]
+        assert "finding i1" not in part_b
+        assert "2 low-severity findings" in part_b
+
+    def test_roundn_low_filtered_from_lists_and_counts(self):
+        payload = {
+            "round": 2,
+            "pr_number": 123,
+            "head_sha": HEAD_SHA_B,
+            "previous_head_sha": HEAD_SHA_A,
+            "repo_owner": "owner",
+            "repo_name": "repo",
+            "timestamp": "2026-06-17T10:30:00Z",
+            "issues": [],
+            "resolved_issues": [],
+            "unresolved_issues": [self._issue("u1", "low")],
+            "new_issues": [
+                self._issue("n1", "high"),
+                self._issue("n2", "low"),
+            ],
+        }
+        out = _run_json(_script("build_review_body.py"), payload)
+        part_b = out.split("-->", 1)[1]
+        assert "finding n1" in part_b
+        assert "finding n2" not in part_b
+        assert "finding u1" not in part_b
+        assert "New issues found: 1" in part_b
+        assert "- **Still open**: 0" in part_b
+        assert "2 low-severity findings suppressed" in part_b
+
+    def test_no_low_no_suppression_note(self):
+        payload = {
+            "round": 1,
+            "pr_number": 123,
+            "head_sha": HEAD_SHA_A,
+            "previous_head_sha": None,
+            "repo_owner": "owner",
+            "repo_name": "repo",
+            "timestamp": "2026-06-17T10:00:00Z",
+            "issues": [self._issue("i1", "high")],
+        }
+        out = _run_json(_script("build_review_body.py"), payload)
+        assert "low-severity finding" not in out
+        assert "Found 1 issue" in out
+
+
 class TestRoundNResolvedLabelTruncation:
     """#175: resolved summary line must not hard-cut CJK descriptions mid-word.
 
@@ -568,10 +674,15 @@ class TestSeverityRender:
         # rendered body is what gets severity-sorted.
         body = out.split("-->", 1)[1]
         crit_pos = body.index("Critical null-deref crash")
-        low_pos = body.index("Low-severity naming nit")
-        assert crit_pos < low_pos  # critical sorts above low
+        medium_pos = body.index("Medium edge case")
+        assert crit_pos < medium_pos  # critical sorts above medium
         assert "(bug, critical)" in body
-        assert "(CLAUDE.md, low)" in body
+        # #168: low findings no longer enter Part B at all — suppressed with
+        # an explicit note; metadata keeps the full record.
+        assert "Low-severity naming nit" not in body
+        assert "low-severity finding" in body
+        meta = out[out.index("<!-- pi-cr-meta") + len("<!-- pi-cr-meta") : out.index("-->")]
+        assert "Low-severity naming nit" in meta
 
     def test_missing_severity_falls_back_to_medium(self):
         minimal = {

@@ -251,6 +251,8 @@ issue-validator 验证时若 agent 未给 severity，按 `medium` 兜底。`buil
 
    最终渲染顺序由 `build_review_body.py` 保证（见 [output-examples.md](output-examples.md)）。
 
+**low 不进 PR 评论（#168）**：`severity=low` 的 issue **不进入 PR 评论 Part B**（HIGH SIGNAL）——`build_review_body.py` 渲染时自动过滤（列表与计数均不含 low，并附 `_N low-severity finding(s) suppressed_` 提示行）；**metadata `issues[]` 保留全量**（事实记录），终端报告仍完整列出 low 供人工参考。调度器读到的 `new_count`/`total_issues` 保持全量口径不变。
+
 去重规则：
 - 如果两个 issue 指向同一个文件、同一行范围、且原因相同，视为重复
 - 如果描述内容高度相似（超过 80% 相似度），也视为重复
