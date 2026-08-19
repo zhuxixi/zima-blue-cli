@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.2] - 2026-08-20
+
+### Features
+- **skill**: adapt github-code-review-batch to pi-coding-agent (#162)
+
+### Fixes
+- **skills**: ignore pi/README.md in skill scan to silence description-required warning (#171)
+- **webhook**: smee SSE 僵尸连接心跳看门狗 (#163) (#166)
+- **webhook**: fetch_diff uses gh pr diff (pr view --patch is not a flag) (#165)
+
+[0.7.2]: https://github.com/zhuxixi/zima-blue-cli/compare/v0.7.1...v0.7.2
+
 ## [0.7.1] - 2026-08-19
 
 ### Fixes
