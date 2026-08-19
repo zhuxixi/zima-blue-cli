@@ -193,10 +193,12 @@ await runs.all([
   { key: "claude-checker-1", agent: "reviewer", context: "fresh", task: "<claude-compliance-checker prompt，显式规则 framing>" },
   { key: "claude-checker-2", agent: "reviewer", context: "fresh", task: "<claude-compliance-checker prompt，隐含约定 framing>" },
   { key: "agents-checker",    agent: "reviewer", context: "fresh", task: "<agents-compliance-checker prompt>" },
-  { key: "bug-scanner",       agent: "reviewer", context: "fresh", task: "<bug-scanner prompt>" },
-  { key: "logic-analyzer",    agent: "reviewer", context: "fresh", task: "<logic-analyzer prompt>" },
+  { key: "bug-scanner",       agent: "reviewer", context: "fresh", model: "<便宜快模型，如 deepseek-v4-flash>", task: "<bug-scanner prompt>" },
+  { key: "logic-analyzer",    agent: "reviewer", context: "fresh", model: "<强模型，如 deepseek-v4-pro>", task: "<logic-analyzer prompt>" },
 ])
 ```
+
+**按 agent 职责差异化指定模型（#170，可选）**：subagent 工具的派发项支持 `model` 字段（缺省继承当前模型）。建议分档：机械性扫描（bug-scanner 配合确定性 tool-layer）用便宜快模型（如 `deepseek-v4-flash`），跨文件逻辑/安全推理（logic-analyzer、delta-reviewer）用强模型（如 `deepseek-v4-pro`），规范 checker 按预算取中档。模型名以 `~/.pi/agent/settings.json` 的 `enabledModels` 为准。
 
 task 的 prompt 模板见 [subagent-prompts.md](subagent-prompts.md) 对应小节，输入包（diff 文件路径、摘要、规范文本）以模板变量方式填入。5 个 subagent 职责：
 - **CLAUDE.md checker ×2、AGENTS.md checker**：完整 diff（或截断后的）+ 变更摘要 + PR 标题和描述 + 相关规范文件内容
