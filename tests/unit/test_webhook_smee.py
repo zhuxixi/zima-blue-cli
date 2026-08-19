@@ -1,6 +1,8 @@
 """Tests for smee.io client."""
 
 import json
+import threading
+import time
 
 import requests
 
@@ -558,3 +560,169 @@ class TestRunSmeeClient:
         # Only the real event is forwarded; the {} heartbeat is skipped.
         assert len(posts) == 1
         assert posts[0][2] == b'{"action":"labeled"}'
+
+    def test_watchdog_closes_stale_connection(self, monkeypatch, capsys):
+        """No SSE bytes for _DEAD_AFTER -> watchdog closes the connection and
+        the loop reconnects via the existing backoff path. Core fix for #163."""
+        monkeypatch.setattr("zima.webhook.smee._DEAD_AFTER", 0.3)
+        monkeypatch.setattr("zima.webhook.smee._WATCHDOG_CHECK_INTERVAL", 0.05)
+
+        get_calls = []
+        close_calls = []
+        stream_closed = threading.Event()
+        sleeps = []
+
+        class FakeResponse:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def close(self):
+                close_calls.append(None)
+                stream_closed.set()
+
+            def iter_lines(self):
+                # Zombie stream: open but no bytes ever arrive. Block until the
+                # watchdog closes us, then end cleanly (the no-exception exit
+                # path close() can cause).
+                stream_closed.wait(timeout=10)
+                return []
+
+        def fake_get(*args, **kwargs):
+            get_calls.append(None)
+            if len(get_calls) > 1:
+                raise requests.RequestException("stop loop")
+            return FakeResponse()
+
+        def fake_sleep(seconds):
+            sleeps.append(seconds)
+            raise RuntimeError("stop loop")
+
+        monkeypatch.setattr("zima.webhook.smee.requests.get", fake_get)
+        monkeypatch.setattr("zima.webhook.smee.time.sleep", fake_sleep)
+
+        try:
+            run_smee_client("https://smee.io/test", "http://127.0.0.1:8765/webhook")
+        except RuntimeError:
+            pass
+
+        assert len(close_calls) == 1  # watchdog closed the stale connection
+        assert sleeps == [1.0]  # reconnected via backoff (delay was reset on connect)
+        err = capsys.readouterr().err
+        assert "[smee] watchdog: no SSE data for" in err
+        assert "closing stale connection" in err
+
+    def test_watchdog_survives_heartbeats(self, monkeypatch, capsys):
+        """A stream delivering heartbeat frames stays alive (no close)."""
+        monkeypatch.setattr("zima.webhook.smee._DEAD_AFTER", 0.3)
+        monkeypatch.setattr("zima.webhook.smee._WATCHDOG_CHECK_INTERVAL", 0.05)
+
+        get_calls = []
+        close_calls = []
+        pace = threading.Event()
+
+        class FakeResponse:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def close(self):
+                close_calls.append(None)
+
+            def iter_lines(self):
+                # Heartbeat frames every ~0.05s for ~0.5s (> _DEAD_AFTER),
+                # then the stream ends cleanly.
+                deadline = time.monotonic() + 0.5
+                while time.monotonic() < deadline:
+                    yield b"data: {}"
+                    pace.wait(0.05)
+
+        def fake_get(*args, **kwargs):
+            get_calls.append(None)
+            if len(get_calls) > 1:
+                raise requests.RequestException("stop loop")
+            return FakeResponse()
+
+        def fake_sleep(seconds):
+            raise RuntimeError("stop loop")
+
+        monkeypatch.setattr("zima.webhook.smee.requests.get", fake_get)
+        monkeypatch.setattr("zima.webhook.smee.requests.post", lambda *a, **k: None)
+        monkeypatch.setattr("zima.webhook.smee.time.sleep", fake_sleep)
+
+        try:
+            run_smee_client("https://smee.io/test", "http://127.0.0.1:8765/webhook")
+        except RuntimeError:
+            pass
+
+        assert close_calls == []  # heartbeats kept the watchdog fed
+        err = capsys.readouterr().err
+        assert "watchdog" not in err
+
+    def test_watchdog_iter_lines_exception_path(self, monkeypatch, capsys):
+        """If close() makes iter_lines raise (the other exit path), the
+        existing outer except handles it and reconnects with backoff."""
+        monkeypatch.setattr("zima.webhook.smee._DEAD_AFTER", 0.3)
+        monkeypatch.setattr("zima.webhook.smee._WATCHDOG_CHECK_INTERVAL", 0.05)
+
+        get_calls = []
+        close_calls = []
+        stream_closed = threading.Event()
+        sleeps = []
+
+        class FakeResponse:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def close(self):
+                close_calls.append(None)
+                stream_closed.set()
+
+            def iter_lines(self):
+                stream_closed.wait(timeout=10)
+                raise requests.exceptions.ChunkedEncodingError("connection broken")
+
+        def fake_get(*args, **kwargs):
+            get_calls.append(None)
+            if len(get_calls) > 1:
+                raise requests.RequestException("stop loop")
+            return FakeResponse()
+
+        def fake_sleep(seconds):
+            sleeps.append(seconds)
+            raise RuntimeError("stop loop")
+
+        monkeypatch.setattr("zima.webhook.smee.requests.get", fake_get)
+        monkeypatch.setattr("zima.webhook.smee.time.sleep", fake_sleep)
+
+        try:
+            run_smee_client("https://smee.io/test", "http://127.0.0.1:8765/webhook")
+        except RuntimeError:
+            pass
+
+        assert len(close_calls) == 1
+        assert sleeps == [1.0]
+        err = capsys.readouterr().err
+        assert "[smee] watchdog: no SSE data for" in err
