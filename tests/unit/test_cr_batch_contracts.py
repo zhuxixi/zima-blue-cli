@@ -827,3 +827,67 @@ class TestCoverageLines:
         assert "Coverage" not in out
         # report block still ends with the ruler; #176 XML trailer follows it
         assert out.splitlines()[-1] == "</zima-review>"
+
+
+class TestDiffReorder:
+    """#169: source-first reorder so docs can't starve core code of budget.
+
+    PR #11/#166 evidence: alphabetical diff order put docs/superpowers/
+    (31.6KB plan+spec) first; a 4K budget ate only docs and the core source
+    file was invisible. Default behavior now stably reorders blocks
+    source → test → docs (docs last), so truncation eats docs first.
+    """
+
+    DIFF = (
+        "diff --git a/docs/plan.md b/docs/plan.md\n+doc line\n"
+        "diff --git a/src/core.ts b/src/core.ts\n+core change\n"
+        "diff --git a/tests/unit/x.spec.ts b/tests/unit/x.spec.ts\n+test\n"
+        "diff --git a/README.md b/README.md\n+readme\n"
+        "diff --git a/src/util.ts b/src/util.ts\n+util change\n"
+    )
+
+    def test_default_reorder_puts_source_first_docs_last(self, tmp_path):
+        meta_path = tmp_path / "meta.json"
+        proc = _run(_script("compress_diff.py"), self.DIFF, "--meta-file", str(meta_path))
+        assert proc.returncode == 0
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        assert meta.get("reordered") is True
+        out = proc.stdout
+        core_pos = out.index("src/core.ts")
+        util_pos = out.index("src/util.ts")
+        test_pos = out.index("x.spec.ts")
+        plan_pos = out.index("docs/plan.md")
+        assert core_pos < test_pos < plan_pos  # source before test before docs
+        assert util_pos < test_pos  # stable within source class
+        assert plan_pos < out.index("README.md")  # stable within docs class
+
+    def test_small_budget_keeps_source_drops_docs(self, tmp_path):
+        # Budget only fits the source files: docs must be the ones cut.
+        meta_path = tmp_path / "meta.json"
+        proc = _run(
+            _script("compress_diff.py"),
+            self.DIFF,
+            "--max-len",
+            "120",
+            "--meta-file",
+            str(meta_path),
+        )
+        assert proc.returncode == 0
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        assert meta["diff_truncated"] is True
+        assert "docs/plan.md" in meta["truncated_dropped_files"]
+        assert "src/core.ts" not in meta["truncated_dropped_files"]
+
+    def test_no_reorder_flag_preserves_input_order(self, tmp_path):
+        meta_path = tmp_path / "meta.json"
+        proc = _run(
+            _script("compress_diff.py"),
+            self.DIFF,
+            "--no-reorder",
+            "--meta-file",
+            str(meta_path),
+        )
+        assert proc.returncode == 0
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        assert meta.get("reordered") is False
+        assert proc.stdout.index("docs/plan.md") < proc.stdout.index("src/core.ts")

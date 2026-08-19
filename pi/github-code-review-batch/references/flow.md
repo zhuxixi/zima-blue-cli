@@ -144,23 +144,28 @@ gh pr view <PR> --json comments --jq '[.comments[] | {author: .author.login, cre
 
 调用 [scripts/compress_diff.py](../scripts/compress_diff.py) 执行预处理：
 
-**按 agent 类型过滤 diff**：
-- CLAUDE.md checker ×2、AGENTS.md checker：接收**完整 diff**（规范检查需要完整上下文），仅应用长度兜底
+**源码优先重排（#169，默认开启）**：脚本默认对文件块做稳定重排（**源码 → tests → docs 殿后**，同类内保持原顺序）。字母序 diff 下文档（plan/spec 类 30KB+）曾吃光预算、核心源码完全不可见（PR #11/#166 实测）；重排后截断优先吃掉 docs，实测覆盖率 1/6 → 4/6（源码+测试全覆盖）。`--no-reorder` 可退回原序。
+
+**按 agent 类型差异化预算与过滤（#169 实测口径）**：
+- CLAUDE.md checker ×2、AGENTS.md checker：接收**完整 diff**（规范检查需要完整上下文），预算 20K
   ```bash
-  gh pr diff <PR> | python scripts/compress_diff.py --max-len 4000 \
+  gh pr diff <PR> | python scripts/compress_diff.py --max-len 20000 \
       --meta-file /tmp/pi-cr-diff-meta.json > /tmp/pi-cr-diff.txt
   ```
-- Bug scanner、Logic analyzer：接收**过滤后的 diff**，排除测试相关文件
+- Bug scanner、Logic analyzer：接收**过滤后的 diff**（排除测试文件），预算 12K
   ```bash
-  gh pr diff <PR> | python scripts/compress_diff.py --filter-tests --max-len 4000 \
+  gh pr diff <PR> | python scripts/compress_diff.py --filter-tests --max-len 12000 \
       --meta-file /tmp/pi-cr-diff-meta.json > /tmp/pi-cr-diff.txt
   ```
+
+> 预算按 agent 职责分档（20K/12K，PR #166 Round-3 实测无质量异常）；若采用补偿手段（手动提取完整文件等），**必须用重排后的输入重新生成 meta**，保证 `Coverage` 口径诚实。
 
 `--meta-file`（#120）写一份覆盖 meta（`diff_truncated`、`covered_files`/`total_files`、被丢弃文件等）到 sidecar JSON，供 [Step 10](#step-10) 在状态报告中显式提示部分覆盖；各 agent 改为读取 `/tmp/pi-cr-diff.txt` 作为 diff 输入。
 
 **脚本内部规则**：
 1. `--filter-tests` 排除：`tests/`、`test/` 目录下的文件；`*_test.py`、`*_spec.py`、`*_tests.py`；`.test.`、`.spec.` 等测试文件
 2. `--max-len N`：超长时先压缩为 hunk-only（保留 +/- 行及前后各 2 行上下文）；仍超长则截断至 N 字符并附 `... (diff truncated)`，并在 meta 中置 `diff_truncated: true`（#120）
+3. 默认稳定重排 source → test → docs（#169）；`--no-reorder` 保持输入顺序
 
 **效果**：过滤后 diff 长度通常减少 60-70%（测试文件往往占据大比例 diff）。
 
