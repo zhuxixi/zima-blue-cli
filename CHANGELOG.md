@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1] - 2026-08-19
+
+### Fixes
+- **executor**: trust pinned PR in preExec scan_pr (#158) (#159)
+
+[0.7.1]: https://github.com/zhuxixi/zima-blue-cli/compare/v0.7.0...v0.7.1
+
 ## [0.7.0] - 2026-08-16
 
 ### Features
