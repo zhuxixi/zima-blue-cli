@@ -613,7 +613,9 @@ class TestRunSmeeClient:
         except RuntimeError:
             pass
 
-        assert len(close_calls) == 1  # watchdog closed the stale connection
+        assert close_calls  # watchdog closed the stale connection (>= 1: the
+        # watchdog re-closes every check interval until the stream exits, so a
+        # slow CI thread can legitimately record a second close)
         assert sleeps == [1.0]  # reconnected via backoff (delay was reset on connect)
         err = capsys.readouterr().err
         assert "[smee] watchdog: no SSE data for" in err
@@ -644,12 +646,13 @@ class TestRunSmeeClient:
                 close_calls.append(None)
 
             def iter_lines(self):
-                # Heartbeat frames every ~0.05s for ~0.5s (> _DEAD_AFTER),
-                # then the stream ends cleanly.
+                # Heartbeat frames every ~0.02s for ~0.5s (> _DEAD_AFTER),
+                # then the stream ends cleanly. (0.02s pace vs 0.3s threshold
+                # = 15x margin, to survive CI thread starvation.)
                 deadline = time.monotonic() + 0.5
                 while time.monotonic() < deadline:
                     yield b"data: {}"
-                    pace.wait(0.05)
+                    pace.wait(0.02)
 
         def fake_get(*args, **kwargs):
             get_calls.append(None)
@@ -722,7 +725,7 @@ class TestRunSmeeClient:
         except RuntimeError:
             pass
 
-        assert len(close_calls) == 1
+        assert close_calls  # >= 1, see test_watchdog_closes_stale_connection
         assert sleeps == [1.0]
         err = capsys.readouterr().err
         assert "[smee] watchdog: no SSE data for" in err

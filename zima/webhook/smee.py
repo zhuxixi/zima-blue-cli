@@ -119,17 +119,21 @@ def _start_watchdog(
         try:
             while not stop_event.wait(_WATCHDOG_CHECK_INTERVAL):
                 age = time.monotonic() - activity[0]
-                if age > _DEAD_AFTER:
+                if age <= _DEAD_AFTER:
+                    continue
+                if not fired_event.is_set():
                     fired_event.set()
                     print(
                         f"[smee] watchdog: no SSE data for {age:.0f}s, closing stale connection",
                         file=sys.stderr,
                     )
-                    try:
-                        response.close()
-                    except Exception:  # noqa: BLE001 - close is best-effort
-                        pass
-                    return
+                try:
+                    response.close()
+                except Exception:  # noqa: BLE001 - close is best-effort
+                    pass
+                # Keep looping (no return): a cross-thread close() may not
+                # interrupt a C-level blocked recv on the first try, so
+                # re-close every check interval until the stream exits.
         except Exception:  # noqa: BLE001 - watchdog failure must not kill the reader
             return
 
@@ -178,6 +182,12 @@ def run_smee_client(smee_url: str, target_url: str, secret: Optional[str] = None
                     for raw_line in response.iter_lines():
                         # Refresh BEFORE parse/skip: heartbeat frames are not
                         # forwarded but still prove the connection is alive.
+                        # Note: this measures "line consumed by the read loop",
+                        # not "bytes arrived at the socket" -- while a forward
+                        # POST is stalled (up to its 10s timeout), arriving
+                        # heartbeat bytes sit unread and don't refresh; a long
+                        # streak of stalled POSTs could false-kill a healthy
+                        # connection (cost: one benign reconnect).
                         activity[0] = time.monotonic()
                         if not raw_line:
                             continue
