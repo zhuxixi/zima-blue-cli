@@ -170,6 +170,17 @@ gh pr view <PR> --json comments --jq '[.comments[] | {author: .author.login, cre
 
 **确定性 tool-layer（#121）**：启动 LLM agent 之前，先运行 [scripts/run_tool_layer.py](../scripts/run_tool_layer.py)——按仓库 manifest 自动探测并执行 `ruff` / `mypy` / `tsc` / `eslint`（缺失则静默降级，不报错）。它用零误报工具吃掉"缺失导入 / 未解析引用 / 类型错误 / 语法错误"，产出 reason 为 `lint` / `typecheck` 的 issue，与下面 agent 的结果一起进入 [Step 5](#step-5) / [Step 6](#step-6)。bug-scanner 不再重复这些类别。
 
+**变更文件交集（#174，必做）**：tool-layer 必须限定在 PR 变更文件内，两种方式任选其一：
+
+```bash
+# 方式 A：命令行传入变更文件
+gh pr diff <PR> --name-only | xargs python scripts/run_tool_layer.py --files
+# 方式 B：stdin JSON 的 changed_files 字段
+echo '{"repo_root": ".", "changed_files": ["zima/a.py", "tests/b.py"]}' | python scripts/run_tool_layer.py
+```
+
+脚本对 ruff/mypy/eslint 直接以文件为参数目标，tsc（项目级）靠输出后置交集兜底。**若不传变更文件，脚本会全仓扫描，pre-existing lint 债务会淹没审查轮**（PR #166 实测 40 个无关 findings）——LLM agent 审查遵循"只关注 PR 修改的内容"，tool-layer 输出同样必须遵守。
+
 启动 5 个并行 `subagent`（subagent 工具 `workflowScript` + `runs.all`，每个 `agent: "reviewer"`、`context: "fresh"`），每个接收经过 [Step 3.5](#step-3-5) 预处理的输入包。派发结构：
 
 ```js

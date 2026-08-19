@@ -16,9 +16,7 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = (
     _REPO_ROOT
-    / "plugins"
-    / "pr-automation"
-    / "skills"
+    / "pi"
     / "github-code-review-batch"
     / "scripts"
     / "apply_suppressions.py"

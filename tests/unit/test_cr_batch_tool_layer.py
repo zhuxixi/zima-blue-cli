@@ -8,6 +8,7 @@ Nothing here requires a real toolchain to be installed — that's the point.
 from __future__ import annotations
 
 import ast
+import importlib.util
 import json
 import subprocess
 import sys
@@ -16,16 +17,15 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = (
     _REPO_ROOT
-    / "plugins"
-    / "pr-automation"
-    / "skills"
+    / "pi"
     / "github-code-review-batch"
     / "scripts"
     / "run_tool_layer.py"
 )
 
-sys.path.insert(0, str(SCRIPT.parent))
-import run_tool_layer as rtl  # noqa: E402
+_spec = importlib.util.spec_from_file_location("run_tool_layer", SCRIPT)
+rtl = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(rtl)
 
 
 def _run(payload: dict, *flags: str) -> str:
@@ -108,3 +108,77 @@ class TestEndToEnd:
         (tmp_path / "pyproject.toml").write_text("")
         monkeypatch.setattr(rtl.shutil, "which", lambda _cmd: None)
         assert rtl.run_tool_layer(tmp_path) == []
+
+
+class TestFilesScoping:
+    """#174: --files scopes linters to the PR's changed files.
+
+    Pre-existing findings outside the changed set must not flood the review
+    (40 findings on PR #166 drowned the round). Applies to: command targets
+    (ruff/mypy/eslint), output intersection (tsc runs project-wide, filter
+    after), and the stdin changed_files field.
+    """
+
+    def test_ruff_cmd_targets_files_when_given(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text("")
+        cmds = []
+
+        def fake_run(cmd, **kwargs):
+            cmds.append(cmd)
+            m = type("P", (), {"stdout": "", "stderr": "", "returncode": 0})()
+            return m
+
+        orig = rtl.subprocess.run
+        rtl.subprocess.run = fake_run
+        try:
+            rtl.run_tool("ruff", tmp_path, files=["a.py", "b/c.py"])
+        finally:
+            rtl.subprocess.run = orig
+        assert cmds and cmds[0][:3] == ["ruff", "check", "--output-format=concise"]
+        assert cmds[0][1:] != rtl._TOOL_CMD["ruff"][1:]  # not the full-repo "."
+        assert "a.py" in cmds[0] and "b/c.py" in cmds[0]
+
+    def test_output_intersected_to_files(self):
+        raw = (
+            "src/changed.py:10: unused import os\n"
+            "scripts/legacy.py:3: old debt\n"
+        )
+        issues = rtl.parse_diagnostics("ruff", raw)
+        scoped = rtl.filter_to_files(issues, ["src/changed.py"])
+        assert len(scoped) == 1
+        assert scoped[0]["file"] == "src/changed.py"
+
+    def test_path_normalization_in_filter(self):
+        issues = rtl.parse_diagnostics("ruff", "./src/x.py:1: msg")
+        scoped = rtl.filter_to_files(issues, ["src/x.py"])
+        assert len(scoped) == 1
+
+    def test_no_files_runs_full_repo(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text("")
+        cmds = []
+
+        def fake_run(cmd, **kwargs):
+            cmds.append(cmd)
+            return type("P", (), {"stdout": "", "stderr": "", "returncode": 0})()
+
+        orig = rtl.subprocess.run
+        rtl.subprocess.run = fake_run
+        try:
+            rtl.run_tool("ruff", tmp_path, files=None)
+        finally:
+            rtl.subprocess.run = orig
+        assert cmds[0] == rtl._TOOL_CMD["ruff"]
+
+    def test_cli_files_flag_end_to_end(self, tmp_path):
+        # A real clean file: ruff (when installed) must produce zero findings
+        # for it; scopes to the file rather than the whole tmp repo.
+        (tmp_path / "pyproject.toml").write_text("")
+        (tmp_path / "x.py").write_text("import os\n\nprint(os.getcwd())\n")
+        out = _run({"repo_root": str(tmp_path)}, "--files", "x.py")
+        assert json.loads(out) == []
+
+    def test_stdin_changed_files_scopes_output(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text("")
+        (tmp_path / "x.py").write_text("import os\n\nprint(os.getcwd())\n")
+        out = _run({"repo_root": str(tmp_path), "changed_files": ["x.py"]})
+        assert json.loads(out) == []
