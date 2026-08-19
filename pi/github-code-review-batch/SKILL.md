@@ -91,6 +91,7 @@ PR 编号提取规则（依次尝试）：
    - `PASS` — 无 open issues（可能有 acknowledged）
    - `NO_NEW_COMMITS` — Step 0 检测到无新 commit，本轮跳过
    - 状态报告还含 `Critical issues:` 计数与派生的 `Verdict:`（#119：SKIP / BLOCK_MERGE / READY_TO_MERGE / MERGE_WITH_CAUTION），均追加在 `Status:` 行之后，不影响 grep
+   - 分隔线之后追加 `<zima-review><verdict>...</verdict><summary>...</summary></zima-review>` XML trailer（#176）：zima executor 靠它驱动 postExec 标签流转，pi 型 agent 的 CR PJob 必需
 
 zima daemon 通过 grep `Status: <state>` 决策下一步动作（可选消费 `Verdict:` 优先处理含 critical 的 PR）。
 

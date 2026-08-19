@@ -301,7 +301,7 @@ issue-validator 验证时若 agent 未给 severity，按 `medium` 兜底。`buil
 
 ## Step 8: 终端输出 {#step-8}
 
-输出 Markdown 格式的审查报告到终端。完整模板与字段拼装由 [scripts/build_review_body.py](../scripts/build_review_body.py) 生成；终端输出可直接用脚本输出的 Part B（Markdown 部分）。
+输出 Markdown 格式的审查报告到终端。完整模板与字段拼装由 [scripts/build_review_body.py](../scripts/build_review_body.py) 生成；终端输出可直接用脚本输出的 Part B（Markdown 部分），**但 low-severity issue 已被 #168 从 Part B 过滤——终端报告必须在末尾单独补一节 "Suppressed low-severity findings" 完整列出被过滤的 low 项（文件:行号 + 描述），否则 low 在所有人类可读面都不可见**（PR 评论里 metadata 是 HTML 注释，GitHub 渲染时隐藏）。
 
 精简模板：
 
@@ -449,6 +449,8 @@ Coverage: 7/10 files
 ```
 
 调度器据此识别"本轮 0 issue 但 diff 被截断、覆盖不全"，不会把截断导致的空结果误读为"全量审查通过"。未提供这些字段时省略（向后兼容）。
+
+**机器可读 trailer（#176）**：`render_status_report.py` 会在分隔线 `====` 之后追加 `<zima-review><verdict>approved|needs_fix</verdict><summary>...</summary></zima-review>` XML——zima executor 靠它驱动 postExec 标签流转（pi 型 agent 的 CR PJob 必需）；`Status:` 行与报告块形状不变，daemon 的 grep 契约不受影响。
 
 ### 用途
 

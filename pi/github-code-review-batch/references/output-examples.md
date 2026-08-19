@@ -13,7 +13,7 @@
 
 ### Code Review | Round-1
 
-Found 3 issues:
+Found 2 issues:
 
 1. Memory leak: OAuth state not cleaned up (bug, critical)
 
@@ -23,9 +23,7 @@ https://github.com/owner/repo/blob/abc123def4567890123456789012345678901234/src/
 
 https://github.com/owner/repo/blob/abc123def4567890123456789012345678901234/src/auth.ts#L67-L72
 
-3. Inconsistent naming pattern (AGENTS.md, low)
-
-https://github.com/owner/repo/blob/abc123def4567890123456789012345678901234/src/utils.ts#L23-L28
+_1 low-severity finding suppressed — see terminal report._
 
 🤖 Generated with pi-coding-agent
 ```
