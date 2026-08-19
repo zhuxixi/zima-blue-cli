@@ -4,7 +4,7 @@ These exist because of a real field-name bug: `gh pr view --json reviews`
 emits `submittedAt` (camelCase), but the script sorted by `submitted_at`
 (snake_case). `.get("submitted_at", "")` therefore returned "" for every
 review, Python's stable sort left the array in GitHub's oldest-first order,
-and the loop returned the *oldest* cc-cr-meta instead of the latest. On a PR
+and the loop returned the *oldest* pi-cr-meta instead of the latest. On a PR
 reviewed for multiple rounds this corrupts the round number, `previous_head_sha`,
 and can trigger redundant reviews.
 
@@ -27,7 +27,7 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = (
-    _REPO_ROOT / "plugins" / "pr-automation" / "skills" / "github-code-review-batch" / "scripts"
+    _REPO_ROOT / "pi" / "github-code-review-batch" / "scripts"
 )
 
 HEAD_SHA_A = "a" * 40
@@ -54,7 +54,7 @@ def _run_json(script: Path, obj: dict) -> str:
 
 
 def _cc_body(round_: int, head_sha: str, timestamp: str) -> str:
-    """A minimal CC review body carrying a parseable cc-cr-meta block."""
+    """A minimal pi review body carrying a parseable pi-cr-meta block."""
     meta = {
         "round": round_,
         "pr_number": 255,
@@ -65,19 +65,19 @@ def _cc_body(round_: int, head_sha: str, timestamp: str) -> str:
         "timestamp": timestamp,
     }
     return (
-        f"<!-- cc-cr-meta\n{json.dumps(meta)}\n-->\n\n"
-        f"### Code Review | Round-{round_}\n\n🤖 Generated with Claude Code\n"
+        f"<!-- pi-cr-meta\n{json.dumps(meta)}\n-->\n\n"
+        f"### Code Review | Round-{round_}\n\n🤖 Generated with pi-coding-agent\n"
     )
 
 
 def _kimi_body(round_: int, head_sha: str) -> str:
-    """A Kimi-CLI review body (kimi-cr-meta, no CC signature)."""
+    """A Kimi-CLI review body (kimi-cr-meta, no pi signature)."""
     meta = {"round": round_, "pr_number": 255, "head_sha": head_sha}
     return f"<!-- kimi-cr-meta\n{json.dumps(meta)}\n-->\n\nKimi review\n"
 
 
 class TestParsesLatestMeta:
-    """The core regression: with multiple cc-cr-meta reviews, return the newest."""
+    """The core regression: with multiple pi-cr-meta reviews, return the newest."""
 
     def test_picks_latest_by_submitted_at_camelcase(self):
         """gh --json reviews emits submittedAt (camelCase) — the bug's real shape.
@@ -147,7 +147,7 @@ class TestParsesLatestMeta:
         assert parsed["head_sha"] == HEAD_SHA_C
 
     def test_ignores_kimi_cr_meta(self):
-        """kimi-cr-meta reviews (no CC signature) must never be returned."""
+        """kimi-cr-meta reviews (no pi signature) must never be returned."""
         reviews = {
             "reviews": [
                 {

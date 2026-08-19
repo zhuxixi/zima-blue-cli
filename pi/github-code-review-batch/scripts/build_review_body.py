@@ -80,7 +80,7 @@ def build_metadata(d: dict) -> str:
     payload["acknowledged_count"] = d.get(
         "acknowledged_count", len(d.get("acknowledged_issues", []))
     )
-    return f"<!-- cc-cr-meta\n{json.dumps(payload, ensure_ascii=False)}\n-->"
+    return f"<!-- pi-cr-meta\n{json.dumps(payload, ensure_ascii=False)}\n-->"
 
 
 def render_round_1(d: dict) -> str:
@@ -173,7 +173,7 @@ def render_round_n(d: dict) -> str:
 def render_body(d: dict) -> str:
     metadata = build_metadata(d)
     body = render_round_1(d) if d["round"] == 1 else render_round_n(d)
-    return f"{metadata}\n\n{body}\n\n🤖 Generated with Claude Code\n"
+    return f"{metadata}\n\n{body}\n\n🤖 Generated with pi-coding-agent\n"
 
 
 def main() -> int:

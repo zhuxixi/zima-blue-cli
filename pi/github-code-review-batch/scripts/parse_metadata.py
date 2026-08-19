@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Extract latest cc-cr-meta JSON from PR review comments.
+"""Extract latest pi-cr-meta JSON from PR review comments.
 
 Input (stdin): JSON output of `gh pr view <PR> --json reviews`.
   Either the full object {"reviews": [...]} (gh-native `submittedAt` key)
   or a stream of {body, submitted_at} records (one per line) as produced by
   the --jq filter. Both key spellings are accepted when ordering by timestamp.
 
-Output (stdout): Latest cc-cr-meta JSON object, or {} if not found.
+Output (stdout): Latest pi-cr-meta JSON object, or {} if not found.
 Exit codes:
   0 success (including "no metadata found, output {}")
   2 stdin not valid JSON
@@ -18,9 +18,9 @@ import json
 import re
 import sys
 
-CC_MARKER = "Generated with Claude Code"
-META_MARKER = "<!-- cc-cr-meta"
-META_RE = re.compile(r"<!--\s*cc-cr-meta\s*\n(.*?)\n\s*-->", re.DOTALL)
+PI_MARKER = "Generated with pi-coding-agent"
+META_MARKER = "<!-- pi-cr-meta"
+META_RE = re.compile(r"<!--\s*pi-cr-meta\s*\n(.*?)\n\s*-->", re.DOTALL)
 
 
 def load_reviews(raw: str) -> list[dict]:
@@ -58,7 +58,7 @@ def extract_latest_meta(reviews: list[dict]) -> dict:
         for r in reviews
         if isinstance(r, dict)
         and isinstance(r.get("body"), str)
-        and CC_MARKER in r["body"]
+        and PI_MARKER in r["body"]
         and META_MARKER in r["body"]
     ]
     if not candidates:

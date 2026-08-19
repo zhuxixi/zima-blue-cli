@@ -6,13 +6,13 @@ being implemented:
 
   1. Trigger phrases — zima daemon invokes the skill by literal phrase.
   2. Status report block + 3-state `Status:` enum — zima daemon greps it.
-  3. `<!-- cc-cr-meta -->` metadata marker + documented top-level schema keys.
+  3. `<!-- pi-cr-meta -->` metadata marker + documented top-level schema keys.
   4. Round-trip: metadata written by build_review_body must parse back.
   5. Portability: scripts are Python-stdlib only (no MCP / no third-party deps),
      and SKILL.md still instructs the `gh` CLI path.
   6. Backward-compat / robustness: old/minimal schemas must not crash.
 
-The skill scripts live under plugins/ (not the `zima` package) and are plain
+The skill scripts live under pi/ (not the `zima` package) and are plain
 stdin/stdout CLIs, so we exercise them as subprocess black boxes — the same way
 the skill itself invokes them. Run from anywhere; paths resolve from this file.
 
@@ -36,7 +36,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]  # tests/unit/<this> -> repo root
-SKILL_DIR = _REPO_ROOT / "plugins" / "pr-automation" / "skills" / "github-code-review-batch"
+SKILL_DIR = _REPO_ROOT / "pi" / "github-code-review-batch"
 SCRIPTS = SKILL_DIR / "scripts"
 
 HEAD_SHA_A = "a" * 40
@@ -234,7 +234,7 @@ class TestStatusReport:
 
 
 # ---------------------------------------------------------------------------
-# Contract 3: cc-cr-meta marker + metadata top-level schema keys
+# Contract 3: pi-cr-meta marker + metadata top-level schema keys
 # ---------------------------------------------------------------------------
 
 
@@ -255,10 +255,10 @@ METADATA_KEYS = {
 class TestReviewBody:
     def test_round1_markers(self):
         out = _run_json(_script("build_review_body.py"), ROUND1_INPUT)
-        assert "<!-- cc-cr-meta" in out
+        assert "<!-- pi-cr-meta" in out
         assert "-->" in out
         assert "### Code Review | Round-1" in out
-        assert "🤖 Generated with Claude Code" in out
+        assert "🤖 Generated with pi-coding-agent" in out
 
     def test_roundn_recheck_header(self):
         out = _run_json(_script("build_review_body.py"), ROUND2_INPUT)
@@ -267,9 +267,9 @@ class TestReviewBody:
     def test_metadata_top_level_keys_stable(self):
         """#119 may add per-issue `severity`, but top-level keys must not change."""
         out = _run_json(_script("build_review_body.py"), ROUND1_INPUT)
-        start = out.index("<!-- cc-cr-meta")
+        start = out.index("<!-- pi-cr-meta")
         end = out.index("-->", start)
-        payload = json.loads(out[start + len("<!-- cc-cr-meta") : end].strip())
+        payload = json.loads(out[start + len("<!-- pi-cr-meta") : end].strip())
         assert METADATA_KEYS.issubset(payload.keys())
 
 
@@ -283,7 +283,7 @@ class TestRoundTrip:
         body = _run_json(_script("build_review_body.py"), ROUND2_INPUT)
         reviews_obj = {"reviews": [{"body": body, "submitted_at": "2026-06-17T10:30:00Z"}]}
         parsed = json.loads(_run_json(_script("parse_metadata.py"), reviews_obj))
-        # parse_metadata returns the latest cc-cr-meta object
+        # parse_metadata returns the latest pi-cr-meta object
         assert parsed.get("round") == 2
         assert parsed.get("head_sha") == HEAD_SHA_B
         assert isinstance(parsed.get("issues"), list)
