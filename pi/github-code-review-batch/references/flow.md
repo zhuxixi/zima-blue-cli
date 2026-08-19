@@ -10,18 +10,18 @@
 
 ### 0.1 检测 previous review metadata {#step-0-1}
 
-使用 `Bash` 执行：
+使用 `bash` 执行：
 ```bash
 gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .submittedAt}'
 ```
 
-把 JSON 通过 stdin 传给 `scripts/parse_metadata.py`，脚本返回最新一条 Claude Code 评论的 cc-cr-meta JSON（无则返回 `{}`）。详见 [scripts/parse_metadata.py](../scripts/parse_metadata.py)。
+把 JSON 通过 stdin 传给 `scripts/parse_metadata.py`，脚本返回最新一条 pi 评论的 pi-cr-meta JSON（无则返回 `{}`）。详见 [scripts/parse_metadata.py](../scripts/parse_metadata.py)。
 
 脚本内部规则：
-1. 评论 body 包含 `"Generated with Claude Code"`
-2. 评论 body 包含 `"<!-- cc-cr-meta"`
+1. 评论 body 包含 `"Generated with pi-coding-agent"`
+2. 评论 body 包含 `"<!-- pi-cr-meta"`
 3. 按 `submitted_at` 排序，取最新一条
-4. 用正则 `<!-- cc-cr-meta\n(.*?)\n-->` 提取 JSON
+4. 用正则 `<!-- pi-cr-meta\n(.*?)\n-->` 提取 JSON
 
 得到 metadata 字段：`round`, `head_sha`, `previous_head_sha`, `issues` 等。
 
@@ -31,8 +31,8 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 
 **执行步骤：**
 
-1. 使用 `Bash` 执行 `gh pr view <PR> --comments` 获取所有 PR 评论
-2. 过滤掉所有 AI CR 评论（Claude Code 评论 body 包含 `"Generated with Claude Code"`，Kimi CLI 评论 body 包含 `"<!-- kimi-cr-meta"`），保留 committer / human reviewer 的评论。两个 Agent 的审查结论互不参考，保证交叉验证的独立性
+1. 使用 `bash` 执行 `gh pr view <PR> --comments` 获取所有 PR 评论
+2. 过滤掉所有 AI CR 评论（pi 版包含 `"Generated with pi-coding-agent"`，cc 版包含 `"Generated with Claude Code"`，kimi 版包含 `"<!-- kimi-cr-meta"`），保留 committer / human reviewer 的评论。各 harness 的审查结论互不参考，保证审查独立性
 3. 对每个 `status="open"` 的 previous issue，检查 committer 评论中是否提及该 issue：
    - 匹配方式：issue 描述前 10 个单词、或 `file:lines` 组合、或 `"issue-{id}"` 引用
 4. **分类 committer 回应**（关键词匹配，不区分大小写）：
@@ -55,7 +55,7 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 ### 0.3 判断分支 {#step-0-3}
 
 **有 previous review metadata？**
-- 是 → 使用 `Bash` 执行 `gh pr view <PR> --json headRefOid --jq '.headRefOid'` 获取当前 head SHA
+- 是 → 使用 `bash` 执行 `gh pr view <PR> --json headRefOid --jq '.headRefOid'` 获取当前 head SHA
   - 当前 SHA == `previous_head_sha` → **无新 commit**
     - 输出：`"No new commits since Round-{round} review. Previous issues may still be open."`
     - 列出仍 open 的 issues（排除已标记 `resolution="acknowledged"` / `"wontfix"` 的）
@@ -78,7 +78,7 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 
 ## Step 1: PR 资格审查 {#step-1}
 
-使用 `Bash` 执行 `gh pr view <PR>` 和 `gh pr view <PR> --comments` 检查 PR 状态。
+使用 `bash` 执行 `gh pr view <PR>` 和 `gh pr view <PR> --comments` 检查 PR 状态。
 
 检查以下任一条件：
 - PR 是否已关闭 (state: CLOSED)
@@ -101,9 +101,9 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 
 ## Step 2: 收集项目规范 {#step-2}
 
-使用 `Bash` 执行 `gh pr diff <PR> --name-only` 获取变更文件列表。
+使用 `bash` 执行 `gh pr diff <PR> --name-only` 获取变更文件列表。
 
-根据变更文件路径，读取以下规范文件（使用 `Read` 工具）：
+根据变更文件路径，读取以下规范文件（使用 `read` 工具）：
 - 根目录的 `CLAUDE.md`
 - 根目录的 `AGENTS.md`
 - 变更文件所在子目录的 `CLAUDE.md`
@@ -125,11 +125,11 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 
 ## Step 3: 获取 PR 摘要 {#step-3}
 
-使用 `Bash` 执行：
+使用 `bash` 执行：
 - `gh pr view <PR>` 获取 PR 标题和描述
 - `gh pr diff <PR>` 获取完整 diff
 
-使用 `Agent` 启动 summarizer subagent（详见 [subagent-prompts.md#summarizer](subagent-prompts.md#summarizer)），输入包括 PR 标题、PR 描述、PR diff 内容。summarizer 输出一段简洁的变更摘要（不超过 300 字），帮助后续审查 Agent 快速理解变更意图。
+由 parent 直接完成（300 字摘要成本低，无需派 subagent；如需隔离上下文，用 `subagent` 单发，`agent: "reviewer"`、`context: "fresh"`）。summarizer 输出一段简洁的变更摘要（不超过 300 字），帮助后续审查 subagent 快速理解变更意图。
 
 ---
 
@@ -143,15 +143,15 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 - CLAUDE.md checker ×2、AGENTS.md checker：接收**完整 diff**（规范检查需要完整上下文），仅应用长度兜底
   ```bash
   gh pr diff <PR> | python scripts/compress_diff.py --max-len 4000 \
-      --meta-file /tmp/cc-cr-diff-meta.json > /tmp/cc-cr-diff.txt
+      --meta-file /tmp/pi-cr-diff-meta.json > /tmp/pi-cr-diff.txt
   ```
 - Bug scanner、Logic analyzer：接收**过滤后的 diff**，排除测试相关文件
   ```bash
   gh pr diff <PR> | python scripts/compress_diff.py --filter-tests --max-len 4000 \
-      --meta-file /tmp/cc-cr-diff-meta.json > /tmp/cc-cr-diff.txt
+      --meta-file /tmp/pi-cr-diff-meta.json > /tmp/pi-cr-diff.txt
   ```
 
-`--meta-file`（#120）写一份覆盖 meta（`diff_truncated`、`covered_files`/`total_files`、被丢弃文件等）到 sidecar JSON，供 [Step 10](#step-10) 在状态报告中显式提示部分覆盖；各 agent 改为读取 `/tmp/cc-cr-diff.txt` 作为 diff 输入。
+`--meta-file`（#120）写一份覆盖 meta（`diff_truncated`、`covered_files`/`total_files`、被丢弃文件等）到 sidecar JSON，供 [Step 10](#step-10) 在状态报告中显式提示部分覆盖；各 agent 改为读取 `/tmp/pi-cr-diff.txt` 作为 diff 输入。
 
 **脚本内部规则**：
 1. `--filter-tests` 排除：`tests/`、`test/` 目录下的文件；`*_test.py`、`*_spec.py`、`*_tests.py`；`.test.`、`.spec.` 等测试文件
@@ -165,7 +165,19 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 
 **确定性 tool-layer（#121）**：启动 LLM agent 之前，先运行 [scripts/run_tool_layer.py](../scripts/run_tool_layer.py)——按仓库 manifest 自动探测并执行 `ruff` / `mypy` / `tsc` / `eslint`（缺失则静默降级，不报错）。它用零误报工具吃掉"缺失导入 / 未解析引用 / 类型错误 / 语法错误"，产出 reason 为 `lint` / `typecheck` 的 issue，与下面 agent 的结果一起进入 [Step 5](#step-5) / [Step 6](#step-6)。bug-scanner 不再重复这些类别。
 
-启动 5 个并行 `Agent`，每个接收经过 [Step 3.5](#step-3-5) 预处理的输入包：
+启动 5 个并行 `subagent`（subagent 工具 `workflowScript` + `runs.all`，每个 `agent: "reviewer"`、`context: "fresh"`），每个接收经过 [Step 3.5](#step-3-5) 预处理的输入包。派发结构：
+
+```js
+await runs.all([
+  { key: "claude-checker-1", agent: "reviewer", context: "fresh", task: "<claude-compliance-checker prompt，显式规则 framing>" },
+  { key: "claude-checker-2", agent: "reviewer", context: "fresh", task: "<claude-compliance-checker prompt，隐含约定 framing>" },
+  { key: "agents-checker",    agent: "reviewer", context: "fresh", task: "<agents-compliance-checker prompt>" },
+  { key: "bug-scanner",       agent: "reviewer", context: "fresh", task: "<bug-scanner prompt>" },
+  { key: "logic-analyzer",    agent: "reviewer", context: "fresh", task: "<logic-analyzer prompt>" },
+])
+```
+
+task 的 prompt 模板见 [subagent-prompts.md](subagent-prompts.md) 对应小节，输入包（diff 文件路径、摘要、规范文本）以模板变量方式填入。5 个 subagent 职责：
 - **CLAUDE.md checker ×2、AGENTS.md checker**：完整 diff（或截断后的）+ 变更摘要 + PR 标题和描述 + 相关规范文件内容
 - **Bug scanner、Logic analyzer**：过滤掉测试文件的 diff（或截断后的）+ 变更摘要 + PR 标题和描述
 
@@ -203,13 +215,13 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 
 issue-validator 验证时若 agent 未给 severity，按 `medium` 兜底。`build_review_body.py` 渲染时按 severity 降序排列（critical 在前），metadata `issues[]` 保留原始顺序。
 
-**为什么 CLAUDE.md checker 跑两次（#122：差异化而非复跑）**：两个 checker 使用**不同 framing**（Checker-1 显式规则、Checker-2 隐含约定/反模式），让召回增益来自视角互补而非采样噪声。两者的 `reason` 都为 `"CLAUDE.md"`、schema 不变，下游无需改动。这与"双 CR Agent 交叉验证体系"（Claude Code vs Kimi CLI）是两个不同层次的冗余——前者在同一 skill 内部，后者跨 agent。
+**为什么 CLAUDE.md checker 跑两次（#122：差异化而非复跑）**：两个 checker 使用**不同 framing**（Checker-1 显式规则、Checker-2 隐含约定/反模式），让召回增益来自视角互补而非采样噪声。两者的 `reason` 都为 `"CLAUDE.md"`、schema 不变，下游无需改动。这与跨 harness 的并行审查（pi vs cc）是两个不同层次的冗余——前者在同一 skill 内部，后者跨 harness。
 
 ---
 
 ## Step 5: Issue 验证 {#step-5}
 
-对 [Step 4](#step-4) 中发现的每一个 issue，启动一个并行 `Agent` 进行验证。详见 [subagent-prompts.md#issue-validator](subagent-prompts.md#issue-validator)。
+对 [Step 4](#step-4) 中发现的每一个 issue，启动一个并行 `subagent` 进行验证（`agent: "reviewer"`、`context: "fresh"`，task 为 [subagent-prompts.md#issue-validator](subagent-prompts.md#issue-validator) 的 prompt 模板 + 单个 issue 信息），N 个候选 issue 用 subagent 工具的 `workflowScript` `runs.all` 一并 fanout。
 
 验证 agent 输入：
 - 单个 issue 的完整信息
@@ -239,7 +251,7 @@ issue-validator 验证时若 agent 未给 severity，按 `medium` 兜底。`buil
 - 如果描述内容高度相似（超过 80% 相似度），也视为重复
 - 合并时保留描述更详细、建议更具体的一个
 
-**可选：跨 PR suppress（#126，默认 off）**：若仓库根存在 `.claude/cr-suppressions.json`，去重后调用 [scripts/apply_suppressions.py](../scripts/apply_suppressions.py) 把命中的 issue 降级为 `suppressed`——不计入 open、不触发 fix-agent，但仍出现在终端输出供人工核验。条目格式：
+**可选：跨 PR suppress（#126，默认 off）**：若仓库根存在 `.pi/cr-suppressions.json`（历史 `.claude/cr-suppressions.json` 仍可读，双路径兼容），去重后调用 [scripts/apply_suppressions.py](../scripts/apply_suppressions.py) 把命中的 issue 降级为 `suppressed`——不计入 open、不触发 fix-agent，但仍出现在终端输出供人工核验。条目格式：
 
 ```json
 [
@@ -254,7 +266,7 @@ issue-validator 验证时若 agent 未给 severity，按 `medium` 兜底。`buil
 
 ## Step 7: 最终资格审查 {#step-7}
 
-使用 `Bash` 执行 `gh pr view <PR> --json state` 再次检查 PR 状态。
+使用 `bash` 执行 `gh pr view <PR> --json state` 再次检查 PR 状态。
 
 如果 PR 已关闭 (closed) 或已合并 (merged)，立即停止执行，**不发布评论**。
 
@@ -289,7 +301,7 @@ No issues found. Checked for bugs, CLAUDE.md and AGENTS.md compliance.
 完整 Round-N 多轮格式见 [output-examples.md](output-examples.md)。
 
 代码链接格式要求：
-- 使用 `Bash` 执行 `gh pr view <PR> --json headRefOid --jq '.headRefOid'` 获取 PR head SHA（40 字符）
+- 使用 `bash` 执行 `gh pr view <PR> --json headRefOid --jq '.headRefOid'` 获取 PR head SHA（40 字符）
 - 链接格式必须严格为：`https://github.com/owner/repo/blob/[sha]/path#L[start]-L[end]`
 - 行范围至少包含 1 行上下文（评论目标行的前后至少各 1 行）
 - 仓库 owner 和 repo 名通过 `gh pr view --json headRepositoryOwner,headRepository` 获取
@@ -319,7 +331,7 @@ No issues found. Checked for bugs, CLAUDE.md and AGENTS.md compliance.
 **Part A: HTML Comment Metadata（机器可读，GitHub 渲染时隐藏）**
 
 ```markdown
-<!-- cc-cr-meta
+<!-- pi-cr-meta
 {"round":N,"pr_number":...,"head_sha":"...","previous_head_sha":"...","total_issues":...,"resolved_count":...,"new_count":...,"acknowledged_count":...,"issues":[...],"timestamp":"..."}
 -->
 ```
@@ -342,16 +354,16 @@ No issues found. Checked for bugs, CLAUDE.md and AGENTS.md compliance.
 
 ### 9.2 发布 Review 评论
 
-使用 `Bash` 执行：
+使用 `bash` 执行：
 ```bash
 # 将 review body 写入临时文件（避免 shell 转义和长命令问题）
-python scripts/build_review_body.py < input.json > /tmp/cc-cr-{pr_number}.md
-gh pr review <PR> --comment --body-file /tmp/cc-cr-{pr_number}.md
+python scripts/build_review_body.py < input.json > /tmp/pi-cr-{pr_number}.md
+gh pr review <PR> --comment --body-file /tmp/pi-cr-{pr_number}.md
 ```
 
 注意：
 - 每轮审查都发布**新评论**，不编辑旧评论。原因：metadata 是审查历史的事实记录，覆写会丢失中间状态
-- 必须包含 `"🤖 Generated with Claude Code"` 标识，用于后续识别（脚本已固化）
+- 必须包含 `"🤖 Generated with pi-coding-agent"` 标识，用于后续识别（脚本已固化）
 - 必须包含 `"### Code Review | Round-{N}"` 标题（脚本已固化）
 - 此步骤必须执行：只要资格审查通过，无论是否发现问题，都必须发布评论
 - 如果 `gh pr review` 命令失败，向用户报告错误详情，不重复尝试

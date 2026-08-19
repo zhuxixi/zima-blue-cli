@@ -24,11 +24,11 @@
 
 ### Step Δ1: 获取完整 diff
 
-使用 `Bash` 执行 `gh pr diff <PR>` 获取完整 diff。
+使用 `bash` 执行 `gh pr diff <PR>` 获取完整 diff。
 
 ### Step Δ2: 启动 delta-reviewer Agent
 
-使用 `Agent` 启动 [delta-reviewer](subagent-prompts.md#delta-reviewer)（前台，1 个 Agent），输入：
+使用 `subagent` 启动 [delta-reviewer](subagent-prompts.md#delta-reviewer)（前台 1 个，`agent: "reviewer"`、`context: "fresh"`），输入：
 - PR 完整 diff
 - `previous_issues` 列表
 - `previous_head_sha`
@@ -39,7 +39,7 @@
 
 delta-reviewer 专注旧 issues 的 resolved / acknowledged / unresolved 对比（需连贯上下文）；但**修复 commit 是回归高发区**，单 agent 易因"确认偏误"漏报新引入的问题。因此对本次新增/修改的 hunk 额外**并行**启动 bug-scanner + logic-analyzer 各 1 个（复用 [subagent-prompts.md](subagent-prompts.md) 的现成 prompt）：
 
-使用 `Bash` 取增量 diff（`previous_head_sha..current_head_sha`）：
+使用 `bash` 取增量 diff（`previous_head_sha..current_head_sha`）：
 ```bash
 git -C <repo> diff <previous_head_sha> <current_head_sha> -- . ':(exclude)tests' ':(exclude)test'
 # 或 gh api repos/{owner}/{repo}/compare/{previous}...{current}
@@ -118,8 +118,8 @@ delta-reviewer 输出 JSON：
 
 | 步骤 | 完整流程 | 增量流程 |
 |------|---------|---------|
-| Step 3 | summarizer + 5 个审查 Agent | delta-reviewer 1 个 Agent |
-| Step 4 | 5 个并行审查 Agent | delta-reviewer（旧 issue 对比）+ Δ2a 并行 bug/logic scanner（新 hunk，#123） |
+| Step 3 | summarizer + 5 个审查 subagent | delta-reviewer 1 个 subagent |
+| Step 4 | 5 个并行审查 subagent | delta-reviewer（旧 issue 对比）+ Δ2a 并行 bug/logic scanner（新 hunk，#123） |
 | Step 5 | 每个 issue 单独验证 | 由 delta-reviewer 内部完成对比验证 |
 | 输出 | 全新问题列表 | resolved + acknowledged + new + unresolved 分类 |
 
