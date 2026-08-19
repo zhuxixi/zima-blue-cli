@@ -729,3 +729,171 @@ class TestRunSmeeClient:
         assert sleeps == [1.0]
         err = capsys.readouterr().err
         assert "[smee] watchdog: no SSE data for" in err
+
+    def test_probe_timeout_closes_detached_connection(self, monkeypatch, capsys):
+        """Heartbeats flowing but probe never echoes back (detached EventBus)
+        -> watchdog closes the connection. Core fix for the observed #163
+        failure mode (form B)."""
+        monkeypatch.setattr("zima.webhook.smee._WATCHDOG_CHECK_INTERVAL", 0.05)
+        monkeypatch.setattr("zima.webhook.smee._DEAD_AFTER", 999.0)  # byte watchdog off
+        monkeypatch.setattr("zima.webhook.smee._PROBE_INTERVAL", 0.05)
+        monkeypatch.setattr("zima.webhook.smee._PROBE_TIMEOUT", 0.2)
+
+        get_calls = []
+        close_calls = []
+        probe_posts = []
+        target_posts = []
+        stream_closed = threading.Event()
+        sleeps = []
+        pace = threading.Event()
+
+        class FakeResponse:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def close(self):
+                close_calls.append(None)
+                stream_closed.set()
+
+            def iter_lines(self):
+                # Form B: heartbeat frames keep arriving (byte watchdog stays
+                # fed), but no probe echo ever comes back.
+                while not stream_closed.is_set():
+                    yield b"data: {}"
+                    pace.wait(0.02)
+
+        class FakePostResponse:
+            status_code = 200
+            text = "ok"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        def fake_get(*args, **kwargs):
+            get_calls.append(None)
+            if len(get_calls) > 1:
+                raise requests.RequestException("stop loop")
+            return FakeResponse()
+
+        def fake_post(url, json=None, data=None, headers=None, timeout=None):
+            if url.startswith("https://smee.io"):
+                probe_posts.append(json)
+            else:
+                target_posts.append(json)
+            return FakePostResponse()
+
+        def fake_sleep(seconds):
+            sleeps.append(seconds)
+            raise RuntimeError("stop loop")
+
+        monkeypatch.setattr("zima.webhook.smee.requests.get", fake_get)
+        monkeypatch.setattr("zima.webhook.smee.requests.post", fake_post)
+        monkeypatch.setattr("zima.webhook.smee.time.sleep", fake_sleep)
+
+        try:
+            run_smee_client("https://smee.io/test", "http://127.0.0.1:8765/webhook")
+        except RuntimeError:
+            pass
+
+        assert probe_posts  # probe was sent to the smee channel
+        assert "_zima_probe" in probe_posts[0]
+        assert close_calls  # probe timeout closed the detached connection
+        assert target_posts == []  # nothing forwarded to the local server
+        assert sleeps == [1.0]
+        err = capsys.readouterr().err
+        assert "probe" in err and "closing detached connection" in err
+
+    def test_probe_echo_keeps_connection_alive(self, monkeypatch, capsys):
+        """A probe echo that round-trips clears the pending probe; the
+        connection stays up and the probe frame is never forwarded."""
+        monkeypatch.setattr("zima.webhook.smee._WATCHDOG_CHECK_INTERVAL", 0.05)
+        monkeypatch.setattr("zima.webhook.smee._DEAD_AFTER", 999.0)
+        monkeypatch.setattr("zima.webhook.smee._PROBE_INTERVAL", 0.05)
+        monkeypatch.setattr("zima.webhook.smee._PROBE_TIMEOUT", 10.0)
+
+        get_calls = []
+        close_calls = []
+        probe_ids = []
+        echo_sent = threading.Event()
+        pace = threading.Event()
+        target_posts = []
+
+        class FakeResponse:
+            status_code = 200
+
+            def raise_for_status(self):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def close(self):
+                close_calls.append(None)
+
+            def iter_lines(self):
+                deadline = time.monotonic() + 0.6
+                while time.monotonic() < deadline:
+                    if probe_ids and not echo_sent.is_set():
+                        echo = {"body": {"_zima_probe": probe_ids[0]}}
+                        echo_sent.set()
+                        yield ("data: " + json.dumps(echo)).encode()
+                    else:
+                        yield b"data: {}"
+                    pace.wait(0.02)
+
+        class FakePostResponse:
+            status_code = 200
+            text = "ok"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        def fake_get(*args, **kwargs):
+            get_calls.append(None)
+            if len(get_calls) > 1:
+                raise requests.RequestException("stop loop")
+            return FakeResponse()
+
+        def fake_post(url, json=None, data=None, headers=None, timeout=None):
+            if url.startswith("https://smee.io"):
+                if json and "_zima_probe" in json:
+                    probe_ids.append(json["_zima_probe"])
+            else:
+                target_posts.append(json)
+            return FakePostResponse()
+
+        def fake_sleep(seconds):
+            raise RuntimeError("stop loop")
+
+        monkeypatch.setattr("zima.webhook.smee.requests.get", fake_get)
+        monkeypatch.setattr("zima.webhook.smee.requests.post", fake_post)
+        monkeypatch.setattr("zima.webhook.smee.time.sleep", fake_sleep)
+
+        try:
+            run_smee_client("https://smee.io/test", "http://127.0.0.1:8765/webhook")
+        except RuntimeError:
+            pass
+
+        assert probe_ids  # probe was sent
+        assert echo_sent.is_set()  # echo was delivered back over the SSE stream
+        assert close_calls == []  # echo cleared the pending probe, no close
+        assert target_posts == []  # probe frame was not forwarded
+        err = capsys.readouterr().err
+        assert "watchdog" not in err

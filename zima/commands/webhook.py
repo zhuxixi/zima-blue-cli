@@ -67,11 +67,11 @@ def _run_smee_forwarder(smee_url: str, target_url: str, secret: Optional[str]) -
 
 
 def _enable_line_buffered_stdout() -> None:
-    """Make stdout line-buffered so [webhook] logs reach journald in real time.
+    """Make stdout line-buffered as a defense for stdout prints.
 
-    stdout is block-buffered when redirected (systemd/journald), which hid
-    [webhook] log lines until the buffer flushed (#163). stderr is already
-    unbuffered; this covers the stdout prints in the server.
+    The server's [webhook] runtime logs go to stderr (already unbuffered);
+    stdout only carries the startup banner and any future stdout prints,
+    which would otherwise be block-buffered under systemd/journald (#163).
     """
     try:
         sys.stdout.reconfigure(line_buffering=True)
