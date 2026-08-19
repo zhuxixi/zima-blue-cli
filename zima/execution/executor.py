@@ -422,15 +422,21 @@ class PJobExecutor:
                         or dynamic_vars.get("pr_number")
                         or ""
                     )
+                    # The authoritative value must itself be valid before it
+                    # may override the alias (#158 R24: issue 18)
+                    if not pr_number_ok(_auth_pr):
+                        _auth_pr = ""
                     if _auth_pr and "pr" in dynamic_vars:
                         dynamic_vars["pr"] = _auth_pr
                     if "pr_url" in dynamic_vars:
                         _pu = str(dynamic_vars.get("pr_url") or "").strip()
-                        if not (_pu.startswith("https://") or _pu.startswith("http://")):
+                        if _pu and not (
+                            _pu.lower().startswith("https://") or _pu.lower().startswith("http://")
+                        ):
                             print(
                                 f"Warning: discovered pr_url is invalid "
                                 f"(scheme gate failed; len={len(_pu)}); "
-                                f"dropping it (#158 R23)"
+                                f"dropping it (#158 R23/R24)"
                             )
                             dynamic_vars.pop("pr_url", None)
                     if "repo" in dynamic_vars:

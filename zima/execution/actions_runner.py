@@ -303,7 +303,19 @@ class ActionsRunner:
                     # differ (broadcast-mode mismatch protection) (#158 R23:
                     # issue 8). Only a well-formed repo may be adopted.
                     _pin_repo = ((pin_env or {}).get("repo") or "").strip()
-                    if _pin_repo and repo_ok(_pin_repo) and _pin_repo != repo:
+                    if _pin_repo and not repo_ok(_pin_repo):
+                        # A malformed runtime repo must not be silently
+                        # ignored: the action.repo continues, but the operator
+                        # deserves to know (#158 R24: issue 21)
+                        print(
+                            f"Warning: runtime repo override is malformed "
+                            f"(len={len(_pin_repo)}); using the action repo "
+                            f"(#158)"
+                        )
+                    elif _pin_repo and repo_ok(_pin_repo) and _pin_repo.lower() != repo.lower():
+                        # Case-insensitive: GitHub owner/repo paths are
+                        # case-insensitive; a case-only variant must not
+                        # trigger an adopt (#158 R24: issue 20)
                         print(
                             f"Warning: runtime repo override differs from "
                             f"action repo; using the runtime value (len="
