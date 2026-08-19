@@ -50,6 +50,26 @@ def _severity_rank(issue: dict) -> int:
     return SEVERITY_RANK[_severity(issue)]
 
 
+def _short_label(text: str, limit: int = 60) -> str:
+    """Summary-line truncation for Round-N labels (#175).
+
+    Old behavior cut every description at exactly 40 characters, slicing CJK
+    text mid-word and English mid-word alike. Prefer a word boundary when a
+    space exists in the tail half of the window; CJK text without spaces
+    falls back to a character cut. Always append an explicit ellipsis so the
+    cut is visible. Metadata keeps the full description untouched — this only
+    affects the human-readable summary line.
+    """
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    tail = cut[limit // 2 :]
+    if " " in tail:
+        cut = cut[: cut.rfind(" ")]
+    return cut + "..."
+
+
 def build_metadata(d: dict) -> str:
     keys = [
         "round",
@@ -129,9 +149,13 @@ def render_round_n(d: dict) -> str:
         lines.extend(["", "New issues found: 0", "", "✅ **All issues resolved!**"])
         return "\n".join(lines)
 
-    resolved_label = ", ".join(r.get("description", "")[:40] for r in resolved) if resolved else ""
+    resolved_label = (
+        ", ".join(_short_label(r.get("description", "")) for r in resolved) if resolved else ""
+    )
     ack_label = (
-        ", ".join(a.get("description", "")[:40] for a in acknowledged) if acknowledged else ""
+        ", ".join(_short_label(a.get("description", "")) for a in acknowledged)
+        if acknowledged
+        else ""
     )
     lines.append(
         f"- **Resolved**: {len(resolved)}" + (f" ({resolved_label})" if resolved_label else "")

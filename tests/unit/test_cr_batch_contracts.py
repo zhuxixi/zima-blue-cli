@@ -347,6 +347,71 @@ class TestRound1MetadataDefaults:
         assert meta["new_count"] == 7
 
 
+class TestRoundNResolvedLabelTruncation:
+    """#175: resolved summary line must not hard-cut CJK descriptions mid-word.
+
+    Old behavior: description[:40] cut Chinese text at an arbitrary byte.
+    New behavior: word-boundary (or CJK-safe) cut at 60 chars with explicit
+    ellipsis; metadata keeps the full description untouched.
+    """
+
+    LONG_EN = (
+        "fix environment variable passthrough for the watchdog thread "
+        "so that _enable_line_buffered_stdout docstring mismatch no longer"
+    )
+    # 42 chars: old [:40] code cut this mid-sentence; new 60-char limit keeps it whole.
+    MID_ZH = (
+        "修复看门狗线程的环境变量传递问题，避免标准输出行缓冲配置在守护进程重启后失效并污染日志"
+    )
+    # >60 chars: must be cut with an explicit ellipsis.
+    LONG_ZH = (
+        "修复看门狗线程的环境变量传递问题，避免标准输出行缓冲配置在守护进程重启后失效并污染日志，"
+        "同时确保重连路径上的响应对象正确关闭且不泄漏套接字资源，以及状态文件的原子写入顺序"
+    )
+
+    def _payload(self, description: str) -> dict:
+        return {
+            "round": 2,
+            "pr_number": 123,
+            "head_sha": HEAD_SHA_B,
+            "previous_head_sha": HEAD_SHA_A,
+            "repo_owner": "owner",
+            "repo_name": "repo",
+            "timestamp": "2026-06-17T10:30:00Z",
+            "issues": [],
+            "resolved_issues": [{"description": description}],
+            "unresolved_issues": [
+                {
+                    "description": "still open bug",
+                    "reason": "bug",
+                    "file": "x.py",
+                    "lines": "1-2",
+                }
+            ],
+        }
+
+    def test_long_english_cut_at_word_boundary_with_ellipsis(self):
+        out = _run_json(_script("build_review_body.py"), self._payload(self.LONG_EN))
+        assert "**Resolved**: 1 (" in out
+        label = out.split("**Resolved**: 1 (", 1)[1].split(")", 1)[0]
+        assert label.endswith("...")
+        assert "  " not in label  # cut at a word boundary, not mid-word space
+
+    def test_mid_chinese_no_longer_cut_at_40(self):
+        out = _run_json(_script("build_review_body.py"), self._payload(self.MID_ZH))
+        assert f"({self.MID_ZH})" in out  # 42 chars fit within the 60 limit
+
+    def test_long_chinese_cut_with_ellipsis(self):
+        out = _run_json(_script("build_review_body.py"), self._payload(self.LONG_ZH))
+        label = out.split("**Resolved**: 1 (", 1)[1].split(")", 1)[0]
+        assert label.endswith("...")
+        assert len(label) < len(self.LONG_ZH)
+
+    def test_short_description_untouched(self):
+        out = _run_json(_script("build_review_body.py"), self._payload("short desc"))
+        assert "(short desc)" in out
+
+
 class TestRoundTrip:
     def test_build_then_parse_preserves_round_and_sha(self):
         body = _run_json(_script("build_review_body.py"), ROUND2_INPUT)

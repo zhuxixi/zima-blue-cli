@@ -262,6 +262,7 @@
 ### 任务
 
 1. **优先处理带 committer 回应的 previous issues**：
+   - `resolution="resolved"` → 视为未验证的声明而非事实：核对 diff 确认修复真实落实 → 加入 `resolved_issues`；声明与代码不符 → 加入 `unresolved_issues`（引用声明与实际差异）
    - `resolution="acknowledged"` / `"wontfix"` → 加入 `acknowledged_issues`，不再视为 open
    - `resolution="clarified"`（有 `committer_note`）→ 结合澄清内容判断 issue 是否仍有效。如果澄清使 issue 失效，标记为 resolved 并引用澄清；否则加入 `unresolved_issues`
    - `resolution=null` → 进入下一步 diff 对比

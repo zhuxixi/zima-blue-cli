@@ -31,7 +31,12 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 
 **执行步骤：**
 
-1. 使用 `bash` 执行 `gh pr view <PR> --comments` 获取所有 PR 评论
+1. 使用 `bash` 执行以下命令获取结构化评论（可直接程序化解析，不要用人类可读的 `--comments` 纯文本，也不要把 `--comments` 与 `--json` 混用——后者会导致 jq 逐条输出多个 JSON 对象，`json.load` 报 "Extra data"）：
+
+```bash
+gh pr view <PR> --json comments --jq '[.comments[] | {author: .author.login, createdAt: .createdAt, body: .body}]'
+```
+
 2. 过滤掉所有 AI CR 评论（pi 版包含 `"Generated with pi-coding-agent"`，cc 版包含 `"Generated with Claude Code"`，kimi 版包含 `"<!-- kimi-cr-meta"`），保留 committer / human reviewer 的评论。各 harness 的审查结论互不参考，保证审查独立性
 3. 对每个 `status="open"` 的 previous issue，检查 committer 评论中是否提及该 issue：
    - 匹配方式：issue 描述前 10 个单词、或 `file:lines` 组合、或 `"issue-{id}"` 引用
