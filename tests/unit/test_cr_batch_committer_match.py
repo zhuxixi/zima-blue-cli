@@ -16,15 +16,7 @@ import sys
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = (
-    _REPO_ROOT
-    / "plugins"
-    / "pr-automation"
-    / "skills"
-    / "github-code-review-batch"
-    / "scripts"
-    / "match_committer_response.py"
-)
+SCRIPT = _REPO_ROOT / "pi" / "github-code-review-batch" / "scripts" / "match_committer_response.py"
 
 
 def _run(payload: dict) -> list[dict]:

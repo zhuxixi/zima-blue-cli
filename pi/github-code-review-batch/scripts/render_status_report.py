@@ -60,6 +60,22 @@ def _verdict(status: str, critical_count: int, open_count: int) -> str:
     return "MERGE_WITH_CAUTION"
 
 
+def _xml_verdict(status: str, open_count: int) -> str:
+    """Map the 3-state status to a zima-review verdict (#176).
+
+    Mapping per issue #176: PASS → approved; NEEDS_FIX → needs_fix;
+    NO_NEW_COMMITS + open>0 → needs_fix; NO_NEW_COMMITS + open==0 → approved.
+    Executor gates postExec on `<zima-review>` in stdout, so emitting the XML
+    here lets pi-type CR PJobs drive label flow correctly (NEEDS_FIX no
+    longer fires the success branch).
+    """
+    if status == "PASS":
+        return "approved"
+    if status == "NO_NEW_COMMITS" and open_count == 0:
+        return "approved"
+    return "needs_fix"
+
+
 def render(d: dict) -> str:
     status = d.get("status", "")
     if status not in VALID_STATUSES:
@@ -95,6 +111,21 @@ def render(d: dict) -> str:
             covered = d.get("covered_files", total_files)
             block += f"Coverage: {covered}/{total_files} files\n"
     block += "================================\n"
+    # #176: machine-readable trailer for zima's ReviewParser. Placed after the
+    # ruler so the human-readable block keeps its exact shape; verdict-only XML
+    # (issues element optional) per ReviewParser's contract.
+    verdict = _xml_verdict(status, open_count)
+    summary = (
+        f"CR batch {status}: {open_count} open issue(s)"
+        if verdict == "needs_fix"
+        else f"CR batch {status}: no open issues"
+    )
+    block += (
+        "<zima-review>\n"
+        f"<verdict>{verdict}</verdict>\n"
+        f"<summary>{summary}</summary>\n"
+        "</zima-review>\n"
+    )
     return block
 
 

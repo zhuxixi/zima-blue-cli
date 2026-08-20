@@ -50,6 +50,26 @@ def _severity_rank(issue: dict) -> int:
     return SEVERITY_RANK[_severity(issue)]
 
 
+def _short_label(text: str, limit: int = 60) -> str:
+    """Summary-line truncation for Round-N labels (#175).
+
+    Old behavior cut every description at exactly 40 characters, slicing CJK
+    text mid-word and English mid-word alike. Prefer a word boundary when a
+    space exists in the tail half of the window; CJK text without spaces
+    falls back to a character cut. Always append an explicit ellipsis so the
+    cut is visible. Metadata keeps the full description untouched — this only
+    affects the human-readable summary line.
+    """
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    tail = cut[limit // 2 :]
+    if " " in tail:
+        cut = cut[: cut.rfind(" ")]
+    return cut + "..."
+
+
 def build_metadata(d: dict) -> str:
     keys = [
         "round",
@@ -76,26 +96,61 @@ def build_metadata(d: dict) -> str:
         ),
     )
     payload["resolved_count"] = d.get("resolved_count", len(d.get("resolved_issues", [])))
-    payload["new_count"] = d.get("new_count", len(d.get("new_issues", [])))
+    # #173: Round-1 semantics — every discovered issue is new. render_round_1
+    # prints "Found N issues" from `issues[]`, so the metadata default must use
+    # the same count (open, non-acknowledged) instead of `len(new_issues)` (0
+    # when the caller only fills `issues[]`), which contradicted the rendered
+    # Part B and misled downstream consumers (daemon/fix-agent) into reading
+    # "no new issues this round". Explicit `new_count` still wins.
+    if d.get("round") == 1:
+        default_new_count = payload["total_issues"]
+    else:
+        default_new_count = len(d.get("new_issues", []))
+    payload["new_count"] = d.get("new_count", default_new_count)
     payload["acknowledged_count"] = d.get(
         "acknowledged_count", len(d.get("acknowledged_issues", []))
     )
     return f"<!-- pi-cr-meta\n{json.dumps(payload, ensure_ascii=False)}\n-->"
 
 
+def _low_suppressed_note(count: int) -> str:
+    """Explicit suppression note for low findings (#168) — keeps Part B and
+    metadata counts honest instead of silently diverging."""
+    if count <= 0:
+        return ""
+    plural = "s" if count != 1 else ""
+    return f"_{count} low-severity finding{plural} suppressed — see terminal report._"
+
+
 def render_round_1(d: dict) -> str:
     issues = d.get("issues", [])
     if not issues:
         return "### Code Review | Round-1\n\nNo issues found. Checked for bugs, CLAUDE.md and AGENTS.md compliance."
-    issues = sorted(issues, key=_severity_rank)
-    parts = ["### Code Review | Round-1", "", f"Found {len(issues)} issues:", ""]
-    for i, issue in enumerate(issues, 1):
+    # #168: low severity stays out of the human-readable comment (HIGH
+    # SIGNAL); metadata keeps the full record. The suppression note keeps the
+    # rendered count reconcilable with metadata counts.
+    visible = [i for i in issues if _severity(i) != "low"]
+    low_count = len(issues) - len(visible)
+    if not visible:
+        note = _low_suppressed_note(low_count)
+        return (
+            f"### Code Review | Round-1\n\nNo issues above low severity. {note}"
+            if note
+            else "### Code Review | Round-1"
+        )
+    visible = sorted(visible, key=_severity_rank)
+    plural = "s" if len(visible) != 1 else ""
+    parts = ["### Code Review | Round-1", "", f"Found {len(visible)} issue{plural}:", ""]
+    for i, issue in enumerate(visible, 1):
         parts.append(f"{i}. {issue['description']} ({issue['reason']}, {_severity(issue)})")
         parts.append("")
         parts.append(
             gh_link(d["repo_owner"], d["repo_name"], d["head_sha"], issue["file"], issue["lines"])
         )
         parts.append("")
+    note = _low_suppressed_note(low_count)
+    if note:
+        parts.append(note)
     return "\n".join(parts).rstrip()
 
 
@@ -105,8 +160,13 @@ def render_round_n(d: dict) -> str:
     prev_count = d.get("prev_round_count", 0)
     resolved = d.get("resolved_issues", [])
     acknowledged = d.get("acknowledged_issues", [])
-    unresolved = sorted(d.get("unresolved_issues", []), key=_severity_rank)
-    new_issues = sorted(d.get("new_issues", []), key=_severity_rank)
+    # #168: low findings stay out of Part B (lists AND counts) with an
+    # explicit suppression note; acknowledged/resolved sections are untouched.
+    unresolved_all = d.get("unresolved_issues", [])
+    new_all = d.get("new_issues", [])
+    unresolved = sorted([i for i in unresolved_all if _severity(i) != "low"], key=_severity_rank)
+    new_issues = sorted([i for i in new_all if _severity(i) != "low"], key=_severity_rank)
+    low_suppressed = (len(unresolved_all) - len(unresolved)) + (len(new_all) - len(new_issues))
 
     still_open = len(unresolved)
     all_resolved = still_open == 0 and len(new_issues) == 0
@@ -117,11 +177,18 @@ def render_round_n(d: dict) -> str:
         lines.append(f"- **Resolved**: {len(resolved)}")
         lines.append("- **Still open**: 0")
         lines.extend(["", "New issues found: 0", "", "✅ **All issues resolved!**"])
+        note = _low_suppressed_note(low_suppressed)
+        if note:
+            lines.extend(["", note])
         return "\n".join(lines)
 
-    resolved_label = ", ".join(r.get("description", "")[:40] for r in resolved) if resolved else ""
+    resolved_label = (
+        ", ".join(_short_label(r.get("description", "")) for r in resolved) if resolved else ""
+    )
     ack_label = (
-        ", ".join(a.get("description", "")[:40] for a in acknowledged) if acknowledged else ""
+        ", ".join(_short_label(a.get("description", "")) for a in acknowledged)
+        if acknowledged
+        else ""
     )
     lines.append(
         f"- **Resolved**: {len(resolved)}" + (f" ({resolved_label})" if resolved_label else "")
@@ -166,6 +233,10 @@ def render_round_n(d: dict) -> str:
                 gh_link(d["repo_owner"], d["repo_name"], d["head_sha"], item["file"], item["lines"])
             )
             lines.append("")
+
+    note = _low_suppressed_note(low_suppressed)
+    if note:
+        lines.append(note)
 
     return "\n".join(lines).rstrip()
 

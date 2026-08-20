@@ -222,10 +222,43 @@ class TestStatusReport:
         out = _run_json(_script("render_status_report.py"), _status_input(status))
         lines = out.splitlines()
         assert lines[0] == "=== CR Batch Status Report ==="
-        assert lines[-1] == "================================"
+        # #176: the report block still ends with the ruler; the machine-readable
+        # <zima-review> XML follows it as a trailer.
+        assert "================================" in lines
+        assert lines[-1] == "</zima-review>"
         status_lines = [ln for ln in lines if ln.startswith("Status:")]
         assert len(status_lines) == 1
         assert status_lines[0] == f"Status: {status}"
+
+    def _parsed(self, payload: dict):
+        from zima.review.parser import ReviewParser
+
+        out = _run_json(_script("render_status_report.py"), payload)
+        return out, ReviewParser.parse(out)
+
+    def test_xml_trailer_needs_fix_parses_to_needs_fix(self):
+        d = _status_input("NEEDS_FIX")
+        d["open_count"] = 3
+        out, parsed = self._parsed(d)
+        assert "<zima-review>" in out
+        assert parsed.verdict == "needs_fix"
+        assert parsed.summary
+
+    def test_xml_trailer_pass_parses_to_approved(self):
+        out, parsed = self._parsed(_status_input("PASS"))
+        assert parsed.verdict == "approved"
+
+    def test_xml_trailer_no_new_commits_with_open_issues_is_needs_fix(self):
+        d = _status_input("NO_NEW_COMMITS")
+        d["open_count"] = 2
+        _, parsed = self._parsed(d)
+        assert parsed.verdict == "needs_fix"
+
+    def test_xml_trailer_no_new_commits_with_zero_open_is_approved(self):
+        d = _status_input("NO_NEW_COMMITS")
+        d["open_count"] = 0
+        _, parsed = self._parsed(d)
+        assert parsed.verdict == "approved"
 
     def test_invalid_status_exits_nonzero(self):
         proc = _run(_script("render_status_report.py"), json.dumps(_status_input("BOGUS")))
@@ -276,6 +309,246 @@ class TestReviewBody:
 # ---------------------------------------------------------------------------
 # Contract 4: round-trip — built metadata must parse back via parse_metadata
 # ---------------------------------------------------------------------------
+
+
+class TestRound1MetadataDefaults:
+    """#173: Round-1 must not report new_count=0 when issues were found.
+
+    Round-1 semantics: every discovered issue is new. render_round_1 prints
+    "Found N issues" from `issues[]`; metadata `new_count` must use the same
+    count (open, non-acknowledged) when the caller did not pass explicit
+    new_count / new_issues.
+    """
+
+    def _meta(self, out: str) -> dict:
+        start = out.index("<!-- pi-cr-meta")
+        end = out.index("-->", start)
+        return json.loads(out[start + len("<!-- pi-cr-meta") : end].strip())
+
+    def test_round1_new_count_defaults_to_open_issues(self):
+        payload = {
+            "round": 1,
+            "pr_number": 123,
+            "head_sha": HEAD_SHA_A,
+            "previous_head_sha": None,
+            "repo_owner": "owner",
+            "repo_name": "repo",
+            "timestamp": "2026-06-17T10:00:00Z",
+            "issues": [
+                {
+                    "id": "issue-1",
+                    "description": "bug one",
+                    "reason": "bug",
+                    "file": "a.py",
+                    "lines": "1-2",
+                    "status": "open",
+                    "first_round": 1,
+                },
+                {
+                    "id": "issue-2",
+                    "description": "bug two",
+                    "reason": "logic",
+                    "file": "b.py",
+                    "lines": "3-4",
+                    "status": "open",
+                    "first_round": 1,
+                },
+                {
+                    "id": "issue-3",
+                    "description": "logic flaw",
+                    "reason": "logic",
+                    "file": "c.py",
+                    "lines": "5-6",
+                    "status": "open",
+                    "first_round": 1,
+                },
+            ],
+        }
+        out = _run_json(_script("build_review_body.py"), payload)
+        meta = self._meta(out)
+        # Round-1 reality: all issues are open discoveries — metadata and the
+        # rendered "Found N issues" must agree.
+        assert meta["new_count"] == 3
+        assert meta["total_issues"] == 3
+        assert "Found 3 issues" in out
+
+    def test_round1_explicit_new_count_still_wins(self):
+        payload = dict(ROUND1_INPUT)
+        payload["new_count"] = 7
+        out = _run_json(_script("build_review_body.py"), payload)
+        meta = self._meta(out)
+        assert meta["new_count"] == 7
+
+
+class TestLowSeveritySuppressedInPartB:
+    """#168: severity=low must not enter the human-readable PR comment.
+
+    Part B lists/filters low findings and appends an explicit suppression
+    note; metadata keeps the full issues[] (low included) as the factual
+    record, so counts there stay comprehensive.
+    """
+
+    def _issue(self, id_: str, sev: str) -> dict:
+        return {
+            "id": id_,
+            "description": f"finding {id_}",
+            "reason": "bug",
+            "file": "a.py",
+            "lines": "1-2",
+            "status": "open",
+            "first_round": 1,
+            "severity": sev,
+        }
+
+    def test_round1_low_filtered_from_part_b_kept_in_metadata(self):
+        payload = {
+            "round": 1,
+            "pr_number": 123,
+            "head_sha": HEAD_SHA_A,
+            "previous_head_sha": None,
+            "repo_owner": "owner",
+            "repo_name": "repo",
+            "timestamp": "2026-06-17T10:00:00Z",
+            "issues": [
+                self._issue("i1", "medium"),
+                self._issue("i2", "low"),
+            ],
+        }
+        out = _run_json(_script("build_review_body.py"), payload)
+        part_b = out.split("-->", 1)[1]  # human-readable section only
+        assert "Found 1 issue" in part_b
+        assert "finding i2" not in part_b  # low suppressed from Part B
+        assert "finding i1" in part_b
+        assert "1 low-severity finding" in part_b  # explicit suppression note
+        # metadata stays the factual record: both issues present
+        start = out.index("<!-- pi-cr-meta")
+        end = out.index("-->", start)
+        meta = json.loads(out[start + len("<!-- pi-cr-meta") : end].strip())
+        assert meta["total_issues"] == 2
+        assert meta["new_count"] == 2
+        assert len(meta["issues"]) == 2
+
+    def test_round1_all_low_still_notes_suppression(self):
+        payload = {
+            "round": 1,
+            "pr_number": 123,
+            "head_sha": HEAD_SHA_A,
+            "previous_head_sha": None,
+            "repo_owner": "owner",
+            "repo_name": "repo",
+            "timestamp": "2026-06-17T10:00:00Z",
+            "issues": [self._issue("i1", "low"), self._issue("i2", "low")],
+        }
+        out = _run_json(_script("build_review_body.py"), payload)
+        part_b = out.split("-->", 1)[1]
+        assert "finding i1" not in part_b
+        assert "2 low-severity findings" in part_b
+
+    def test_roundn_low_filtered_from_lists_and_counts(self):
+        payload = {
+            "round": 2,
+            "pr_number": 123,
+            "head_sha": HEAD_SHA_B,
+            "previous_head_sha": HEAD_SHA_A,
+            "repo_owner": "owner",
+            "repo_name": "repo",
+            "timestamp": "2026-06-17T10:30:00Z",
+            "issues": [],
+            "resolved_issues": [],
+            "unresolved_issues": [self._issue("u1", "low")],
+            "new_issues": [
+                self._issue("n1", "high"),
+                self._issue("n2", "low"),
+            ],
+        }
+        out = _run_json(_script("build_review_body.py"), payload)
+        part_b = out.split("-->", 1)[1]
+        assert "finding n1" in part_b
+        assert "finding n2" not in part_b
+        assert "finding u1" not in part_b
+        assert "New issues found: 1" in part_b
+        assert "- **Still open**: 0" in part_b
+        assert "2 low-severity findings suppressed" in part_b
+
+    def test_no_low_no_suppression_note(self):
+        payload = {
+            "round": 1,
+            "pr_number": 123,
+            "head_sha": HEAD_SHA_A,
+            "previous_head_sha": None,
+            "repo_owner": "owner",
+            "repo_name": "repo",
+            "timestamp": "2026-06-17T10:00:00Z",
+            "issues": [self._issue("i1", "high")],
+        }
+        out = _run_json(_script("build_review_body.py"), payload)
+        assert "low-severity finding" not in out
+        assert "Found 1 issue" in out
+
+
+class TestRoundNResolvedLabelTruncation:
+    """#175: resolved summary line must not hard-cut CJK descriptions mid-word.
+
+    Old behavior: description[:40] cut Chinese text at an arbitrary byte.
+    New behavior: word-boundary (or CJK-safe) cut at 60 chars with explicit
+    ellipsis; metadata keeps the full description untouched.
+    """
+
+    LONG_EN = (
+        "fix environment variable passthrough for the watchdog thread "
+        "so that _enable_line_buffered_stdout docstring mismatch no longer"
+    )
+    # 42 chars: old [:40] code cut this mid-sentence; new 60-char limit keeps it whole.
+    MID_ZH = (
+        "修复看门狗线程的环境变量传递问题，避免标准输出行缓冲配置在守护进程重启后失效并污染日志"
+    )
+    # >60 chars: must be cut with an explicit ellipsis.
+    LONG_ZH = (
+        "修复看门狗线程的环境变量传递问题，避免标准输出行缓冲配置在守护进程重启后失效并污染日志，"
+        "同时确保重连路径上的响应对象正确关闭且不泄漏套接字资源，以及状态文件的原子写入顺序"
+    )
+
+    def _payload(self, description: str) -> dict:
+        return {
+            "round": 2,
+            "pr_number": 123,
+            "head_sha": HEAD_SHA_B,
+            "previous_head_sha": HEAD_SHA_A,
+            "repo_owner": "owner",
+            "repo_name": "repo",
+            "timestamp": "2026-06-17T10:30:00Z",
+            "issues": [],
+            "resolved_issues": [{"description": description}],
+            "unresolved_issues": [
+                {
+                    "description": "still open bug",
+                    "reason": "bug",
+                    "file": "x.py",
+                    "lines": "1-2",
+                }
+            ],
+        }
+
+    def test_long_english_cut_at_word_boundary_with_ellipsis(self):
+        out = _run_json(_script("build_review_body.py"), self._payload(self.LONG_EN))
+        assert "**Resolved**: 1 (" in out
+        label = out.split("**Resolved**: 1 (", 1)[1].split(")", 1)[0]
+        assert label.endswith("...")
+        assert "  " not in label  # cut at a word boundary, not mid-word space
+
+    def test_mid_chinese_no_longer_cut_at_40(self):
+        out = _run_json(_script("build_review_body.py"), self._payload(self.MID_ZH))
+        assert f"({self.MID_ZH})" in out  # 42 chars fit within the 60 limit
+
+    def test_long_chinese_cut_with_ellipsis(self):
+        out = _run_json(_script("build_review_body.py"), self._payload(self.LONG_ZH))
+        label = out.split("**Resolved**: 1 (", 1)[1].split(")", 1)[0]
+        assert label.endswith("...")
+        assert len(label) < len(self.LONG_ZH)
+
+    def test_short_description_untouched(self):
+        out = _run_json(_script("build_review_body.py"), self._payload("short desc"))
+        assert "(short desc)" in out
 
 
 class TestRoundTrip:
@@ -434,10 +707,15 @@ class TestSeverityRender:
         # rendered body is what gets severity-sorted.
         body = out.split("-->", 1)[1]
         crit_pos = body.index("Critical null-deref crash")
-        low_pos = body.index("Low-severity naming nit")
-        assert crit_pos < low_pos  # critical sorts above low
+        medium_pos = body.index("Medium edge case")
+        assert crit_pos < medium_pos  # critical sorts above medium
         assert "(bug, critical)" in body
-        assert "(CLAUDE.md, low)" in body
+        # #168: low findings no longer enter Part B at all — suppressed with
+        # an explicit note; metadata keeps the full record.
+        assert "Low-severity naming nit" not in body
+        assert "low-severity finding" in body
+        meta = out[out.index("<!-- pi-cr-meta") + len("<!-- pi-cr-meta") : out.index("-->")]
+        assert "Low-severity naming nit" in meta
 
     def test_missing_severity_falls_back_to_medium(self):
         minimal = {
@@ -547,5 +825,69 @@ class TestCoverageLines:
         out = _run_json(_script("render_status_report.py"), _status_input("PASS"))
         assert "Diff truncated" not in out
         assert "Coverage" not in out
-        # footer still last
-        assert out.splitlines()[-1] == "================================"
+        # report block still ends with the ruler; #176 XML trailer follows it
+        assert out.splitlines()[-1] == "</zima-review>"
+
+
+class TestDiffReorder:
+    """#169: source-first reorder so docs can't starve core code of budget.
+
+    PR #11/#166 evidence: alphabetical diff order put docs/superpowers/
+    (31.6KB plan+spec) first; a 4K budget ate only docs and the core source
+    file was invisible. Default behavior now stably reorders blocks
+    source → test → docs (docs last), so truncation eats docs first.
+    """
+
+    DIFF = (
+        "diff --git a/docs/plan.md b/docs/plan.md\n+doc line\n"
+        "diff --git a/src/core.ts b/src/core.ts\n+core change\n"
+        "diff --git a/tests/unit/x.spec.ts b/tests/unit/x.spec.ts\n+test\n"
+        "diff --git a/README.md b/README.md\n+readme\n"
+        "diff --git a/src/util.ts b/src/util.ts\n+util change\n"
+    )
+
+    def test_default_reorder_puts_source_first_docs_last(self, tmp_path):
+        meta_path = tmp_path / "meta.json"
+        proc = _run(_script("compress_diff.py"), self.DIFF, "--meta-file", str(meta_path))
+        assert proc.returncode == 0
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        assert meta.get("reordered") is True
+        out = proc.stdout
+        core_pos = out.index("src/core.ts")
+        util_pos = out.index("src/util.ts")
+        test_pos = out.index("x.spec.ts")
+        plan_pos = out.index("docs/plan.md")
+        assert core_pos < test_pos < plan_pos  # source before test before docs
+        assert util_pos < test_pos  # stable within source class
+        assert plan_pos < out.index("README.md")  # stable within docs class
+
+    def test_small_budget_keeps_source_drops_docs(self, tmp_path):
+        # Budget only fits the source files: docs must be the ones cut.
+        meta_path = tmp_path / "meta.json"
+        proc = _run(
+            _script("compress_diff.py"),
+            self.DIFF,
+            "--max-len",
+            "120",
+            "--meta-file",
+            str(meta_path),
+        )
+        assert proc.returncode == 0
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        assert meta["diff_truncated"] is True
+        assert "docs/plan.md" in meta["truncated_dropped_files"]
+        assert "src/core.ts" not in meta["truncated_dropped_files"]
+
+    def test_no_reorder_flag_preserves_input_order(self, tmp_path):
+        meta_path = tmp_path / "meta.json"
+        proc = _run(
+            _script("compress_diff.py"),
+            self.DIFF,
+            "--no-reorder",
+            "--meta-file",
+            str(meta_path),
+        )
+        assert proc.returncode == 0
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        assert meta.get("reordered") is False
+        assert proc.stdout.index("docs/plan.md") < proc.stdout.index("src/core.ts")

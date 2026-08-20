@@ -1,6 +1,6 @@
 # SubAgent Definitions and Prompt Templates
 
-> **pi 派发方式**：本文件的 prompt 模板在 pi 下通过 `subagent` 工具派发——`agent: "reviewer"`（或项目自定义审查 agent）、`context: "fresh"`，task 字段填下方模板并代入输入变量。并行 fanout 用 subagent 工具的 `workflowScript` `runs.all`（见 [flow.md Step 4](flow.md#step-4)）。
+> **pi 派发方式**：本文件的 prompt 模板在 pi 下通过 `subagent` 工具派发——`agent: "reviewer"`（或项目自定义审查 agent）、`context: "fresh"`，task 字段填下方模板并代入输入变量。并行 fanout 用 subagent 工具的 `workflowScript` `runs.all`（见 [flow.md Step 4](flow.md#step-4)）。派发项可选 `model` 字段按 agent 职责分档（#170：scanner 用便宜快模型、delta-reviewer / logic-analyzer 用强模型，缺省继承当前模型）。
 
 本文件定义 7 个 sub-agent 的输入契约、输出 schema、任务要求和推荐 prompt 模板。
 
@@ -262,6 +262,7 @@
 ### 任务
 
 1. **优先处理带 committer 回应的 previous issues**：
+   - `resolution="resolved"` → 视为未验证的声明而非事实：核对 diff 确认修复真实落实 → 加入 `resolved_issues`；声明与代码不符 → 加入 `unresolved_issues`（引用声明与实际差异）
    - `resolution="acknowledged"` / `"wontfix"` → 加入 `acknowledged_issues`，不再视为 open
    - `resolution="clarified"`（有 `committer_note`）→ 结合澄清内容判断 issue 是否仍有效。如果澄清使 issue 失效，标记为 resolved 并引用澄清；否则加入 `unresolved_issues`
    - `resolution=null` → 进入下一步 diff 对比

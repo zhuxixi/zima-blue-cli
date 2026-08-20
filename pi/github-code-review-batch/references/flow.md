@@ -31,7 +31,12 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 
 **执行步骤：**
 
-1. 使用 `bash` 执行 `gh pr view <PR> --comments` 获取所有 PR 评论
+1. 使用 `bash` 执行以下命令获取结构化评论（可直接程序化解析，不要用人类可读的 `--comments` 纯文本，也不要把 `--comments` 与 `--json` 混用——后者会导致 jq 逐条输出多个 JSON 对象，`json.load` 报 "Extra data"）：
+
+```bash
+gh pr view <PR> --json comments --jq '[.comments[] | {author: .author.login, createdAt: .createdAt, body: .body}]'
+```
+
 2. 过滤掉所有 AI CR 评论（pi 版包含 `"Generated with pi-coding-agent"`，cc 版包含 `"Generated with Claude Code"`，kimi 版包含 `"<!-- kimi-cr-meta"`），保留 committer / human reviewer 的评论。各 harness 的审查结论互不参考，保证审查独立性
 3. 对每个 `status="open"` 的 previous issue，检查 committer 评论中是否提及该 issue：
    - 匹配方式：issue 描述前 10 个单词、或 `file:lines` 组合、或 `"issue-{id}"` 引用
@@ -139,23 +144,28 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 
 调用 [scripts/compress_diff.py](../scripts/compress_diff.py) 执行预处理：
 
-**按 agent 类型过滤 diff**：
-- CLAUDE.md checker ×2、AGENTS.md checker：接收**完整 diff**（规范检查需要完整上下文），仅应用长度兜底
+**源码优先重排（#169，默认开启）**：脚本默认对文件块做稳定重排（**源码 → tests → docs 殿后**，同类内保持原顺序）。字母序 diff 下文档（plan/spec 类 30KB+）曾吃光预算、核心源码完全不可见（PR #11/#166 实测）；重排后截断优先吃掉 docs，实测覆盖率 1/6 → 4/6（源码+测试全覆盖）。`--no-reorder` 可退回原序。
+
+**按 agent 类型差异化预算与过滤（#169 实测口径）**：
+- CLAUDE.md checker ×2、AGENTS.md checker：接收**完整 diff**（规范检查需要完整上下文），预算 20K
   ```bash
-  gh pr diff <PR> | python scripts/compress_diff.py --max-len 4000 \
+  gh pr diff <PR> | python scripts/compress_diff.py --max-len 20000 \
       --meta-file /tmp/pi-cr-diff-meta.json > /tmp/pi-cr-diff.txt
   ```
-- Bug scanner、Logic analyzer：接收**过滤后的 diff**，排除测试相关文件
+- Bug scanner、Logic analyzer：接收**过滤后的 diff**（排除测试文件），预算 12K
   ```bash
-  gh pr diff <PR> | python scripts/compress_diff.py --filter-tests --max-len 4000 \
+  gh pr diff <PR> | python scripts/compress_diff.py --filter-tests --max-len 12000 \
       --meta-file /tmp/pi-cr-diff-meta.json > /tmp/pi-cr-diff.txt
   ```
+
+> 预算按 agent 职责分档（20K/12K，PR #166 Round-3 实测无质量异常）；若采用补偿手段（手动提取完整文件等），**必须用重排后的输入重新生成 meta**，保证 `Coverage` 口径诚实。
 
 `--meta-file`（#120）写一份覆盖 meta（`diff_truncated`、`covered_files`/`total_files`、被丢弃文件等）到 sidecar JSON，供 [Step 10](#step-10) 在状态报告中显式提示部分覆盖；各 agent 改为读取 `/tmp/pi-cr-diff.txt` 作为 diff 输入。
 
 **脚本内部规则**：
 1. `--filter-tests` 排除：`tests/`、`test/` 目录下的文件；`*_test.py`、`*_spec.py`、`*_tests.py`；`.test.`、`.spec.` 等测试文件
 2. `--max-len N`：超长时先压缩为 hunk-only（保留 +/- 行及前后各 2 行上下文）；仍超长则截断至 N 字符并附 `... (diff truncated)`，并在 meta 中置 `diff_truncated: true`（#120）
+3. 默认稳定重排 source → test → docs（#169）；`--no-reorder` 保持输入顺序
 
 **效果**：过滤后 diff 长度通常减少 60-70%（测试文件往往占据大比例 diff）。
 
@@ -165,6 +175,17 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 
 **确定性 tool-layer（#121）**：启动 LLM agent 之前，先运行 [scripts/run_tool_layer.py](../scripts/run_tool_layer.py)——按仓库 manifest 自动探测并执行 `ruff` / `mypy` / `tsc` / `eslint`（缺失则静默降级，不报错）。它用零误报工具吃掉"缺失导入 / 未解析引用 / 类型错误 / 语法错误"，产出 reason 为 `lint` / `typecheck` 的 issue，与下面 agent 的结果一起进入 [Step 5](#step-5) / [Step 6](#step-6)。bug-scanner 不再重复这些类别。
 
+**变更文件交集（#174，必做）**：tool-layer 必须限定在 PR 变更文件内，两种方式任选其一：
+
+```bash
+# 方式 A：命令行传入变更文件
+gh pr diff <PR> --name-only | xargs python scripts/run_tool_layer.py --files
+# 方式 B：stdin JSON 的 changed_files 字段
+echo '{"repo_root": ".", "changed_files": ["zima/a.py", "tests/b.py"]}' | python scripts/run_tool_layer.py
+```
+
+脚本对 ruff/mypy/eslint 直接以文件为参数目标，tsc（项目级）靠输出后置交集兜底。**若不传变更文件，脚本会全仓扫描，pre-existing lint 债务会淹没审查轮**（PR #166 实测 40 个无关 findings）——LLM agent 审查遵循"只关注 PR 修改的内容"，tool-layer 输出同样必须遵守。
+
 启动 5 个并行 `subagent`（subagent 工具 `workflowScript` + `runs.all`，每个 `agent: "reviewer"`、`context: "fresh"`），每个接收经过 [Step 3.5](#step-3-5) 预处理的输入包。派发结构：
 
 ```js
@@ -172,10 +193,12 @@ await runs.all([
   { key: "claude-checker-1", agent: "reviewer", context: "fresh", task: "<claude-compliance-checker prompt，显式规则 framing>" },
   { key: "claude-checker-2", agent: "reviewer", context: "fresh", task: "<claude-compliance-checker prompt，隐含约定 framing>" },
   { key: "agents-checker",    agent: "reviewer", context: "fresh", task: "<agents-compliance-checker prompt>" },
-  { key: "bug-scanner",       agent: "reviewer", context: "fresh", task: "<bug-scanner prompt>" },
-  { key: "logic-analyzer",    agent: "reviewer", context: "fresh", task: "<logic-analyzer prompt>" },
+  { key: "bug-scanner",       agent: "reviewer", context: "fresh", model: "<便宜快模型，如 deepseek-v4-flash>", task: "<bug-scanner prompt>" },
+  { key: "logic-analyzer",    agent: "reviewer", context: "fresh", model: "<强模型，如 deepseek-v4-pro>", task: "<logic-analyzer prompt>" },
 ])
 ```
+
+**按 agent 职责差异化指定模型（#170，可选）**：subagent 工具的派发项支持 `model` 字段（缺省继承当前模型）。建议分档：机械性扫描（bug-scanner 配合确定性 tool-layer）用便宜快模型（如 `deepseek-v4-flash`），跨文件逻辑/安全推理（logic-analyzer、delta-reviewer）用强模型（如 `deepseek-v4-pro`），规范 checker 按预算取中档。模型名以 `~/.pi/agent/settings.json` 的 `enabledModels` 为准。
 
 task 的 prompt 模板见 [subagent-prompts.md](subagent-prompts.md) 对应小节，输入包（diff 文件路径、摘要、规范文本）以模板变量方式填入。5 个 subagent 职责：
 - **CLAUDE.md checker ×2、AGENTS.md checker**：完整 diff（或截断后的）+ 变更摘要 + PR 标题和描述 + 相关规范文件内容
@@ -246,6 +269,8 @@ issue-validator 验证时若 agent 未给 severity，按 `medium` 兜底。`buil
 
    最终渲染顺序由 `build_review_body.py` 保证（见 [output-examples.md](output-examples.md)）。
 
+**low 不进 PR 评论（#168）**：`severity=low` 的 issue **不进入 PR 评论 Part B**（HIGH SIGNAL）——`build_review_body.py` 渲染时自动过滤（列表与计数均不含 low，并附 `_N low-severity finding(s) suppressed_` 提示行）；**metadata `issues[]` 保留全量**（事实记录），终端报告仍完整列出 low 供人工参考。调度器读到的 `new_count`/`total_issues` 保持全量口径不变。
+
 去重规则：
 - 如果两个 issue 指向同一个文件、同一行范围、且原因相同，视为重复
 - 如果描述内容高度相似（超过 80% 相似度），也视为重复
@@ -276,7 +301,7 @@ issue-validator 验证时若 agent 未给 severity，按 `medium` 兜底。`buil
 
 ## Step 8: 终端输出 {#step-8}
 
-输出 Markdown 格式的审查报告到终端。完整模板与字段拼装由 [scripts/build_review_body.py](../scripts/build_review_body.py) 生成；终端输出可直接用脚本输出的 Part B（Markdown 部分）。
+输出 Markdown 格式的审查报告到终端。完整模板与字段拼装由 [scripts/build_review_body.py](../scripts/build_review_body.py) 生成；终端输出可直接用脚本输出的 Part B（Markdown 部分），**但 low-severity issue 已被 #168 从 Part B 过滤——终端报告必须在末尾单独补一节 "Suppressed low-severity findings" 完整列出被过滤的 low 项（文件:行号 + 描述），否则 low 在所有人类可读面都不可见**（PR 评论里 metadata 是 HTML 注释，GitHub 渲染时隐藏）。
 
 精简模板：
 
@@ -424,6 +449,8 @@ Coverage: 7/10 files
 ```
 
 调度器据此识别"本轮 0 issue 但 diff 被截断、覆盖不全"，不会把截断导致的空结果误读为"全量审查通过"。未提供这些字段时省略（向后兼容）。
+
+**机器可读 trailer（#176）**：`render_status_report.py` 会在分隔线 `====` 之后追加 `<zima-review><verdict>approved|needs_fix</verdict><summary>...</summary></zima-review>` XML——zima executor 靠它驱动 postExec 标签流转（pi 型 agent 的 CR PJob 必需）；`Status:` 行与报告块形状不变，daemon 的 grep 契约不受影响。
 
 ### 用途
 
