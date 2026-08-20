@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.3] - 2026-08-20
+
+### Fixes
+- **review**: CR batch skill hardening (#168 #169 #170 #173 #174 #175 #176 #154) (#178)
+
+[0.7.3]: https://github.com/zhuxixi/zima-blue-cli/compare/v0.7.2...v0.7.3
+
 ## [0.7.2] - 2026-08-20
 
 ### Features
