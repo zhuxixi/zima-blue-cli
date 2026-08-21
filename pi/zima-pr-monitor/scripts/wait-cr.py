@@ -51,8 +51,10 @@ def pid_alive(pid: int | None) -> bool:
         return False
     try:
         os.kill(int(pid), 0)
-    except (ProcessLookupError, ValueError, OverflowError):
+    except (ValueError, OverflowError):
         return False
+    except PermissionError:
+        return True
     return True
 
 
@@ -71,11 +73,35 @@ def load_states(state_dir: Path) -> dict[str, dict]:
             continue
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError, UnicodeDecodeError, ValueError, OSError):
             continue
         if isinstance(data, dict):
             states[path.stem] = data
     return states
+
+
+def tail_log(log_path: str | None, chars: int = 600) -> str:
+    """Return the last ``chars`` characters of the log file, or ''.
+
+    The full agent stdout ends with the ``<zima-review>`` verdict; zima
+    keeps the whole output in the background log, so the log tail is the
+    closest read-only proxy for the verdict. Read-only and bounded (reads
+    at most the last 8192 bytes).
+    """
+    if not log_path:
+        return ""
+    path = Path(log_path)
+    if not path.is_file():
+        return ""
+    try:
+        with path.open("rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            size = fh.tell()
+            fh.seek(max(0, size - 8192))
+            data = fh.read()
+        return data.decode("utf-8", errors="replace")[-chars:].strip()
+    except OSError:
+        return ""
 
 
 def is_stale(state: dict) -> bool:
@@ -124,6 +150,9 @@ def format_summary(eid: str, state: dict) -> str:
     preview = str(state.get("stdout_preview") or "").strip()
     if preview:
         parts.append(f"preview={preview[:240]}")
+    tail = tail_log(state.get("log_path"))
+    if tail:
+        parts.append(f"log_tail={tail}")
     return "  " + " ".join(parts)
 
 
@@ -161,6 +190,12 @@ def run_loop(
 
         if not running:
             if not active:
+                if monotonic() >= deadline:
+                    print(
+                        f"wait-cr: timeout after {timeout}s; no execution appeared:",
+                        file=sys.stderr,
+                    )
+                    return 1
                 if monotonic() < no_exec_deadline:
                     sleep(poll)
                     elapsed += poll
@@ -196,7 +231,7 @@ def main(argv: list[str] | None = None) -> int:
         "--since-minutes",
         type=int,
         default=DEFAULT_SINCE_MINUTES,
-        help="count finished executions started within the last N minutes " "as part of this round",
+        help="count finished executions started within the last N minutes as part of this round",
     )
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
     parser.add_argument("--poll", type=int, default=DEFAULT_POLL)

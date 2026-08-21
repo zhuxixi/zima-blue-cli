@@ -43,7 +43,7 @@ github-issue-driven 步 9 开 PR + 触发 Zima CR 之后，session 不知道「�
 ### 3.2 新增 helper：`pi/zima-pr-monitor/scripts/wait-cr.py`
 
 ```
-usage: wait-cr.py <pjob_code> [--since <minutes>] [--timeout <seconds>]
+usage: wait-cr.py <pjob_code> [--since-minutes <minutes>] [--timeout <seconds>]
 ```
 行为：
 - 每 30s 扫 `~/.zima/history/pjobs/<code>/*.json`；
@@ -51,8 +51,9 @@ usage: wait-cr.py <pjob_code> [--since <minutes>] [--timeout <seconds>]
 - **全部**活跃 execution 离开 running（terminal）→ 退出 0；期间新 spawn 的 execution 自动并入活跃集（F4 多流）；
 - pid 已死但 status 仍 running（状态未刷新）→ 视为 finished 并在输出中标注 `stale`；
 - 总上限 `--timeout`（默认 2100 = PJob 1800 + 300 slack）；超时退出非 0，提示 `zima pjob ps` 人工介入；
-- 退出时打印每个 execution：eid / status / duration / returncode / stdout_preview 尾部 500 字符
-  （含 zima-review verdict，作为决策树的直接输入）。
+- 退出时打印每个 execution：eid / status / duration / returncode / repo#pr / stdout_preview 头部预览 / log_tail
+  （state 的 log_path 日志尾部，含 `<zima-review>` verdict 尾部；stdout_preview 是 stdout 头部 500 字符，不含 verdict）。
+  最终收敛判定仍以 `gh pr view <N> --json reviews` 读 pi-cr-meta 为准。
 
 调用形态（前台，实证可承受 1200s+）：
 - 首轮全量：`bash timeout 1500`（预期 1200 + slack；长尾超时则再续一次 `--since` 缩小后的调用）；

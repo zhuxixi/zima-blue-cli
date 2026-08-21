@@ -28,7 +28,7 @@ description: Use when starting work on a GitHub issue — scanning or claiming a
 6. **写计划** → **REQUIRED SUB-SKILL: Use writing-plans**（**在 worktree 内**）→ `docs/superpowers/plans/<YYYY-MM-DD>-<slug>.md`。
 7. **实现** → **REQUIRED SUB-SKILL: Use subagent-driven-development**（worktree 内，**禁碰 main**）。**🚪 Gate：Step 6 的 plan 文档必须存在才能开始实现——spec 不算 plan。** 派 implementer 时把 worktree 绝对路径填进 `Work from:`，别让 subagent 回主仓库作业。
 8. **本地快速 CR** → `requesting-code-review`（superpowers）或 pi 原生 `workflow` 工具的 `code-review` 模式（agent 按问题复杂度自选深度；**必做**，深度自定）
-9. **PR + Zima 单 Bot CR + 监听** → **REQUIRED SUB-SKILL: Use zima-pr-monitor**（开 PR、打 `zima:needs-review`、**同 turn 立即前台阻塞等待 CR job 完成（禁止结束 turn，helper 见 zima-pr-monitor）**、解析 review meta（`cc-cr-meta` / `pi-cr-meta` 前缀区分；`kimi-cr-meta` 忽略）、worktree 修、重打标签、收敛判定、合并）
+9. **PR + Zima 单 Bot CR + 前台阻塞等待** → **REQUIRED SUB-SKILL: Use zima-pr-monitor**（开 PR、打 `zima:needs-review`、**同 turn 立即前台阻塞等待 CR job 完成（禁止结束 turn，helper 见 zima-pr-monitor）**、解析 review meta（`cc-cr-meta` / `pi-cr-meta` 前缀区分；`kimi-cr-meta` 忽略）、worktree 修、重打标签、收敛判定、合并）
 10. **post-merge**：结束 worktree session（回主仓库 session）→ `git_worktree` `action: "remove"`（或 `git worktree remove <repo>/.pi/worktrees/issue-<N>-<shortslug>`）→ `git worktree prune` → `git checkout main && git pull`（release / 部署 / 配置 = 人工，不在自动化环内）
 
 ## 为什么高度可自动化

@@ -33,12 +33,14 @@ zima PJob 是外部进程：turn 一结束 session 不会再被唤醒（`subagen
 python3 pi/zima-pr-monitor/scripts/wait-cr.py <pjob-code> --since-minutes 10
 ```
 
+（脚本路径按仓库根目录解析，需在仓库根 / worktree 根运行。）
+
 3. 时长预期（决定 bash 调用 timeout 上限）：
    - 首轮全量 ~1200s（实测 10-24min）→ bash timeout 1500s，超时后续等一次 900s；
    - 增量轮 ~800s（实测 2-11min）→ bash timeout 1100s；
    - PJob 自身 timeout=1800s 是硬上界；helper 默认总上限 2100s，超时退出码 1。
-4. 多执行流：helper 自动等「所有 running execution」离开 running；退出时打印每个 execution 的 status/duration/verdict 摘要，按摘要里的 repo#pr 识别无关执行。等完仍按「多执行流陷阱」一节做收敛判定。
-5. 等完接「每轮」决策树：先读 helper 输出的 verdict 摘要，再 `gh pr view <N> --json reviews` 读 pi-cr-meta。
+4. 多执行流：helper 自动等「所有 running execution」离开 running；退出时打印每个 execution 的 status/duration/returncode/repo#pr 与 log_tail 摘要，按摘要里的 repo#pr 识别无关执行。等完仍按「多执行流陷阱」一节做收敛判定。
+5. 等完接「每轮」决策树：先读 helper 输出的 status/returncode 与 log_tail（含 `<zima-review>` verdict 尾部；stdout_preview 只是输出头部，不含 verdict），再 `gh pr view <N> --json reviews` 读 pi-cr-meta 为准。
 
 ## 每轮
 

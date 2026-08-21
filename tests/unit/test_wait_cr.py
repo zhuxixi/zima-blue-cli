@@ -156,7 +156,7 @@ class TestRunLoop:
         rc = wait_cr.run_loop(
             tmp_path,
             cutoff_minutes_ago(10),
-            timeout=60,
+            timeout=120,
             poll=30,
             grace=60,
             sleep=fake_sleep,
@@ -207,3 +207,70 @@ class TestMain:
             ]
         )
         assert rc == 0
+
+
+class TestTailLog:
+    def test_tail_returns_log_end(self, tmp_path):
+        log = tmp_path / "job.log"
+        log.write_text(
+            "x" * 3000 + "\n<zima-review><verdict>approved</verdict></zima-review>\n",
+            encoding="utf-8",
+        )
+        tail = wait_cr.tail_log(str(log), chars=600)
+        assert "</zima-review>" in tail
+        assert "<verdict>approved</verdict>" in tail
+
+    def test_tail_missing_path_returns_empty(self, tmp_path):
+        assert wait_cr.tail_log(str(tmp_path / "nope.log")) == ""
+        assert wait_cr.tail_log(None) == ""
+
+    def test_format_summary_includes_log_tail(self, tmp_path):
+        log = tmp_path / "job.log"
+        log.write_text(
+            "start\n<zima-review><verdict>approved</verdict></zima-review>\n",
+            encoding="utf-8",
+        )
+        state = terminal_state("success", 1, log_path=str(log))
+        line = wait_cr.format_summary("a", state)
+        assert "log_tail=" in line
+        assert "approved" in line
+
+
+class TestPidAlivePermissionError:
+    def test_permission_error_means_alive(self, monkeypatch):
+        def raise_perm(pid, sig):
+            raise PermissionError()
+
+        monkeypatch.setattr(wait_cr.os, "kill", raise_perm)
+        assert wait_cr.pid_alive(12345) is True
+
+
+class TestLoadStatesUnicode:
+    def test_skips_undecodable_bytes(self, tmp_path):
+        (tmp_path / "bad.json").write_bytes(b'{"status": "\xff\xfe broken')
+        write_state(tmp_path, "good", {"status": "success"})
+        states = wait_cr.load_states(tmp_path)
+        assert set(states) == {"good"}
+
+
+class TestGraceBoundedByTimeout:
+    def test_no_exec_timeout_wins_when_smaller(self, tmp_path, capsys):
+        calls = {"n": 0}
+
+        def fake_sleep(sec):
+            calls["n"] += 1
+
+        def fake_monotonic():
+            return 1000.0 + calls["n"] * 100.0
+
+        rc = wait_cr.run_loop(
+            tmp_path,
+            cutoff_minutes_ago(10),
+            timeout=60,
+            poll=30,
+            grace=3000,
+            sleep=fake_sleep,
+            monotonic=fake_monotonic,
+        )
+        assert rc == 1
+        assert "timeout" in capsys.readouterr().err
