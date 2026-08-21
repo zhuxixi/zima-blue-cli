@@ -21,10 +21,24 @@ gh pr edit <N> --add-label zima:needs-review   # webhook 扫到 → 触发该仓
 - webhook 事件驱动触发（smee → webhook-server → PJob），是当前唯一实际运行的路径；Zima daemon ~45min 轮询仅为历史兜底设计（未必启用）。
 - 同账号发 review，区分靠 body 的 HTML meta：`<!-- cc-cr-meta {...} -->`（cc 版） / `<!-- pi-cr-meta {...} -->`（pi 版，主力），字段含 `round` / `new_count` / `resolved_count` / `issues[]`（每条 status: resolved/acknowledged/open）。新 pi metadata 还含每条 finding 的 boolean `blocking`，以及 `blocking_open_count` / `blocking_new_count` / advisory counts；`new_count` / `total_issues` 仍是包含 advisory 的事实计数。历史 kimi 版评论（`kimi-cr-meta`）直接忽略；**kimi 未出现 = 正常态，不是未收敛信号**。
 
-## 等待节律（webhook 锚定）
+## 等待节律（webhook 锚定 + 前台阻塞等待）
 
-- 打标签后 ~5-10min 内应出 review（PJob 执行时长）；
-- 超过 ~15min 未出 → `zima pjob ps` 查 job 状态，必要时手动 `zima pjob run` 补触发。
+**提交 PR + 打 `zima:needs-review` 后，同 turn 立即进入等待，禁止结束 turn。**
+zima PJob 是外部进程：turn 一结束 session 不会再被唤醒（`subagent_wait` 只认 pi 自己的 async run，管不到它），后台/异步监听必然错过完成时机——唯一可靠原语是前台阻塞调用。
+
+1. 确认 spawn：`zima pjob ps`（webhook 秒级触发，~1min 内应出现本仓库的 CR job；90s 没出现 → 兜底手动 `zima pjob run <code> --set-var=repo=... --set-var=pr_number=...`）。
+2. 阻塞等待（自带 helper，只读盯 zima runtime state 文件；终态在 postExec 发完 review 之后才写，等到即「review 已发出」）：
+
+```bash
+python3 pi/zima-pr-monitor/scripts/wait-cr.py <pjob-code> --since-minutes 10
+```
+
+3. 时长预期（决定 bash 调用 timeout 上限）：
+   - 首轮全量 ~1200s（实测 10-24min）→ bash timeout 1500s，超时后续等一次 900s；
+   - 增量轮 ~800s（实测 2-11min）→ bash timeout 1100s；
+   - PJob 自身 timeout=1800s 是硬上界；helper 默认总上限 2100s，超时退出码 1。
+4. 多执行流：helper 自动等「所有 running execution」离开 running；退出时打印每个 execution 的 status/duration/verdict 摘要，按摘要里的 repo#pr 识别无关执行。等完仍按「多执行流陷阱」一节做收敛判定。
+5. 等完接「每轮」决策树：先读 helper 输出的 verdict 摘要，再 `gh pr view <N> --json reviews` 读 pi-cr-meta。
 
 ## 每轮
 
