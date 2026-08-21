@@ -4,7 +4,7 @@ description: |
   对 GitHub Pull Request 进行批量/调度式代码审查（一次性短会话，非监听模式），
   pi-coding-agent 端。多 Agent 并行检查 CLAUDE.md / AGENTS.md 合规性、bug 和逻辑安全问题，
   通过 issue 验证机制过滤误报。状态通过 PR 评论的 metadata 持久化，
-  供 PJob 调度器（zima daemon 或 webhook-server）交替调度 CR/fix agent。
+  供 PJob 调度器（zima daemon 或 webhook-server）触发 CR 审查流程。
 
   Use when: 用户要求对指定 PR 进行一次性批量审查或调度式审查，
   且不希望启动后台监听进程。
