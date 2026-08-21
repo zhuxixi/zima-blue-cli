@@ -504,6 +504,11 @@ def run(
     ),
     work_dir: Optional[str] = typer.Option(None, "--work-dir", help="Override working directory"),
     keep_temp: bool = typer.Option(False, "--keep-temp", help="Keep temporary files"),
+    dedup_off: bool = typer.Option(
+        False,
+        "--dedup-off",
+        help="Skip the duplicate-execution check (force run even if the same PR is already being or was recently reviewed)",
+    ),
     timeout: Optional[int] = typer.Option(None, "--timeout", "-t", help="Override timeout"),
     skip_validation: bool = typer.Option(
         False, "--skip-validation", help="Skip pre-execution validation"
@@ -698,6 +703,9 @@ def run(
     ]
     if keep_temp:
         cmd.append("--keep-temp")
+
+    if dedup_off:
+        cmd.append("--dedup-off")
 
     kwargs = {}
     if sys.platform == "win32":

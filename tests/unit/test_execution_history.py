@@ -1,6 +1,7 @@
 """Unit tests for ExecutionHistory directory-based storage."""
 
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -374,3 +375,144 @@ class TestPidAlive:
 
     def test_is_pid_alive_dead_pid(self):
         assert not _is_pid_alive(99999999)
+
+
+class TestFindRecentDuplicate:
+    @pytest.fixture(autouse=True)
+    def setup(self, isolated_zima_home):
+        self.history = ExecutionHistory()
+        self.pjob_code = "test-pjob"
+        self.now = datetime.now(timezone.utc)
+
+    def _write(
+        self,
+        execution_id,
+        status,
+        repo="owner/repo",
+        pr_number="42",
+        head_sha="",
+        started_minutes_ago=0,
+    ):
+        started = (self.now - timedelta(minutes=started_minutes_ago)).isoformat()
+        spr = {"repo": repo, "pr_number": pr_number}
+        if head_sha:
+            spr["head_sha"] = head_sha
+        self.history.write_runtime_state(
+            self.pjob_code,
+            execution_id,
+            {
+                "execution_id": execution_id,
+                "pjob_code": self.pjob_code,
+                "status": status,
+                "pid": None,
+                "started_at": started,
+                "scan_pr_result": spr,
+            },
+        )
+
+    def _query(self, head_sha="", **kwargs):
+        return self.history.find_recent_duplicate(
+            pjob_code=self.pjob_code,
+            repo="owner/repo",
+            pr_number="42",
+            head_sha=head_sha,
+            exclude_execution_id="me000001",
+            **kwargs,
+        )
+
+    def test_running_same_head_blocks(self):
+        self._write("dup00001", "running", head_sha="abc123", started_minutes_ago=1)
+        dup = self._query(head_sha="abc123")
+        assert dup is not None and dup["execution_id"] == "dup00001"
+
+    def test_stale_running_record_allows(self):
+        # A running record older than the stale window (90min) cannot be a
+        # live execution — a crashed run without a recorded pid must not
+        # block the target forever (CR round-1 finding).
+        self._write("dup00001", "running", head_sha="abc123", started_minutes_ago=95)
+        assert self._query(head_sha="abc123") is None
+
+    def test_running_different_head_allows(self):
+        self._write("dup00001", "running", head_sha="abc123", started_minutes_ago=1)
+        assert self._query(head_sha="def456") is None
+
+    def test_success_within_window_same_head_blocks(self):
+        self._write("dup00001", "success", head_sha="abc123", started_minutes_ago=10)
+        dup = self._query(head_sha="abc123")
+        assert dup is not None and dup["execution_id"] == "dup00001"
+
+    def test_success_within_window_different_head_allows(self):
+        self._write("dup00001", "success", head_sha="abc123", started_minutes_ago=10)
+        assert self._query(head_sha="def456") is None
+
+    def test_success_beyond_window_allows(self):
+        self._write("dup00001", "success", head_sha="abc123", started_minutes_ago=45)
+        assert self._query(head_sha="abc123") is None
+
+    def test_failed_allows(self):
+        self._write("dup00001", "failed", started_minutes_ago=1)
+        assert self._query(head_sha="abc123") is None
+
+    def test_skipped_allows(self):
+        self._write("dup00001", "skipped", started_minutes_ago=1)
+        assert self._query(head_sha="abc123") is None
+
+    def test_excludes_own_execution(self):
+        self._write("me000001", "running", head_sha="abc123", started_minutes_ago=1)
+        assert self._query(head_sha="abc123") is None
+
+    def test_missing_head_treated_conservatively(self):
+        # Candidate without head_sha blocks a query with head_sha (conservative).
+        self._write("dup00001", "running", head_sha="", started_minutes_ago=1)
+        dup = self._query(head_sha="abc123")
+        assert dup is not None and dup["execution_id"] == "dup00001"
+
+    def test_query_without_head_treated_conservatively(self):
+        # Query without head_sha is blocked by a candidate WITH head_sha.
+        self._write("dup00001", "success", head_sha="abc123", started_minutes_ago=5)
+        dup = self._query(head_sha="")
+        assert dup is not None and dup["execution_id"] == "dup00001"
+
+    def test_unparseable_started_treated_in_window(self):
+        self.history.write_runtime_state(
+            self.pjob_code,
+            "dup00001",
+            {
+                "execution_id": "dup00001",
+                "pjob_code": self.pjob_code,
+                "status": "success",
+                "pid": None,
+                "started_at": "not-a-timestamp",
+                "scan_pr_result": {"repo": "owner/repo", "pr_number": "42"},
+            },
+        )
+        dup = self._query(head_sha="abc123")
+        assert dup is not None and dup["execution_id"] == "dup00001"
+
+    def test_other_pjob_not_checked(self):
+        self._write("dup00001", "running", head_sha="abc123", started_minutes_ago=1)
+        other = ExecutionHistory()
+        dup = other.find_recent_duplicate(
+            pjob_code="other-pjob",
+            repo="owner/repo",
+            pr_number="42",
+            head_sha="abc123",
+            exclude_execution_id="me000001",
+        )
+        assert dup is None
+
+    def test_candidate_hash_prefixed_pr_number_matches(self):
+        self._write("dup00001", "running", pr_number="#42", started_minutes_ago=1)
+        dup = self._query(head_sha="abc123")
+        assert dup is not None and dup["execution_id"] == "dup00001"
+
+    def test_query_hash_prefixed_pr_number_matches(self):
+        self._write("dup00001", "running", pr_number="42", started_minutes_ago=1)
+        dup = self.history.find_recent_duplicate(
+            pjob_code=self.pjob_code,
+            repo="owner/repo",
+            pr_number="#42",
+            head_sha="abc123",
+            exclude_execution_id="me000001",
+        )
+        assert dup is not None and dup["execution_id"] == "dup00001"

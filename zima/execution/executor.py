@@ -184,6 +184,8 @@ class PJobExecutor:
         overrides: Optional[Overrides] = None,
         dry_run: bool = False,
         keep_temp: bool = False,
+        dedup_off: bool = False,
+        execution_id: Optional[str] = None,
     ) -> ExecutionResult:
         """
         Execute a PJob.
@@ -193,11 +195,13 @@ class PJobExecutor:
             overrides: Runtime overrides (optional)
             dry_run: If True, only show what would be executed
             keep_temp: Keep temporary files after execution
+            dedup_off: If True, skip the duplicate-execution dedup guard.
+            execution_id: Optional explicit execution ID; falls back to a fresh UUID.
 
         Returns:
             ExecutionResult with details
         """
-        execution_id = str(uuid.uuid4())[:8]
+        execution_id = execution_id or str(uuid.uuid4())[:8]
         result = ExecutionResult(
             pjob_code=pjob_code,
             execution_id=execution_id,
@@ -480,6 +484,11 @@ class PJobExecutor:
                     # invalid scans persist nothing — see the branch above)
                     _persistable_pr = normalize_pr_number(dynamic_vars.get("pr_number") or "")
                     _persistable_repo = str(dynamic_vars.get("repo") or "").strip()
+                    # head_sha only exists for webhook-triggered runs
+                    # (--set-var=head_sha); normalize to lowercase hex.
+                    _persistable_head = (
+                        str(bundle.overrides.variable_values.get("head_sha") or "").strip().lower()
+                    )
                     if _scan_valid and (_persistable_pr or _persistable_repo):
                         # Not persisted for invalid scans: a garbage pr_number
                         # would pollute the (repo, pr_number) failure skip-set
@@ -495,9 +504,53 @@ class PJobExecutor:
                             for k, v in {
                                 "repo": _persistable_repo,
                                 "pr_number": _persistable_pr,
+                                "head_sha": _persistable_head,
                             }.items()
                             if v
                         }
+                        # Persist immediately: concurrent streams (webhook /
+                        # manual / daemon) must see this target while the
+                        # agent is still running (#181). dry_run writes
+                        # nothing (it renders only). Read-merge-write:
+                        # update_runtime_state is a no-op when the state
+                        # file does not exist (e.g. executor invoked
+                        # directly without the CLI layer writing it first).
+                        if not dry_run:
+                            _state = self._history.get_runtime_state(pjob_code, execution_id)
+                            if _state is None:
+                                _state = {
+                                    "execution_id": execution_id,
+                                    "pjob_code": pjob_code,
+                                    "status": "running",
+                                    "pid": os.getpid(),
+                                    "started_at": result.started_at,
+                                }
+                            _state["scan_pr_result"] = result.scan_pr_result
+                            self._history.write_runtime_state(pjob_code, execution_id, _state)
+                        # Same-(repo, pr, head) dedup guard (#181): skip when
+                        # another stream is already reviewing this target
+                        # (running) or reviewed it recently (success within
+                        # the window). Runs inside the preExec try block so
+                        # SkipAction yields SKIPPED (no postExec, no label
+                        # changes).
+                        if not dry_run and not dedup_off and result.scan_pr_result:
+                            _dup = self._history.find_recent_duplicate(
+                                pjob_code=pjob_code,
+                                repo=result.scan_pr_result.get("repo", ""),
+                                pr_number=result.scan_pr_result.get("pr_number", ""),
+                                head_sha=result.scan_pr_result.get("head_sha", ""),
+                                exclude_execution_id=execution_id,
+                            )
+                            if _dup:
+                                _dup_spr = _dup.get("scan_pr_result") or {}
+                                raise SkipAction(
+                                    "dedup: duplicate review skipped — execution "
+                                    f"'{_dup.get('execution_id')}' "
+                                    f"(status={_dup.get('status')}) already covers "
+                                    f"({_dup_spr.get('repo')}, PR "
+                                    f"#{_dup_spr.get('pr_number')}); re-run with "
+                                    "--dedup-off to force"
+                                )
                 except SkipAction as e:
                     result.status = ExecutionStatus.SKIPPED
                     result.returncode = 0
