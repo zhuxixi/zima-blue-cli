@@ -4,7 +4,7 @@ description: |
   对 GitHub Pull Request 进行批量/调度式代码审查（一次性短会话，非监听模式），
   pi-coding-agent 端。多 Agent 并行检查 CLAUDE.md / AGENTS.md 合规性、bug 和逻辑安全问题，
   通过 issue 验证机制过滤误报。状态通过 PR 评论的 metadata 持久化，
-  供外部调度器（如 zima daemon）交替调度 CR/fix agent。
+  供 PJob 调度器（zima daemon 或 webhook-server）交替调度 CR/fix agent。
 
   Use when: 用户要求对指定 PR 进行一次性批量审查或调度式审查，
   且不希望启动后台监听进程。
@@ -26,7 +26,7 @@ GitHub PR 批量/调度代码审查工具，**非监听模式**。
 
 ## 触发与 PR 编号提取
 
-> **⚠️ 触发短语是外部契约**：调度器（zima daemon）通过 skill 名 + 字面短语 `"batch review pr"` / `"review pr batch"` / `"scheduled review pr"` 调用本 skill。改动这些字面短语会破坏外部调度契约——优化 description 时务必保留这三个短语原文。
+> **⚠️ 触发短语是外部契约**：调度器（zima daemon 或 webhook-server）通过 skill 名 + 字面短语 `"batch review pr"` / `"review pr batch"` / `"scheduled review pr"` 调用本 skill。改动这些字面短语会破坏外部调度契约——优化 description 时务必保留这三个短语原文。
 
 支持的调用方式：
 
@@ -93,7 +93,7 @@ PR 编号提取规则（依次尝试）：
    - 状态报告还含 `Critical issues:` 计数与派生的 `Verdict:`（#119：SKIP / BLOCK_MERGE / READY_TO_MERGE / MERGE_WITH_CAUTION），均追加在 `Status:` 行之后，不影响 grep
    - 分隔线之后追加 `<zima-review><verdict>...</verdict><summary>...</summary></zima-review>` XML trailer（#176）：zima executor 靠它驱动 postExec 标签流转，pi 型 agent 的 CR PJob 必需
 
-zima daemon 通过 grep `Status: <state>` 决策下一步动作（可选消费 `Verdict:` 优先处理含 critical 的 PR）。
+PJob 调度器（zima daemon 或 webhook-server）通过 grep `Status: <state>` 决策下一步动作（可选消费 `Verdict:` 优先处理含 critical 的 PR）。
 
 ## SubAgent 概览
 
