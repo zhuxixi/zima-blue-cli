@@ -522,6 +522,7 @@ class PJobExecutor:
                                     "execution_id": execution_id,
                                     "pjob_code": pjob_code,
                                     "status": "running",
+                                    "pid": os.getpid(),
                                     "started_at": result.started_at,
                                 }
                             _state["scan_pr_result"] = result.scan_pr_result

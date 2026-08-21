@@ -32,12 +32,10 @@ class TestDedupOffForwarding:
         )
 
     def test_run_pjob_in_background_forwards_dedup_off(self, isolated_zima_home):
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import patch
 
         from zima.execution.background_runner import run_pjob_in_background
 
-        # PJobExecutor is imported inside run_pjob_in_background, so patch
-        # the source module attribute rather than the background_runner module.
         with patch("zima.execution.executor.PJobExecutor") as MockExecutor:
             mock_executor = MagicMock()
             mock_executor.execute.return_value = self._fake_result()
@@ -82,3 +80,38 @@ class TestDedupOffForwarding:
                 assert br.main() == 0
             kwargs = mock_run.call_args.kwargs
             assert kwargs["dedup_off"] is True
+
+    def test_run_pjob_in_background_backfills_pid(self, isolated_zima_home):
+        """The runner must record its own pid so a crash ages the running
+        record out (pid-less running records are never auto-marked dead;
+        #181 CR round-1 finding)."""
+        import os
+        from unittest.mock import patch
+
+        from zima.execution.background_runner import run_pjob_in_background
+        from zima.execution.history import ExecutionHistory
+
+        history = ExecutionHistory()
+        history.write_runtime_state(
+            "test-pjob",
+            "cli00001",
+            {
+                "execution_id": "cli00001",
+                "pjob_code": "test-pjob",
+                "status": "running",
+                "pid": None,
+                "started_at": "2026-08-22T10:00:00+00:00",
+            },
+        )
+        with patch("zima.execution.executor.PJobExecutor") as MockExecutor:
+            mock_executor = MagicMock()
+            mock_executor.execute.return_value = self._fake_result()
+            MockExecutor.return_value = mock_executor
+            run_pjob_in_background(
+                pjob_code="test-pjob",
+                execution_id="cli00001",
+                overrides_json="{}",
+            )
+        state = history.get_runtime_state("test-pjob", "cli00001")
+        assert state is not None
+        assert state["pid"] == os.getpid()

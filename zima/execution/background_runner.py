@@ -6,6 +6,7 @@ This module is invoked as a detached subprocess to run a PJob in the background.
 from __future__ import annotations
 
 import json
+import os
 import signal
 import sys
 from collections.abc import Callable
@@ -95,6 +96,12 @@ def run_pjob_in_background(
             "workflow": "",
         }
         history.write_runtime_state(pjob_code, execution_id, state)
+
+    # Backfill our pid so a crash of THIS process ages the record out: the
+    # CLI's initial state has pid=None, and a pid-less running record is
+    # never auto-marked dead, which would permanently block the dedup query
+    # for this target (#181 CR round-1).
+    history.update_runtime_state(pjob_code, execution_id, pid=os.getpid())
 
     result = executor.execute(
         pjob_code=pjob_code,

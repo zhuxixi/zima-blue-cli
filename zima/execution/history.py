@@ -482,6 +482,7 @@ class ExecutionHistory:
         head_sha: str,
         exclude_execution_id: str,
         window_minutes: int = 30,
+        running_stale_minutes: int = 90,
     ) -> Optional[dict]:
         """Return the first recent execution duplicating the given review target.
 
@@ -501,6 +502,11 @@ class ExecutionHistory:
             head_sha: Target head SHA (may be empty).
             exclude_execution_id: Execution ID to skip (the current run).
             window_minutes: Recent-completion window for ``success`` records.
+            running_stale_minutes: A ``running`` record whose ``started_at``
+                is older than this many minutes cannot be a live execution
+                (PJob timeout is 30min) and is skipped — otherwise a crashed
+                run (e.g. kill -9 before a pid was recorded) would block the
+                target forever.
 
         Returns:
             The first matching record dict, or ``None``.
@@ -546,6 +552,16 @@ class ExecutionHistory:
                 continue
 
             if status == "running":
+                # Stale-running guard: a running record older than any
+                # possible live execution (PJob timeout is 30min) is treated
+                # as dead — a crashed run without a recorded pid must not
+                # block the target forever. Missing/unparseable started_at
+                # stays conservative (block).
+                _rstarted = _parse_started(record.get("started_at") or "")
+                if _rstarted is not None and _rstarted < now - timedelta(
+                    minutes=running_stale_minutes
+                ):
+                    continue
                 return record
             # success: require started_at within the window. Unparseable
             # timestamps are treated conservatively as in-window (better a

@@ -425,6 +425,13 @@ class TestFindRecentDuplicate:
         dup = self._query(head_sha="abc123")
         assert dup is not None and dup["execution_id"] == "dup00001"
 
+    def test_stale_running_record_allows(self):
+        # A running record older than the stale window (90min) cannot be a
+        # live execution — a crashed run without a recorded pid must not
+        # block the target forever (CR round-1 finding).
+        self._write("dup00001", "running", head_sha="abc123", started_minutes_ago=95)
+        assert self._query(head_sha="abc123") is None
+
     def test_running_different_head_allows(self):
         self._write("dup00001", "running", head_sha="abc123", started_minutes_ago=1)
         assert self._query(head_sha="def456") is None
