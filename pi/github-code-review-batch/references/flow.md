@@ -451,7 +451,7 @@ gh pr review <PR> --comment --body-file /tmp/pi-cr-{pr_number}.md
 
 ## Step 10: 状态报告输出 {#step-10}
 
-每次审查结束时，无论发现问题与否，都必须输出状态报告到终端。状态报告是供外部调度器（如 zima daemon）和 fix agent 消费的机器可读摘要。
+每次审查结束时，无论发现问题与否，都必须输出状态报告到终端。状态报告是供 PJob 调度器（zima daemon 或 webhook-server）和 fix agent 消费的机器可读摘要。
 
 调用 [scripts/render_status_report.py](../scripts/render_status_report.py) 生成。
 
@@ -491,7 +491,7 @@ Verdict: {verdict}
 - `Blocking open issues` / `New blocking this round`：工作流计数，分别对应 `blocking_open_count` / `blocking_new_count`
 - `Advisory open issues` / `New advisory this round`：披露计数，分别对应 `advisory_open_count` / `advisory_new_count`
 - `Critical issues`：当前 open 且 blocking 的 findings 中 `severity=critical` 的数量（#119，向后兼容：未提供视为 0）
-- `Status` 枚举三态（不变，zima daemon 仍 grep 此行）：
+- `Status` 枚举三态（不变，PJob 调度器仍 grep 此行）：
   - `NEEDS_FIX` — `blocking_open_count > 0`
   - `PASS` — `blocking_open_count == 0`（可能仍有 open advisory 或 acknowledged findings）
   - `NO_NEW_COMMITS` — Step 0 检测到无新 commit
@@ -512,7 +512,7 @@ Coverage: 7/10 files
 
 调度器据此识别"本轮 0 finding 但 diff 被截断、覆盖不全"，不会把截断导致的空结果误读为"全量审查通过"。未提供这些字段时省略（向后兼容）。
 
-**机器可读 trailer（#176）**：`render_status_report.py` 会在分隔线 `====` 之后追加 `<zima-review><verdict>approved|needs_fix</verdict><summary>...</summary></zima-review>` XML——zima executor 靠它驱动 postExec 标签流转（pi 型 agent 的 CR PJob 必需）；`Status:` 行与报告块形状不变，daemon 的 grep 契约不受影响。
+**机器可读 trailer（#176）**：`render_status_report.py` 会在分隔线 `====` 之后追加 `<zima-review><verdict>approved|needs_fix</verdict><summary>...</summary></zima-review>` XML——zima executor 靠它驱动 postExec 标签流转（pi 型 agent 的 CR PJob 必需）；`Status:` 行与报告块形状不变，PJob 调度器的 grep 契约不受影响。
 
 ### 用途
 
