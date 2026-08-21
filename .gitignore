@@ -74,4 +74,4 @@ metrics.json
 # Agent local directories (not source)
 .pi-subagents/
 .pi/subagents/
-plans/
+/plans/
