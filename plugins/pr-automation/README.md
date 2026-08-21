@@ -25,7 +25,7 @@ Claude Code plugin for GitHub PR automation. Designed to be driven by the [zima]
 
 ## Relationship to zima daemon
 
-The skill is a **one-shot short session** — it executes one CR round, posts a PR comment, and exits. State persists in PR review metadata (`cc-cr-meta` / `kimi-cr-meta`) so an external scheduler (zima daemon) can alternate between CR and fix agents across rounds.
+The skill is a **one-shot short session** — it executes one CR round, posts a PR comment, and exits. State persists in PR review metadata (`cc-cr-meta`; legacy `kimi-cr-meta` comments are ignored since the kimi bot was removed) so an external scheduler (zima daemon) can alternate between CR and fix agents across rounds.
 
 This is not a watcher process. If you want continuous monitoring, that's a separate concern (and a future skill in this plugin).
 

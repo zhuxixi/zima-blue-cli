@@ -1,14 +1,14 @@
 # Zima Blue Pi Skills
 
-zima-blue-cli 仓库的 pi 技能包：GitHub issue-driven 研发闭环（issue → 调研 → 设计 → 实现 → Zima 双 Bot CR → 合并）。
+zima-blue-cli 仓库的 pi 技能包：GitHub issue-driven 研发闭环（issue → 调研 → 设计 → 实现 → Zima 单 Bot CR → 合并）。
 
 ## 技能列表
 
 | 技能 | 角色 | 对应流程步 |
-|------|------|-----------|
+| ------ | ------ | ----------- |
 | `github-issue-driven` | 10 步闭环主流程 | 全部 |
 | `issue-research` | 调研（JFox KB + git + 过往 issue/PR） | 步 3 |
-| `zima-pr-monitor` | PR 监听（双 bot 收敛判定 + 合并） | 步 8-9 |
+| `zima-pr-monitor` | PR 监听（单 bot 收敛判定，按 `cc-cr-meta` / `pi-cr-meta` 前缀区分 + 合并） | 步 8-9 |
 
 ## 安装
 

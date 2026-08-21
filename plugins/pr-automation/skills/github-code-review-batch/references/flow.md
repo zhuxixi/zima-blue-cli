@@ -32,7 +32,7 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 **执行步骤：**
 
 1. 使用 `Bash` 执行 `gh pr view <PR> --comments` 获取所有 PR 评论
-2. 过滤掉所有 AI CR 评论（Claude Code 评论 body 包含 `"Generated with Claude Code"`，Kimi CLI 评论 body 包含 `"<!-- kimi-cr-meta"`），保留 committer / human reviewer 的评论。两个 Agent 的审查结论互不参考，保证交叉验证的独立性
+2. 过滤掉所有 AI CR 评论（Claude Code 评论 body 包含 `"Generated with Claude Code"`；历史 Kimi CLI 评论 body 包含 `"<!-- kimi-cr-meta"`——kimi bot 已移除，旧评论仍按此过滤），保留 committer / human reviewer 的评论
 3. 对每个 `status="open"` 的 previous issue，检查 committer 评论中是否提及该 issue：
    - 匹配方式：issue 描述前 10 个单词、或 `file:lines` 组合、或 `"issue-{id}"` 引用
 4. **分类 committer 回应**（关键词匹配，不区分大小写）：
@@ -203,7 +203,7 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 
 issue-validator 验证时若 agent 未给 severity，按 `medium` 兜底。`build_review_body.py` 渲染时按 severity 降序排列（critical 在前），metadata `issues[]` 保留原始顺序。
 
-**为什么 CLAUDE.md checker 跑两次（#122：差异化而非复跑）**：两个 checker 使用**不同 framing**（Checker-1 显式规则、Checker-2 隐含约定/反模式），让召回增益来自视角互补而非采样噪声。两者的 `reason` 都为 `"CLAUDE.md"`、schema 不变，下游无需改动。这与"双 CR Agent 交叉验证体系"（Claude Code vs Kimi CLI）是两个不同层次的冗余——前者在同一 skill 内部，后者跨 agent。
+**为什么 CLAUDE.md checker 跑两次（#122：差异化而非复跑）**：两个 checker 使用**不同 framing**（Checker-1 显式规则、Checker-2 隐含约定/反模式），让召回增益来自视角互补而非采样噪声。两者的 `reason` 都为 `"CLAUDE.md"`、schema 不变，下游无需改动。这与曾经的"双 CR Agent 交叉验证体系"（Claude Code vs Kimi CLI，kimi 已移除）是两个不同层次的冗余——前者在同一 skill 内部，后者曾跨 agent。
 
 ---
 
