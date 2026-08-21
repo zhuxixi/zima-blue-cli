@@ -12,7 +12,7 @@
 
 ## 输入
 
-- `previous_issues`：从上一轮 metadata 提取的问题列表（含 `id`, `description`, `reason`, `file`, `lines`, `status`, `first_round`），可能含 `resolution` 和 `committer_note` 字段（由 [Step 0.2a](flow.md#step-0-2a) 填充）
+- `previous_issues`：从上一轮 metadata 提取的问题列表（含 `id`, `description`, `reason`, `file`, `lines`, `status`, `first_round`, `severity`），新 metadata 含 boolean `blocking`；旧 metadata 缺少时按 severity 派生。列表还可能含 `resolution` 和 `committer_note` 字段（由 [Step 0.2a](flow.md#step-0-2a) 填充）
 - `previous_head_sha`：上一轮 review 时的 head SHA
 - `current_head_sha`：当前 PR head SHA
 - PR 完整 diff（`gh pr diff` 输出）
@@ -62,6 +62,8 @@ delta-reviewer 输出 JSON：
       "reason": "bug",
       "file": "src/auth.ts",
       "lines": "67-72",
+      "severity": "high",
+      "blocking": true,
       "resolution_note": "Error handling added in new commit"
     }
   ],
@@ -72,6 +74,8 @@ delta-reviewer 输出 JSON：
       "reason": "logic",
       "file": "src/server.py",
       "lines": "45-50",
+      "severity": "medium",
+      "blocking": true,
       "committer_note": "..."
     }
   ],
@@ -82,7 +86,8 @@ delta-reviewer 输出 JSON：
       "reason": "logic",
       "file": "src/auth.ts",
       "lines": "100-105",
-      "suggestion": "..."
+      "suggestion": "...",
+      "severity": "low"
     }
   ],
   "unresolved_issues": [
@@ -91,26 +96,30 @@ delta-reviewer 输出 JSON：
       "description": "...",
       "reason": "bug",
       "file": "src/auth.ts",
-      "lines": "88-95"
+      "lines": "88-95",
+      "severity": "low",
+      "blocking": false
     }
   ],
-  "pass": false
+  "pass": true
 }
 ```
 
 ### Step Δ4: 汇总问题列表
 
-构建当前轮次的完整 issues 列表：
-- `resolved_issues` → 保留原 `id`，标记 `status="resolved"`，`resolution="resolved"`
-- `acknowledged_issues` → 保留原 `id`，标记 `status="open"`，`resolution="acknowledged"`，保留 `committer_note`
-- `unresolved_issues` → 保留原 `id`，标记 `status="open"`，`resolution=null`
-- `new_issues` → 合并 [Step Δ2a](#step-Δ2a) 的 bug-scanner / logic-analyzer 结果（沿用 [Step 6](flow.md#step-6) 去重：相同 file+lines+reason 合并），统一生成新 `id`（如 `"issue-{max_id+1}"`），标记 `status="open"`，`first_round = current_round`
+构建当前轮次的完整 issues 列表。所有 bucket 都保留原有 `severity` 与显式 boolean `blocking`；若旧 finding 没有 `blocking`，按 Step 6 的确定性规则派生（low → false，其余 → true；缺失/非法 severity 按 medium，因此为 true）：
+- `resolved_issues` → 保留原 `id` / `severity` / effective `blocking`，标记 `status="resolved"`，`resolution="resolved"`
+- `acknowledged_issues` → 保留原 `id` / `severity` / effective `blocking`，标记 `status="open"`，`resolution="acknowledged"`，保留 `committer_note`
+- `unresolved_issues` → 保留原 `id` / `severity` / effective `blocking`，标记 `status="open"`，`resolution=null`
+- `new_issues` → 合并 [Step Δ2a](#step-Δ2a) 的 bug-scanner / logic-analyzer 结果（沿用 [Step 6](flow.md#step-6) 去重：相同 file+lines+reason 合并），统一生成新 `id`（如 `"issue-{max_id+1}"`），标记 `status="open"`，`first_round = current_round`，再按 severity/override 规范化 `blocking`
+
+全量 `new_count` 仍包含 advisory；`blocking_new_count` 只统计 effective `blocking=true` 的 new findings。`blocking_open_count` 只统计未 acknowledged/wontfix、`status="open"` 且 effective `blocking=true` 的 carried/new findings。
 
 ### Step Δ5: 继续至 Step 6
 
 将汇总后的问题列表传入 [Step 6](flow.md#step-6)，继续执行 Step 6-9-10 的标准流程。
 
-注意：[Step 10](flow.md#step-10) 输出状态报告时，`Status` 为 `PASS` 的条件是不存在 `status="open"` 且 `resolution != "acknowledged"` 的 issues。
+注意：[Step 10](flow.md#step-10) 输出状态报告时，`Status` 为 `PASS` 的条件是不存在未 acknowledged/wontfix、`status="open"` 且 effective `blocking=true` 的 finding。`pass` 也按此条件计算；未 override 的 low finding 可以继续 `status="open"` 作为 advisory 而不阻塞 PASS。
 
 ---
 
