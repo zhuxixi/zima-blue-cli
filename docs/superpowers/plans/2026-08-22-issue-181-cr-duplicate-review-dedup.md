@@ -408,12 +408,23 @@ In `zima/execution/executor.py`, replace the scan_pr_result assembly block:
                         # Persist immediately: concurrent streams (webhook /
                         # manual / daemon) must see this target while the
                         # agent is still running (#181). dry_run writes
-                        # nothing (it renders only).
+                        # nothing (it renders only). Read-merge-write:
+                        # update_runtime_state is a no-op when the state
+                        # file does not exist (e.g. executor invoked
+                        # directly without the CLI layer writing it first).
                         if not dry_run:
-                            self._history.update_runtime_state(
-                                pjob_code,
-                                execution_id,
-                                scan_pr_result=result.scan_pr_result,
+                            _state = self._history.get_runtime_state(
+                                pjob_code, execution_id
+                            )
+                            if _state is None:
+                                _state = {
+                                    "execution_id": execution_id,
+                                    "pjob_code": pjob_code,
+                                    "started_at": result.started_at,
+                                }
+                            _state["scan_pr_result"] = result.scan_pr_result
+                            self._history.write_runtime_state(
+                                pjob_code, execution_id, _state
                             )
 ```
 
