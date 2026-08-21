@@ -38,13 +38,22 @@ gh pr view <N> --json state,labels,statusCheckRollup,reviews
 
 另：label 消失 ≠ 审完（bot 发完 review 就移标签，但流程可能还在收尾）→ 看 review meta 确认本轮报告存在。kimi 永远不会出现（已移除），不要等它。CI 必须 `gh pr checks` 全绿（Windows fast job ~24-27min 是瓶颈）。
 
+## ⚠️ 多执行流陷阱（jfox #402 教训：合并后迟到流发现 high bug）
+同一 PR 同一 head 可能有多条审查流并行（打标签触发 webhook 流 + 手动 `zima pjob run` 流，daemon 45min 轮询为第三路），**各自独立维护 round 计数**——review 的 round 编号会重复，且内容可能一条收敛、一条发现问题。仅看"最新一条 review"判定收敛会在另一条流迟到时被打爆。
+
+判定与合并纪律：
+- **识别多流**：同 head 的 `pi-cr-meta` review 超过一条且 round 相同 → 多流。按 `(head_sha, submittedAt)` 排序；最新一条不代表全部。
+- **收敛要求所有流**：每条活跃流对当前 head 的 review 都满足 `new_count==0` 且无 open 才算收敛。
+- **合并前 in-flight 检查（必做）**：① `zima pjob ps` 确认无该仓库的 running CR job；② 距最后一次触发（打标签或手动 run）不足 ~15min 时，未出 review 的流可能还在跑——等它出结果再判。
+- **触发纪律**：一次修复循环只用一条流——要么纯标签驱动（等 webhook/daemon），要么接受"打标签即触发 webhook 流"的事实：手动 run 前打了标签就必须**等两条流都出 review**。不要假设"只看到一条 review"= 只有一条流。（根治需调度器去重，见 zima-blue-cli #181）
+
 ## babysit 必带 stuck 检测（否则空转数天）
 - 每轮存快照，比对进展（新 review / 新 commit / CI 变化 / label 转换）；有进展清零，无进展 +1。
 - 连续 K 轮（~3 轮 / 90min）零进展 → **停 + 报警**。
 - **label 死状态守卫**：`zima:needs-review` 不在 + 无新 review + state OPEN = "CR 不会被触发"的死状态 → 报"需手动重打标签" + 停。（专防"忘打标签空转两天"旧坑。）
 
 ## 合并
-CR bot 0 open + CI 全绿 → `gh pr merge <N> --squash --delete-branch`。
+CR bot 0 open + CI 全绿 + **多流收敛确认与 in-flight 检查通过**（见上节）→ `gh pr merge <N> --squash --delete-branch`。
 
 ## CR 验证纪律
 读 **PR HEAD**（`gh pr diff <N>` / `gh pr view <N> --json`），**不读本地工作区**——工作区可能停在别的分支 → 虚假回归。
