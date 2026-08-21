@@ -480,6 +480,11 @@ class PJobExecutor:
                     # invalid scans persist nothing — see the branch above)
                     _persistable_pr = normalize_pr_number(dynamic_vars.get("pr_number") or "")
                     _persistable_repo = str(dynamic_vars.get("repo") or "").strip()
+                    # head_sha only exists for webhook-triggered runs
+                    # (--set-var=head_sha); normalize to lowercase hex.
+                    _persistable_head = (
+                        str(bundle.overrides.variable_values.get("head_sha") or "").strip().lower()
+                    )
                     if _scan_valid and (_persistable_pr or _persistable_repo):
                         # Not persisted for invalid scans: a garbage pr_number
                         # would pollute the (repo, pr_number) failure skip-set
@@ -495,9 +500,27 @@ class PJobExecutor:
                             for k, v in {
                                 "repo": _persistable_repo,
                                 "pr_number": _persistable_pr,
+                                "head_sha": _persistable_head,
                             }.items()
                             if v
                         }
+                        # Persist immediately: concurrent streams (webhook /
+                        # manual / daemon) must see this target while the
+                        # agent is still running (#181). dry_run writes
+                        # nothing (it renders only). Read-merge-write:
+                        # update_runtime_state is a no-op when the state
+                        # file does not exist (e.g. executor invoked
+                        # directly without the CLI layer writing it first).
+                        if not dry_run:
+                            _state = self._history.get_runtime_state(pjob_code, execution_id)
+                            if _state is None:
+                                _state = {
+                                    "execution_id": execution_id,
+                                    "pjob_code": pjob_code,
+                                    "started_at": result.started_at,
+                                }
+                            _state["scan_pr_result"] = result.scan_pr_result
+                            self._history.write_runtime_state(pjob_code, execution_id, _state)
                 except SkipAction as e:
                     result.status = ExecutionStatus.SKIPPED
                     result.returncode = 0
