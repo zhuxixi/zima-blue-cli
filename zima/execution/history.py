@@ -473,6 +473,87 @@ class ExecutionHistory:
 
         return results
 
+    def find_recent_duplicate(
+        self,
+        pjob_code: str,
+        repo: str,
+        pr_number: str,
+        head_sha: str,
+        exclude_execution_id: str,
+        window_minutes: int = 30,
+    ) -> Optional[dict]:
+        """Return the first recent execution duplicating the given review target.
+
+        A duplicate is an execution of the same PJob whose ``scan_pr_result``
+        matches ``(repo, pr_number)`` and which is either still ``running`` or
+        finished ``success`` within ``window_minutes`` of its start.  Two
+        executions with *different* known ``head_sha`` values are not
+        duplicates (a new commit legitimately starts a new review round).
+        A missing ``head_sha`` on either side is treated conservatively as
+        "same head".  Failed / timed-out / skipped / dead executions never
+        block a re-run (they produced no valid review).
+
+        Args:
+            pjob_code: PJob code to query.
+            repo: Target repo full name.
+            pr_number: Target PR number (already normalized).
+            head_sha: Target head SHA (may be empty).
+            exclude_execution_id: Execution ID to skip (the current run).
+            window_minutes: Recent-completion window for ``success`` records.
+
+        Returns:
+            The first matching record dict, or ``None``.
+        """
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(minutes=window_minutes)
+
+        def _parse_started(value: str) -> Optional[datetime]:
+            if not value:
+                return None
+            try:
+                dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
+            except (ValueError, TypeError):
+                return None
+
+        target_repo = str(repo or "").strip().lower()
+        target_pr = str(pr_number or "").strip()
+        target_head = str(head_sha or "").strip().lower()
+
+        for record in self.list_executions(pjob_code):
+            if record.get("execution_id") == exclude_execution_id:
+                continue
+            spr = record.get("scan_pr_result")
+            if not isinstance(spr, dict):
+                continue
+            if str(spr.get("repo") or "").strip().lower() != target_repo:
+                continue
+            if str(spr.get("pr_number") or "").strip() != target_pr:
+                continue
+
+            status = record.get("status", "")
+            if status not in ("running", "success"):
+                continue
+
+            other_head = str(spr.get("head_sha") or "").strip().lower()
+            if target_head and other_head and target_head != other_head:
+                # Both heads known and different: a new review round.
+                continue
+
+            if status == "running":
+                return record
+            # success: require started_at within the window. Unparseable
+            # timestamps are treated conservatively as in-window (better a
+            # blocked re-run than two parallel review streams).
+            started = _parse_started(record.get("started_at") or "")
+            if started is None or started >= cutoff:
+                return record
+        return None
+
     # ------------------------------------------------------------------
     # Backward-compatible API (delegates to directory-based storage)
     # ------------------------------------------------------------------
