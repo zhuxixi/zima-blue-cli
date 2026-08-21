@@ -384,8 +384,15 @@ class TestFindRecentDuplicate:
         self.pjob_code = "test-pjob"
         self.now = datetime.now(timezone.utc)
 
-    def _write(self, execution_id, status, repo="owner/repo", pr_number="42",
-               head_sha="", started_minutes_ago=0):
+    def _write(
+        self,
+        execution_id,
+        status,
+        repo="owner/repo",
+        pr_number="42",
+        head_sha="",
+        started_minutes_ago=0,
+    ):
         started = (self.now - timedelta(minutes=started_minutes_ago)).isoformat()
         spr = {"repo": repo, "pr_number": pr_number}
         if head_sha:
