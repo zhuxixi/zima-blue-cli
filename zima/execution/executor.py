@@ -184,6 +184,7 @@ class PJobExecutor:
         overrides: Optional[Overrides] = None,
         dry_run: bool = False,
         keep_temp: bool = False,
+        dedup_off: bool = False,
     ) -> ExecutionResult:
         """
         Execute a PJob.
@@ -193,6 +194,7 @@ class PJobExecutor:
             overrides: Runtime overrides (optional)
             dry_run: If True, only show what would be executed
             keep_temp: Keep temporary files after execution
+            dedup_off: If True, skip the duplicate-execution dedup guard.
 
         Returns:
             ExecutionResult with details
@@ -521,6 +523,30 @@ class PJobExecutor:
                                 }
                             _state["scan_pr_result"] = result.scan_pr_result
                             self._history.write_runtime_state(pjob_code, execution_id, _state)
+                        # Same-(repo, pr, head) dedup guard (#181): skip when
+                        # another stream is already reviewing this target
+                        # (running) or reviewed it recently (success within
+                        # the window). Runs inside the preExec try block so
+                        # SkipAction yields SKIPPED (no postExec, no label
+                        # changes).
+                        if not dry_run and not dedup_off and result.scan_pr_result:
+                            _dup = self._history.find_recent_duplicate(
+                                pjob_code=pjob_code,
+                                repo=result.scan_pr_result.get("repo", ""),
+                                pr_number=result.scan_pr_result.get("pr_number", ""),
+                                head_sha=result.scan_pr_result.get("head_sha", ""),
+                                exclude_execution_id=execution_id,
+                            )
+                            if _dup:
+                                _dup_spr = _dup.get("scan_pr_result") or {}
+                                raise SkipAction(
+                                    "dedup: duplicate review skipped — execution "
+                                    f"'{_dup.get('execution_id')}' "
+                                    f"(status={_dup.get('status')}) already covers "
+                                    f"({_dup_spr.get('repo')}, PR "
+                                    f"#{_dup_spr.get('pr_number')}); re-run with "
+                                    "--dedup-off to force"
+                                )
                 except SkipAction as e:
                     result.status = ExecutionStatus.SKIPPED
                     result.returncode = 0
