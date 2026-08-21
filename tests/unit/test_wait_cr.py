@@ -191,6 +191,34 @@ class TestRunLoop:
         )
         assert rc == 0
 
+    def test_running_before_cutoff_finishes_inside_wait(self, tmp_path, capsys, monkeypatch):
+        """Regression: an execution that started before the cutoff but is
+        still running when the wait begins must not vanish from the active
+        set when it turns terminal (long-tail continuation scenario)."""
+        monkeypatch.setattr(wait_cr, "pid_alive", lambda pid: True)
+        path = write_state(tmp_path, "a", terminal_state("running", 30, pid=99999))
+        calls = {"n": 0}
+
+        def fake_sleep(sec):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                path.write_text(json.dumps(terminal_state("success", 30)), encoding="utf-8")
+
+        def fake_monotonic():
+            return 1000.0 + calls["n"] * 30.0
+
+        rc = wait_cr.run_loop(
+            tmp_path,
+            cutoff_minutes_ago(10),
+            timeout=2100,
+            poll=30,
+            grace=60,
+            sleep=fake_sleep,
+            monotonic=fake_monotonic,
+        )
+        assert rc == 0
+        assert "status=success" in capsys.readouterr().out
+
 
 class TestMain:
     def test_main_smoke_all_terminal(self, tmp_path, capsys):

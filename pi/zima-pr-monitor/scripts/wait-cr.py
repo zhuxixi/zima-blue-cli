@@ -149,7 +149,10 @@ def is_active(state: dict, cutoff: datetime | None) -> bool:
 
     Running executions are always active.  Finished ones count only when
     they started after the cutoff (recent enough to be this round's work);
-    older terminal files are history and are ignored.
+    older terminal files are history and are ignored.  ``run_loop`` adds
+    sticky semantics on top: an execution seen running at any point during
+    the wait stays active until it reaches a terminal state, even if its
+    ``started_at`` predates the cutoff (long-tail continuation scenario).
     """
     status = state.get("status")
     if status == "running":
@@ -203,10 +206,14 @@ def run_loop(
     deadline = monotonic() + timeout
     no_exec_deadline = monotonic() + grace
     elapsed = 0
+    sticky: set[str] = set()
 
     while True:
         states = load_states(state_dir)
-        active = {eid: s for eid, s in states.items() if is_active(s, cutoff)}
+        active = {eid: s for eid, s in states.items() if is_active(s, cutoff) or eid in sticky}
+        for eid, state in active.items():
+            if state.get("status") == "running":
+                sticky.add(eid)
         for state in active.values():
             if is_stale(state):
                 state["_stale"] = True

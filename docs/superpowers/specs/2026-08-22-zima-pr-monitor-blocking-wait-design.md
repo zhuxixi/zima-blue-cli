@@ -1,6 +1,6 @@
 # Spec: zima-pr-monitor 监听机制升级（issue #189）
 
-状态：**draft，等用户确认** · 作者：pi coding agent session（2026-08-22）
+状态：**approved**（2026-08-22 用户确认设计，实现见 PR #190）· 作者：pi coding agent session（2026-08-22）
 
 ## 1. 问题与目标
 
@@ -8,7 +8,7 @@ github-issue-driven 步 9 开 PR + 触发 Zima CR 之后，session 不知道「�
 后台监听会错过（turn 结束后无事件唤醒 session），前台轮询方式各异且无时长预期。
 本 spec 把监听环节升级为：**提交 PR 后自动进入、前台阻塞等到 CR job 全部完成、完成后无缝衔接现有决策树**。
 
-## 2. 约束与事实（调研结论摘要，详见 research/listening-patterns.md）
+## 2. 约束与事实（调研结论摘要，完整调研见 `~/.claude/github-issue-driven/zhuxixi/zima-blue-cli/issue-189/research/listening-patterns.md`）
 
 - **F1** 完成信号：`~/.zima/history/pjobs/<code>/<eid>.json` 的 `status` 在 postExec（发 review/摘标签）**之后**才写终态 → `status != running` 即「review 已发出」。
 - **F2** 唯一可靠原语：前台阻塞 bash（sleep loop）。`subagent_wait` 只管 pi 自己的 async run，管不到外部 zima 进程；结束 turn = 失联。
