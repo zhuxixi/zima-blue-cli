@@ -24,9 +24,11 @@ does not weaken these.
 from __future__ import annotations
 
 import ast
+import importlib.util
 import json
 import subprocess
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -60,6 +62,20 @@ def _run(script: Path, stdin: str, *args: str) -> subprocess.CompletedProcess:
 
 def _run_json(script: Path, obj: dict, *args: str) -> str:
     return _run(script, json.dumps(obj), *args).stdout
+
+
+def _load_build_review_body():
+    """Load the standalone script so mutation contracts can call it in-process."""
+    script_dir = str(SCRIPTS)
+    if script_dir not in sys.path:
+        sys.path.insert(0, script_dir)
+    spec = importlib.util.spec_from_file_location(
+        "cr_batch_build_review_body", _script("build_review_body.py")
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 # ---------------------------------------------------------------------------
@@ -210,6 +226,53 @@ class TestTriggerPhrases:
 
 
 # ---------------------------------------------------------------------------
+# Documentation contract: blocking-aware workflow and convergence terminology
+# ---------------------------------------------------------------------------
+
+
+class TestBlockingPolicyDocumentation:
+    @pytest.fixture(scope="class")
+    def texts(self) -> dict[str, str]:
+        return {
+            "flow": (SKILL_DIR / "references" / "flow.md").read_text(encoding="utf-8"),
+            "monitor": (_REPO_ROOT / "pi" / "zima-pr-monitor" / "SKILL.md").read_text(
+                encoding="utf-8"
+            ),
+            "examples": (SKILL_DIR / "references" / "output-examples.md").read_text(
+                encoding="utf-8"
+            ),
+        }
+
+    def test_flow_documents_blocking_normalization_and_counts(self, texts):
+        assert "blocking=false" in texts["flow"]
+        assert "blocking_open_count" in texts["flow"]
+        assert "status: open" in texts["flow"]
+
+    def test_monitor_documents_blocking_convergence_count(self, texts):
+        assert "blocking_new_count" in texts["monitor"]
+
+    def test_examples_label_advisory_findings(self, texts):
+        assert "Advisory / non-blocking findings" in texts["examples"]
+
+    def test_flow_step8_uses_blocking_aware_templates(self, texts):
+        step8 = texts["flow"].split("## Step 8:", 1)[1].split("## Step 9:", 1)[0]
+        assert "Found N blocking issues:" in step8
+        assert "No blocking issues found." in step8
+        assert "Found N issues:" not in step8
+        assert "No issues found." not in step8
+
+    def test_low_only_example_retains_monitor_safety_gates(self, texts):
+        low_only = (
+            texts["examples"]
+            .split("## Round-1：仅 advisory findings", 1)[1]
+            .split("## Round-1：无问题", 1)[0]
+        )
+        assert "multi-flow" in low_only
+        assert "in-flight" in low_only
+        assert "CI" in low_only
+
+
+# ---------------------------------------------------------------------------
 # Contract 2: status report block + 3-state Status enum
 # ---------------------------------------------------------------------------
 
@@ -260,6 +323,111 @@ class TestStatusReport:
         _, parsed = self._parsed(d)
         assert parsed.verdict == "approved"
 
+    def test_low_only_new_policy_is_pass_and_approved(self):
+        payload = _status_input("NEEDS_FIX")
+        payload.update(
+            {
+                "open_count": 3,
+                "new_count": 3,
+                "blocking_open_count": 0,
+                "blocking_new_count": 0,
+                "advisory_open_count": 3,
+                "advisory_new_count": 3,
+            }
+        )
+        out, parsed = self._parsed(payload)
+        assert "Total open issues: 3" in out
+        assert "Blocking open issues: 0" in out
+        assert "- New blocking this round: 0" in out
+        assert "Advisory open issues: 3" in out
+        assert "- New advisory this round: 3" in out
+        assert "Status: PASS" in out
+        assert "Verdict: READY_TO_MERGE" in out
+        assert parsed.verdict == "approved"
+        assert "no blocking issues" in out
+
+    def test_mixed_policy_still_needs_fix(self):
+        payload = _status_input("PASS")
+        payload.update(
+            {
+                "open_count": 3,
+                "new_count": 2,
+                "blocking_open_count": 1,
+                "blocking_new_count": 1,
+                "advisory_open_count": 2,
+                "advisory_new_count": 1,
+                "critical_count": 0,
+            }
+        )
+        out, parsed = self._parsed(payload)
+        assert "Blocking open issues: 1" in out
+        assert "- New blocking this round: 1" in out
+        assert "Advisory open issues: 2" in out
+        assert "- New advisory this round: 1" in out
+        assert "Status: NEEDS_FIX" in out
+        assert "Verdict: MERGE_WITH_CAUTION" in out
+        assert parsed.verdict == "needs_fix"
+
+    def test_legacy_payload_keeps_old_needs_fix_behavior(self):
+        payload = _status_input("NEEDS_FIX")
+        payload.update({"open_count": 3, "new_count": 2})
+        out, parsed = self._parsed(payload)
+        assert "Status: NEEDS_FIX" in out
+        assert "Verdict: MERGE_WITH_CAUTION" in out
+        assert parsed.verdict == "needs_fix"
+        assert "CR batch NEEDS_FIX: 3 open issue(s)" in out
+
+    def test_no_new_commits_preserves_skip_behavior_with_blocking_counts(self):
+        payload = _status_input("NO_NEW_COMMITS")
+        payload.update(
+            {
+                "open_count": 3,
+                "blocking_open_count": 0,
+                "blocking_new_count": 0,
+                "advisory_open_count": 3,
+                "advisory_new_count": 0,
+            }
+        )
+        out, parsed = self._parsed(payload)
+        assert "Status: NO_NEW_COMMITS" in out
+        assert "Verdict: SKIP" in out
+        assert parsed.verdict == "approved"
+        assert "no blocking issues" in out
+
+    def test_new_policy_blocking_critical_is_block_merge(self):
+        payload = _status_input("PASS")
+        payload.update(
+            {
+                "open_count": 2,
+                "new_count": 1,
+                "blocking_open_count": 1,
+                "blocking_new_count": 1,
+                "advisory_open_count": 1,
+                "advisory_new_count": 0,
+                "critical_count": 1,
+            }
+        )
+        out, parsed = self._parsed(payload)
+        assert "Status: NEEDS_FIX" in out
+        assert "Blocking open issues: 1" in out
+        assert "Critical issues: 1" in out
+        assert "Verdict: BLOCK_MERGE" in out
+        assert parsed.verdict == "needs_fix"
+
+    def test_new_policy_derives_missing_advisory_counts(self):
+        payload = _status_input("PASS")
+        payload.update(
+            {
+                "open_count": 4,
+                "new_count": 3,
+                "blocking_open_count": 1,
+                "blocking_new_count": 1,
+            }
+        )
+        out, _ = self._parsed(payload)
+        assert "Advisory open issues: 3" in out
+        assert "- New advisory this round: 2" in out
+
     def test_invalid_status_exits_nonzero(self):
         proc = _run(_script("render_status_report.py"), json.dumps(_status_input("BOGUS")))
         assert proc.returncode != 0
@@ -282,6 +450,10 @@ METADATA_KEYS = {
     "acknowledged_count",
     "issues",
     "timestamp",
+    "blocking_open_count",
+    "blocking_new_count",
+    "advisory_open_count",
+    "advisory_new_count",
 }
 
 
@@ -298,7 +470,7 @@ class TestReviewBody:
         assert "### Code Review | Round-2 (Re-check)" in out
 
     def test_metadata_top_level_keys_stable(self):
-        """#119 may add per-issue `severity`, but top-level keys must not change."""
+        """The documented metadata key contract includes blocking policy counts."""
         out = _run_json(_script("build_review_body.py"), ROUND1_INPUT)
         start = out.index("<!-- pi-cr-meta")
         end = out.index("-->", start)
@@ -315,7 +487,7 @@ class TestRound1MetadataDefaults:
     """#173: Round-1 must not report new_count=0 when issues were found.
 
     Round-1 semantics: every discovered issue is new. render_round_1 prints
-    "Found N issues" from `issues[]`; metadata `new_count` must use the same
+    active blocking/advisory findings from `issues[]`; metadata `new_count` must use the same
     count (open, non-acknowledged) when the caller did not pass explicit
     new_count / new_issues.
     """
@@ -370,7 +542,7 @@ class TestRound1MetadataDefaults:
         # rendered "Found N issues" must agree.
         assert meta["new_count"] == 3
         assert meta["total_issues"] == 3
-        assert "Found 3 issues" in out
+        assert "Found 3 blocking issues" in out
 
     def test_round1_explicit_new_count_still_wins(self):
         payload = dict(ROUND1_INPUT)
@@ -379,111 +551,335 @@ class TestRound1MetadataDefaults:
         meta = self._meta(out)
         assert meta["new_count"] == 7
 
+    def test_round1_metadata_normalizes_blocking_and_counts(self):
+        payload = dict(ROUND1_INPUT)
+        payload["issues"] = [
+            {
+                "id": "low",
+                "description": "finding low",
+                "reason": "style",
+                "file": "a.py",
+                "lines": "1-2",
+                "status": "open",
+                "severity": "low",
+            },
+            {
+                "id": "high",
+                "description": "finding high",
+                "reason": "bug",
+                "file": "b.py",
+                "lines": "3-4",
+                "status": "open",
+                "severity": "high",
+            },
+        ]
+        out = _run_json(_script("build_review_body.py"), payload)
+        meta = self._meta(out)
+        assert meta["total_issues"] == 2
+        assert meta["new_count"] == 2
+        assert meta["blocking_open_count"] == 1
+        assert meta["blocking_new_count"] == 1
+        assert meta["advisory_open_count"] == 1
+        assert meta["advisory_new_count"] == 1
+        assert meta["issues"][0]["blocking"] is False
 
-class TestLowSeveritySuppressedInPartB:
-    """#168: severity=low must not enter the human-readable PR comment.
+    def test_round1_missing_status_is_active_and_inactive_findings_are_excluded(self):
+        payload = dict(ROUND1_INPUT)
+        payload["issues"] = [
+            {
+                "id": "legacy-active",
+                "description": "legacy active",
+                "reason": "bug",
+                "file": "active.py",
+                "lines": "1-2",
+                "severity": "high",
+            },
+            {
+                "id": "resolved",
+                "description": "resolved finding",
+                "reason": "bug",
+                "file": "resolved.py",
+                "lines": "1-2",
+                "status": "resolved",
+                "severity": "critical",
+            },
+            {
+                "id": "acknowledged",
+                "description": "acknowledged finding",
+                "reason": "style",
+                "file": "ack.py",
+                "lines": "1-2",
+                "resolution": "acknowledged",
+                "severity": "low",
+            },
+            {
+                "id": "wontfix",
+                "description": "wontfix finding",
+                "reason": "bug",
+                "file": "wontfix.py",
+                "lines": "1-2",
+                "status": "open",
+                "resolution": "wontfix",
+                "severity": "high",
+            },
+        ]
+        out = _run_json(_script("build_review_body.py"), payload)
+        meta = self._meta(out)
+        assert meta["total_issues"] == 1
+        assert meta["new_count"] == 1
+        assert meta["blocking_open_count"] == 1
+        assert meta["blocking_new_count"] == 1
+        assert meta["advisory_open_count"] == 0
+        assert meta["advisory_new_count"] == 0
+        assert "Found 1 blocking issue" in out
+        assert "legacy active" in out
+        assert "resolved finding" not in out.split("-->", 1)[1]
+        assert "acknowledged finding" not in out.split("-->", 1)[1]
+        assert "wontfix finding" not in out.split("-->", 1)[1]
 
-    Part B lists/filters low findings and appends an explicit suppression
-    note; metadata keeps the full issues[] (low included) as the factual
-    record, so counts there stay comprehensive.
-    """
+    def test_normalization_does_not_mutate_input_collections(self):
+        payload = deepcopy(ROUND2_INPUT)
+        payload["new_issues"] = [
+            {
+                "id": "new-low",
+                "description": "new advisory",
+                "reason": "style",
+                "file": "new.py",
+                "lines": "1-2",
+                "severity": "low",
+            }
+        ]
+        before = deepcopy(payload)
 
-    def _issue(self, id_: str, sev: str) -> dict:
-        return {
+        build_review_body = _load_build_review_body()
+        build_review_body.render_body(payload)
+
+        assert payload == before
+        assert "blocking" not in payload["issues"][0]
+        assert "blocking" not in payload["unresolved_issues"][0]
+        assert "blocking" not in payload["new_issues"][0]
+
+    def test_explicit_blocking_override_and_legacy_issue_are_normalized(self):
+        payload = dict(ROUND1_INPUT)
+        payload["issues"] = [
+            {
+                "id": "override",
+                "description": "explicit low override",
+                "reason": "bug",
+                "file": "a.py",
+                "lines": "1-2",
+                "status": "open",
+                "severity": "low",
+                "blocking": True,
+            },
+            {
+                "id": "legacy",
+                "description": "legacy issue",
+                "reason": "bug",
+                "file": "b.py",
+                "lines": "3-4",
+                "status": "open",
+                "severity": "low",
+            },
+        ]
+        out = _run_json(_script("build_review_body.py"), payload)
+        meta = self._meta(out)
+        assert meta["blocking_open_count"] == 1
+        assert meta["blocking_new_count"] == 1
+        assert meta["issues"][0]["blocking"] is True
+        assert meta["issues"][1]["blocking"] is False
+
+    def test_roundn_metadata_uses_unresolved_and_new_fallback(self):
+        payload = dict(ROUND2_INPUT)
+        payload["issues"] = []
+        payload["unresolved_issues"] = [
+            {
+                "id": "carried-low",
+                "description": "finding carried-low",
+                "reason": "style",
+                "file": "a.py",
+                "lines": "1-2",
+                "severity": "low",
+            }
+        ]
+        payload["new_issues"] = [
+            {
+                "id": "new-high",
+                "description": "finding new-high",
+                "reason": "bug",
+                "file": "b.py",
+                "lines": "3-4",
+                "status": "open",
+                "severity": "high",
+            }
+        ]
+        out = _run_json(_script("build_review_body.py"), payload)
+        meta = self._meta(out)
+        assert meta["total_issues"] == 2
+        assert meta["new_count"] == 1
+        assert meta["blocking_open_count"] == 1
+        assert meta["blocking_new_count"] == 1
+        assert meta["advisory_open_count"] == 1
+        assert meta["advisory_new_count"] == 0
+        assert [issue["id"] for issue in meta["issues"]] == ["carried-low", "new-high"]
+        assert all(isinstance(issue["blocking"], bool) for issue in meta["issues"])
+
+    def test_explicit_policy_counts_remain_authoritative(self):
+        payload = dict(ROUND1_INPUT)
+        payload.update(
+            {
+                "total_issues": 8,
+                "new_count": 7,
+                "blocking_open_count": 6,
+                "blocking_new_count": 5,
+                "advisory_open_count": 4,
+                "advisory_new_count": 3,
+            }
+        )
+        meta = self._meta(_run_json(_script("build_review_body.py"), payload))
+        assert meta["total_issues"] == 8
+        assert meta["new_count"] == 7
+        assert meta["blocking_open_count"] == 6
+        assert meta["blocking_new_count"] == 5
+        assert meta["advisory_open_count"] == 4
+        assert meta["advisory_new_count"] == 3
+
+
+class TestLowSeverityAdvisoryRendering:
+    """Low findings remain visible as explicit non-blocking advisories."""
+
+    def _issue(self, id_: str, sev: str, **extra) -> dict:
+        issue = {
             "id": id_,
             "description": f"finding {id_}",
             "reason": "bug",
-            "file": "a.py",
+            "file": f"{id_}.py",
             "lines": "1-2",
             "status": "open",
             "first_round": 1,
             "severity": sev,
         }
+        issue.update(extra)
+        return issue
 
-    def test_round1_low_filtered_from_part_b_kept_in_metadata(self):
-        payload = {
-            "round": 1,
-            "pr_number": 123,
-            "head_sha": HEAD_SHA_A,
-            "previous_head_sha": None,
-            "repo_owner": "owner",
-            "repo_name": "repo",
-            "timestamp": "2026-06-17T10:00:00Z",
-            "issues": [
-                self._issue("i1", "medium"),
-                self._issue("i2", "low"),
-            ],
-        }
+    def test_round1_low_only_is_explicitly_advisory(self):
+        payload = dict(ROUND1_INPUT)
+        payload["issues"] = [self._issue("i1", "low")]
         out = _run_json(_script("build_review_body.py"), payload)
-        part_b = out.split("-->", 1)[1]  # human-readable section only
-        assert "Found 1 issue" in part_b
-        assert "finding i2" not in part_b  # low suppressed from Part B
+        part_b = out.split("-->", 1)[1]
+        assert "No blocking issues found" in part_b
+        assert "advisory" in part_b.lower()
+        assert "<details>" in part_b
         assert "finding i1" in part_b
-        assert "1 low-severity finding" in part_b  # explicit suppression note
-        # metadata stays the factual record: both issues present
-        start = out.index("<!-- pi-cr-meta")
-        end = out.index("-->", start)
-        meta = json.loads(out[start + len("<!-- pi-cr-meta") : end].strip())
+        assert "suppressed" not in part_b.lower()
+        assert "<summary>Advisory / non-blocking findings (1)</summary>" in part_b
+        assert f"https://github.com/owner/repo/blob/{HEAD_SHA_A}/i1.py#L1-L2" in part_b
+
+    def test_round1_mixed_keeps_blocking_list_and_advisory_details(self):
+        payload = dict(ROUND1_INPUT)
+        payload["issues"] = [self._issue("low", "low"), self._issue("high", "high")]
+        out = _run_json(_script("build_review_body.py"), payload)
+        part_b = out.split("-->", 1)[1]
+        blocking_section, advisory_details = part_b.split("<details>", 1)
+        assert "Found 1 blocking issue" in blocking_section
+        assert "finding high" in blocking_section
+        assert "finding low" in advisory_details
+        assert "(bug, low)" in advisory_details
+        assert f"https://github.com/owner/repo/blob/{HEAD_SHA_A}/low.py#L1-L2" in advisory_details
+
+    def test_roundn_low_only_does_not_claim_all_findings_resolved(self):
+        payload = dict(ROUND2_INPUT)
+        payload["issues"] = []
+        payload["unresolved_issues"] = [self._issue("u1", "low")]
+        payload["new_issues"] = []
+        out = _run_json(_script("build_review_body.py"), payload)
+        part_b = out.split("-->", 1)[1]
+        assert "No blocking issues remain" in part_b
+        assert "All issues resolved" not in part_b
+        assert "Advisory / non-blocking findings" in part_b
+        assert "finding u1" in part_b
+
+    def test_roundn_explicit_low_override_is_rendered_as_blocking(self):
+        payload = dict(ROUND2_INPUT)
+        payload["issues"] = []
+        payload["unresolved_issues"] = [self._issue("u1", "low", blocking=True)]
+        payload["new_issues"] = []
+        out = _run_json(_script("build_review_body.py"), payload)
+        part_b = out.split("-->", 1)[1]
+        assert "- **Still open**: 1 blocking; 0 advisory" in part_b
+        assert "New issues found: 0 blocking; 0 advisory" in part_b
+        assert "finding u1" in part_b
+
+    def test_roundn_only_new_advisory_is_counted_and_labeled_new(self):
+        payload = dict(ROUND2_INPUT)
+        payload["issues"] = []
+        payload["unresolved_issues"] = []
+        payload["new_issues"] = [self._issue("new-low", "low", first_round=2)]
+
+        out = _run_json(_script("build_review_body.py"), payload)
+        meta = TestRound1MetadataDefaults()._meta(out)
+        part_b = out.split("-->", 1)[1]
+
+        assert meta["new_count"] == 1
+        assert meta["blocking_new_count"] == 0
+        assert meta["advisory_new_count"] == 1
+        assert "- **Still open**: 0 blocking; 0 advisory" in part_b
+        assert "New issues found: 0 blocking; 1 advisory" in part_b
+        assert "#### New this round (1)" in part_b
+        assert "finding new-low" in part_b
+        assert "#### Carried from previous rounds" not in part_b
+
+    def test_roundn_nonempty_issues_are_canonical_for_metadata_and_body(self):
+        payload = dict(ROUND2_INPUT)
+        payload["issues"] = [
+            self._issue("canonical-carried", "high", first_round=1),
+            self._issue("canonical-new", "low", first_round=2),
+        ]
+        payload["unresolved_issues"] = [self._issue("bucket-ghost", "low", first_round=1)]
+        payload["new_issues"] = [self._issue("new-bucket-ghost", "critical", first_round=2)]
+
+        out = _run_json(_script("build_review_body.py"), payload)
+        meta = TestRound1MetadataDefaults()._meta(out)
+        part_b = out.split("-->", 1)[1]
+
         assert meta["total_issues"] == 2
-        assert meta["new_count"] == 2
-        assert len(meta["issues"]) == 2
+        assert meta["new_count"] == 1
+        assert meta["blocking_open_count"] == 1
+        assert meta["blocking_new_count"] == 0
+        assert meta["advisory_open_count"] == 1
+        assert meta["advisory_new_count"] == 1
+        assert "- **Still open**: 1 blocking; 0 advisory" in part_b
+        assert "New issues found: 0 blocking; 1 advisory" in part_b
+        assert "finding canonical-carried" in part_b
+        assert "finding canonical-new" in part_b
+        assert "bucket-ghost" not in part_b
+        assert "new-bucket-ghost" not in part_b
+        assert "#### New this round (1)" in part_b
 
-    def test_round1_all_low_still_notes_suppression(self):
-        payload = {
-            "round": 1,
-            "pr_number": 123,
-            "head_sha": HEAD_SHA_A,
-            "previous_head_sha": None,
-            "repo_owner": "owner",
-            "repo_name": "repo",
-            "timestamp": "2026-06-17T10:00:00Z",
-            "issues": [self._issue("i1", "low"), self._issue("i2", "low")],
-        }
+    def test_roundn_nonempty_inactive_issues_do_not_revive_bucket_ghosts(self):
+        payload = dict(ROUND2_INPUT)
+        payload["issues"] = [
+            self._issue("resolved-canonical", "high", status="resolved"),
+            self._issue("acknowledged-canonical", "low", resolution="acknowledged"),
+            self._issue("wontfix-canonical", "critical", resolution="wontfix"),
+        ]
+        payload["unresolved_issues"] = [self._issue("carried-bucket-ghost", "high")]
+        payload["new_issues"] = [self._issue("new-bucket-ghost", "critical", first_round=2)]
+
         out = _run_json(_script("build_review_body.py"), payload)
+        meta = TestRound1MetadataDefaults()._meta(out)
         part_b = out.split("-->", 1)[1]
-        assert "finding i1" not in part_b
-        assert "2 low-severity findings" in part_b
 
-    def test_roundn_low_filtered_from_lists_and_counts(self):
-        payload = {
-            "round": 2,
-            "pr_number": 123,
-            "head_sha": HEAD_SHA_B,
-            "previous_head_sha": HEAD_SHA_A,
-            "repo_owner": "owner",
-            "repo_name": "repo",
-            "timestamp": "2026-06-17T10:30:00Z",
-            "issues": [],
-            "resolved_issues": [],
-            "unresolved_issues": [self._issue("u1", "low")],
-            "new_issues": [
-                self._issue("n1", "high"),
-                self._issue("n2", "low"),
-            ],
-        }
-        out = _run_json(_script("build_review_body.py"), payload)
-        part_b = out.split("-->", 1)[1]
-        assert "finding n1" in part_b
-        assert "finding n2" not in part_b
-        assert "finding u1" not in part_b
-        assert "New issues found: 1" in part_b
-        assert "- **Still open**: 0" in part_b
-        assert "2 low-severity findings suppressed" in part_b
-
-    def test_no_low_no_suppression_note(self):
-        payload = {
-            "round": 1,
-            "pr_number": 123,
-            "head_sha": HEAD_SHA_A,
-            "previous_head_sha": None,
-            "repo_owner": "owner",
-            "repo_name": "repo",
-            "timestamp": "2026-06-17T10:00:00Z",
-            "issues": [self._issue("i1", "high")],
-        }
-        out = _run_json(_script("build_review_body.py"), payload)
-        assert "low-severity finding" not in out
-        assert "Found 1 issue" in out
+        assert meta["total_issues"] == 0
+        assert meta["new_count"] == 0
+        assert meta["blocking_open_count"] == 0
+        assert meta["blocking_new_count"] == 0
+        assert meta["advisory_open_count"] == 0
+        assert meta["advisory_new_count"] == 0
+        assert meta["issues"] == []
+        assert "carried-bucket-ghost" not in part_b
+        assert "new-bucket-ghost" not in part_b
+        assert "All issues resolved" in part_b
 
 
 class TestRoundNResolvedLabelTruncation:
@@ -590,7 +986,9 @@ class TestPortability:
                     imports.extend(alias.name.split(".")[0] for alias in node.names)
                 elif isinstance(node, ast.ImportFrom) and node.module:
                     imports.append(node.module.split(".")[0])
-            non_stdlib = sorted({m for m in imports if m not in sys.stdlib_module_names})
+            non_stdlib = sorted(
+                {m for m in imports if m not in sys.stdlib_module_names and m != "issue_policy"}
+            )
             if non_stdlib:
                 offenders[name] = non_stdlib
         assert not offenders, f"non-stdlib imports break portability: {offenders}"
@@ -710,10 +1108,9 @@ class TestSeverityRender:
         medium_pos = body.index("Medium edge case")
         assert crit_pos < medium_pos  # critical sorts above medium
         assert "(bug, critical)" in body
-        # #168: low findings no longer enter Part B at all — suppressed with
-        # an explicit note; metadata keeps the full record.
-        assert "Low-severity naming nit" not in body
-        assert "low-severity finding" in body
+        assert "<summary>Advisory / non-blocking findings (1)</summary>" in body
+        assert "Low-severity naming nit" in body
+        assert "suppressed" not in body.lower()
         meta = out[out.index("<!-- pi-cr-meta") + len("<!-- pi-cr-meta") : out.index("-->")]
         assert "Low-severity naming nit" in meta
 

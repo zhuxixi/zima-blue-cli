@@ -1,7 +1,7 @@
 # Issue #183 Design Spec: Low-Severity Findings Are Non-Blocking by Default
 
 - **Issue:** https://github.com/zhuxixi/zima-blue-cli/issues/183
-- **Status:** Draft for user review
+- **Status:** Approved and implemented
 - **Scope:** `github-code-review-batch` skill and `zima-pr-monitor` convergence contract
 
 ## 1. Problem and goal
@@ -137,7 +137,7 @@ The XML summary must say “no blocking issues” when advisory findings remain;
 4. `build_review_body.py` writes normalized issue metadata and renders blocking findings normally plus advisory findings in a collapsed section.
 5. `render_status_report.py` receives both total and blocking counts. Its status/verdict/XML decisions use blocking counts.
 6. The external scheduler and fix agent consume blocking counts/status and act only on `blocking=true` open findings.
-7. `zima-pr-monitor` convergence checks `blocking_new_count==0` and no carried open issue with `blocking=true` (with severity fallback for old metadata). Open low findings may remain as advisory history without preventing convergence.
+7. `zima-pr-monitor` convergence checks `blocking_new_count == 0` and no carried actionable finding with `status=open` and effective `blocking=true`. Acknowledged/wontfix findings are not actionable. For old metadata, missing or invalid `blocking` is derived from normalized severity; missing top-level blocking counts are derived from `issues[]`, with current-round findings identified by `first_round == round`. Open low findings may remain as advisory history without preventing convergence.
 
 The existing #126 cross-PR suppression path remains a separate, opt-in mechanism. A finding may be both advisory by severity policy and matched by that suppression list; neither mechanism changes the lifecycle `status` field.
 
@@ -173,8 +173,8 @@ Expected implementation scope:
 - `pi/github-code-review-batch/references/subagent-prompts.md`: document optional `blocking` override and clarify that default normalization is downstream.
 - `pi/github-code-review-batch/references/output-examples.md`: add low-only and mixed blocking/advisory examples.
 - `pi/github-code-review-batch/SKILL.md`: update machine-readable output and `NEEDS_FIX`/`PASS` meanings.
-- `pi/zima-pr-monitor/SKILL.md`: use blocking-aware convergence and fix selection.
-- `tests/unit/test_cr_batch_contracts.py`: black-box contract coverage for all new behavior and legacy fallback.
+- `pi/zima-pr-monitor/SKILL.md`: use blocking-aware convergence and fix selection while retaining multi-flow and in-flight checks.
+- `tests/unit/test_cr_batch_contracts.py`: black-box contract coverage for all new behavior, legacy fallback, and authoritative documentation terms.
 
 No changes are expected in `zima/review/parser.py`: it already consumes the verdict XML and does not need to understand per-issue metadata.
 
