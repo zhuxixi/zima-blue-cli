@@ -46,16 +46,42 @@ def parse_iso(value: str | None) -> datetime | None:
 
 
 def pid_alive(pid: int | None) -> bool:
-    """Return True when a process with this pid exists (kill(pid, 0) probe)."""
+    """Return True when a process with this pid exists.
+
+    Mirrors ``zima.execution.history._is_pid_alive`` so the watcher and the
+    state-file writer agree on liveness: ``ctypes.GetExitCodeProcess`` on
+    Windows, ``os.kill(pid, 0)`` on Unix.  ``PermissionError`` on Unix means
+    the process exists but is not ours (alive); ``ProcessLookupError`` means
+    it does not exist (dead); anything unexpected is dead.
+    """
     if pid is None:
         return False
     try:
+        if sys.platform == "win32":
+            import ctypes
+
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            STILL_ACTIVE = 259
+            handle = ctypes.windll.kernel32.OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+            )
+            if not handle:
+                return False
+            exit_code = ctypes.c_ulong()
+            try:
+                ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+            finally:
+                ctypes.windll.kernel32.CloseHandle(handle)
+            return exit_code.value == STILL_ACTIVE
         os.kill(int(pid), 0)
-    except (ValueError, OverflowError):
-        return False
-    except PermissionError:
         return True
-    return True
+    except PermissionError:
+        # Process exists but caller lacks permission to signal it.
+        return True
+    except ProcessLookupError:
+        return False
+    except (ValueError, Exception):
+        return False
 
 
 def load_states(state_dir: Path) -> dict[str, dict]:

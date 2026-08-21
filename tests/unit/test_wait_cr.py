@@ -2,8 +2,13 @@
 
 import importlib.util
 import json
+import os
+import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+import pytest
 
 SCRIPT = Path(__file__).resolve().parents[2] / "pi" / "zima-pr-monitor" / "scripts" / "wait-cr.py"
 
@@ -237,6 +242,10 @@ class TestTailLog:
 
 
 class TestPidAlivePermissionError:
+    @pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="PermissionError semantics are Unix-only (Windows uses ctypes)",
+    )
     def test_permission_error_means_alive(self, monkeypatch):
         def raise_perm(pid, sig):
             raise PermissionError()
@@ -274,3 +283,18 @@ class TestGraceBoundedByTimeout:
         )
         assert rc == 1
         assert "timeout" in capsys.readouterr().err
+
+
+class TestPidAliveReal:
+    def test_real_alive_pid_returns_true(self):
+        assert wait_cr.pid_alive(os.getpid()) is True
+
+    def test_real_dead_pid_returns_false(self):
+        proc = subprocess.Popen(
+            [sys.executable, "-c", "pass"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        dead_pid = proc.pid
+        proc.wait(timeout=10)
+        assert wait_cr.pid_alive(dead_pid) is False
