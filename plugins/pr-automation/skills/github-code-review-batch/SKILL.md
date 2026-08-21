@@ -16,7 +16,7 @@ description: |
 
 GitHub PR 批量/调度代码审查工具，**非监听模式**。
 
-本 Skill 是**双 CR Agent 交叉验证体系**的一部分：Claude Code 和 Kimi CLI 分别独立审查同一 PR，互相校验审查结论。两个 Agent 的审查结果通过各自的 HTML metadata（`cc-cr-meta` / `kimi-cr-meta`）独立持久化，**互不干扰**——两边读取评论流时严格忽略对方的 metadata 评论，保证交叉验证的独立性。
+本 Skill 是**单 Agent 审查**：每次调用由 Claude Code 独立审查 PR，审查结果通过 HTML metadata（`cc-cr-meta`）持久化，供增量审查与外部调度器读取。体系沿革：曾为 cc + kimi 双 Agent 交叉验证，kimi bot 已移除（单 bot 化）——历史 `kimi-cr-meta` 评论在读取评论流时严格忽略，互不干扰。
 
 **与监听模式的区别**：
 - 每次调用都是独立短会话，执行完立即结束，不启动 background watcher
