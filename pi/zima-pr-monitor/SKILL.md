@@ -55,7 +55,7 @@ gh pr view <N> --json state,labels,statusCheckRollup,reviews
 
 - **识别多流**：同 head 的 `pi-cr-meta` review 超过一条即视为多流嫌疑——单条流对同一 head 不会发多条 review（batch skill Step 0 同 SHA 直接 `NO_NEW_COMMITS`、不发评论），「超过一条」本身就是充分判据。round 相同为确证；round 不同（流间 round 计数错位）仍需逐条核对 meta 并按「所有流收敛」规则判定，不要因此排除多流。按 `(head_sha, submittedAt)` 排序；最新一条不代表全部。
 - **收敛要求所有流**：每条活跃流对当前 head 的 review 都满足 `new_count==0` 且无 open 才算收敛。**活跃流** = 对当前 head 已发布 review 的流 + 距最后触发 <15min 时可能仍在跑的流。
-- **合并前 in-flight 检查（必做）**：① `zima pjob ps` 确认无该仓库的 running CR job；② 距最后一次触发（打标签或手动 run）不足 ~15min 时，未出 review 的流可能还在跑——等它出结果再判。**取触发时间**：标签触发用 `gh api repos/{owner}/{repo}/issues/{n}/timeline --jq '.[] | select(.event=="labeled" and .label.name=="zima:needs-review") | .label.name + " " + .created_at'` 查最近一次 `zima:needs-review` 打标时间（必须过滤 label 名，否则会混入 needs-fix 等其他打标事件）；手动 run 以自己执行 `zima pjob run` 的时刻为准。
+- **合并前 in-flight 检查（必做）**：① `zima pjob ps` 确认无该仓库的 running CR job；② 距最后一次触发（打标签或手动 run）不足 ~15min 时，未出 review 的流可能还在跑——等它出结果再判。**取触发时间**：标签触发用 `gh api repos/{owner}/{repo}/issues/{n}/timeline --paginate --jq '[.[] | select(.event=="labeled" and .label.name=="zima:needs-review")] | last | .label.name + " " + .created_at'` 查最近一次 `zima:needs-review` 打标时间（必须 `--paginate` 翻全部分页——默认只返回最旧 30 条，事件多的 PR 上最近打标会被截断；必须过滤 label 名，否则会混入 needs-fix 等其他打标事件）；手动 run 以自己执行 `zima pjob run` 的时刻为准。
 - **触发纪律**：一次修复循环只用一条流——要么纯标签驱动（等 webhook/daemon），要么接受"打标签即触发 webhook 流"的事实：手动 run 前打了标签就必须**等两条流都出 review**。不要假设"只看到一条 review"= 只有一条流。（根治需调度器去重，见 zima-blue-cli #181）
 
 ## babysit 必带 stuck 检测（否则空转数天）
