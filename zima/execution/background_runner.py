@@ -102,6 +102,7 @@ def run_pjob_in_background(
         dry_run=False,
         keep_temp=keep_temp,
         dedup_off=dedup_off,
+        execution_id=execution_id,
     )
 
     # Update state file with completion data

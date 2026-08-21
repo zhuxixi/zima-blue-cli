@@ -185,6 +185,7 @@ class PJobExecutor:
         dry_run: bool = False,
         keep_temp: bool = False,
         dedup_off: bool = False,
+        execution_id: Optional[str] = None,
     ) -> ExecutionResult:
         """
         Execute a PJob.
@@ -195,11 +196,12 @@ class PJobExecutor:
             dry_run: If True, only show what would be executed
             keep_temp: Keep temporary files after execution
             dedup_off: If True, skip the duplicate-execution dedup guard.
+            execution_id: Optional explicit execution ID; falls back to a fresh UUID.
 
         Returns:
             ExecutionResult with details
         """
-        execution_id = str(uuid.uuid4())[:8]
+        execution_id = execution_id or str(uuid.uuid4())[:8]
         result = ExecutionResult(
             pjob_code=pjob_code,
             execution_id=execution_id,
@@ -519,6 +521,7 @@ class PJobExecutor:
                                 _state = {
                                     "execution_id": execution_id,
                                     "pjob_code": pjob_code,
+                                    "status": "running",
                                     "started_at": result.started_at,
                                 }
                             _state["scan_pr_result"] = result.scan_pr_result

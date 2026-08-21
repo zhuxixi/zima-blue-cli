@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from zima.execution.actions_runner import normalize_pr_number
 from zima.utils import get_zima_home
 
 # =============================================================================
@@ -496,7 +497,7 @@ class ExecutionHistory:
         Args:
             pjob_code: PJob code to query.
             repo: Target repo full name.
-            pr_number: Target PR number (already normalized).
+            pr_number: Target PR number (may include a leading '#' or whitespace).
             head_sha: Target head SHA (may be empty).
             exclude_execution_id: Execution ID to skip (the current run).
             window_minutes: Recent-completion window for ``success`` records.
@@ -521,7 +522,7 @@ class ExecutionHistory:
                 return None
 
         target_repo = str(repo or "").strip().lower()
-        target_pr = str(pr_number or "").strip()
+        target_pr = normalize_pr_number(pr_number)
         target_head = str(head_sha or "").strip().lower()
 
         for record in self.list_executions(pjob_code):
@@ -532,7 +533,7 @@ class ExecutionHistory:
                 continue
             if str(spr.get("repo") or "").strip().lower() != target_repo:
                 continue
-            if str(spr.get("pr_number") or "").strip() != target_pr:
+            if normalize_pr_number(spr.get("pr_number") or "") != target_pr:
                 continue
 
             status = record.get("status", "")

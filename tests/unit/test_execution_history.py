@@ -493,3 +493,19 @@ class TestFindRecentDuplicate:
             exclude_execution_id="me000001",
         )
         assert dup is None
+
+    def test_candidate_hash_prefixed_pr_number_matches(self):
+        self._write("dup00001", "running", pr_number="#42", started_minutes_ago=1)
+        dup = self._query(head_sha="abc123")
+        assert dup is not None and dup["execution_id"] == "dup00001"
+
+    def test_query_hash_prefixed_pr_number_matches(self):
+        self._write("dup00001", "running", pr_number="42", started_minutes_ago=1)
+        dup = self.history.find_recent_duplicate(
+            pjob_code=self.pjob_code,
+            repo="owner/repo",
+            pr_number="#42",
+            head_sha="abc123",
+            exclude_execution_id="me000001",
+        )
+        assert dup is not None and dup["execution_id"] == "dup00001"

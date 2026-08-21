@@ -18,13 +18,10 @@ class TestSigtermHandler:
 
 
 class TestDedupOffForwarding:
-    def test_run_pjob_in_background_forwards_dedup_off(self, isolated_zima_home):
+    def _fake_result(self):
         from types import SimpleNamespace
-        from unittest.mock import MagicMock, patch
 
-        from zima.execution.background_runner import run_pjob_in_background
-
-        fake_result = SimpleNamespace(
+        return SimpleNamespace(
             stdout="",
             stderr="",
             status=SimpleNamespace(value="success"),
@@ -33,11 +30,17 @@ class TestDedupOffForwarding:
             scan_pr_result=None,
             error_detail="",
         )
+
+    def test_run_pjob_in_background_forwards_dedup_off(self, isolated_zima_home):
+        from unittest.mock import MagicMock, patch
+
+        from zima.execution.background_runner import run_pjob_in_background
+
         # PJobExecutor is imported inside run_pjob_in_background, so patch
         # the source module attribute rather than the background_runner module.
         with patch("zima.execution.executor.PJobExecutor") as MockExecutor:
             mock_executor = MagicMock()
-            mock_executor.execute.return_value = fake_result
+            mock_executor.execute.return_value = self._fake_result()
             MockExecutor.return_value = mock_executor
             run_pjob_in_background(
                 pjob_code="test-pjob",
@@ -47,6 +50,23 @@ class TestDedupOffForwarding:
             )
             kwargs = mock_executor.execute.call_args.kwargs
             assert kwargs["dedup_off"] is True
+
+    def test_run_pjob_in_background_forwards_execution_id(self, isolated_zima_home):
+        from unittest.mock import MagicMock, patch
+
+        from zima.execution.background_runner import run_pjob_in_background
+
+        with patch("zima.execution.executor.PJobExecutor") as MockExecutor:
+            mock_executor = MagicMock()
+            mock_executor.execute.return_value = self._fake_result()
+            MockExecutor.return_value = mock_executor
+            run_pjob_in_background(
+                pjob_code="test-pjob",
+                execution_id="cli00001",
+                overrides_json="{}",
+            )
+            kwargs = mock_executor.execute.call_args.kwargs
+            assert kwargs["execution_id"] == "cli00001"
 
     def test_main_parses_dedup_off_flag(self, isolated_zima_home):
         from unittest.mock import patch

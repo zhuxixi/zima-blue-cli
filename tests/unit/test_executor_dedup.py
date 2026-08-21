@@ -98,6 +98,41 @@ class TestScanResultPersistence:
         states = executor._history.list_executions("test-pjob")
         assert all(s.get("execution_id") != result.execution_id for s in states)
 
+    def test_cli_provided_execution_id_persists_into_existing_state(self, mock_pjob_with_scan):
+        """Simulate the production CLI→background_runner path: the CLI already
+        wrote a status=running state file under a known id; execute() with that
+        id must write scan_pr_result into the SAME file and create no orphan."""
+        history = ExecutionHistory()
+        history.write_runtime_state(
+            "test-pjob",
+            "cli00001",
+            {
+                "execution_id": "cli00001",
+                "pjob_code": "test-pjob",
+                "status": "running",
+                "pid": None,
+                "started_at": "2026-08-22T00:00:00+00:00",
+            },
+        )
+        executor = PJobExecutor()
+        with (
+            patch.object(
+                executor._actions_runner,
+                "run_pre",
+                return_value={"repo": "owner/repo", "pr_number": "42"},
+            ),
+            patch.object(executor, "_run_command", return_value=(0, "", "", 12345)),
+        ):
+            result = executor.execute("test-pjob", execution_id="cli00001")
+        assert result.status == ExecutionStatus.SUCCESS
+        assert result.execution_id == "cli00001"
+        state = history.get_runtime_state("test-pjob", "cli00001")
+        assert state is not None
+        assert state["status"] == "running"
+        assert state["scan_pr_result"] == {"repo": "owner/repo", "pr_number": "42"}
+        # No orphan file: the pjob dir must contain exactly one record.
+        assert len(history.list_executions("test-pjob")) == 1
+
 
 class TestDedupGuard:
     def _seed_duplicate(self, status, head_sha="", started_minutes_ago=0):
