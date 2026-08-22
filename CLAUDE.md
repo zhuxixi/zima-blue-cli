@@ -101,6 +101,7 @@ zima pjob run <code>
   → Renders Workflow template with Variables
   → Builds CLI command from Agent parameters
   → Runs preExec actions (e.g., scan_prs); SkipAction → ExecutionResult(status=SKIPPED)
+  → Dedup guard: same-(repo, pr_number, head_sha) review already running/succeeded recently → SkipAction (SKIPPED, no postExec); `--dedup-off` bypasses
   → Executes subprocess (kimi/claude/pi)
   → Runs postExec actions (e.g. GitHub label transition) in finally block
   → Captures output, stores execution history centrally
@@ -125,7 +126,8 @@ zima pjob run <code>
 ├── temp/                      # Temporary execution artifacts
 │   └── pjobs/                # PJob execution working directories (auto-cleaned)
 └── history/
-    └── pjobs.json           # Execution history (per-PJob records, max 100 each)
+    ├── pjobs.json           # Execution history (per-PJob records, max 100 each)
+    └── pjobs/<code>/<execution_id>.json   # Runtime state files (per-execution, written at start + updated on completion)
 ```
 
 **Execution artifacts** (ephemeral by default):
@@ -207,6 +209,12 @@ PR 评论有三个独立 API，不同 CR 工具用不同 API 提交，获取完�
 - 守护进程内 threading lock: 用 `RLock` 而非 `Lock`（嵌套调用链会死锁）
 - Windows taskkill: 加 `/T` 杀整个进程树（PJob 子进程不会随 daemon 一起死）
 - 新增运行时路径必须用 `get_zima_home()` 而非 `Path.home() / ".zima"`（ZIMA_HOME env var）
+
+### Execution Dedup（同 PR 重复审查防护）
+
+- preExec 后立即把 scan_pr_result（含 head_sha）与 pid 写进 running 状态文件，webhook/manual/daemon 并发流在 agent 运行期间即可互见（`update_runtime_state` 是 read-merge-write，文件不存在则 no-op）
+- 同 PJob 同 (repo, pr_number, head_sha) 已有执行 running、或 30min 内 success → SkipAction（SKIPPED，无 postExec、无 label 变更）；`zima pjob run --dedup-off` 强制重跑
+- 两侧 head_sha 都已知且不同 = 新 commit 新 review round，不去重；任一侧缺 head 保守视为同 head；failed/timeout/skipped 记录永不阻塞重跑；running 超 90min 视为崩溃死记录放行（PJob timeout 仅 30min）
 
 ### Agent CLIs
 
