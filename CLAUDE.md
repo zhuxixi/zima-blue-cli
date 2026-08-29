@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Zima Blue CLI** is a Python-based AI Agent orchestration platform. It manages execution of AI agents (Kimi, Claude) through composable YAML configurations and Jinja2 prompt templates. Named after the sci-fi story about returning to simplicity.
 
-The repo also ships a pi-coding-agent skills package (GitHub issue-driven dev loop): root `package.json` is its pi package manifest (not npm), skills live under `pi/` (`github-issue-driven` / `issue-research` / `zima-pr-monitor` / `github-code-review-batch`), installed locally via `pi install <repo path>`; pi worktrees use `.pi/worktrees/` (gitignored).
+The repo also ships a pi-coding-agent skills package (GitHub issue-driven dev loop): root `package.json` is its pi package manifest (not npm), skills live under `pi/` (`github-issue-driven` / `issue-research` / `zima-pr-monitor` / `github-code-review-batch`), installed locally via `pi install <repo path>`; pi worktrees use `.pi/worktrees/` (gitignored). `pi/zima-pr-monitor/scripts/wait-cr.py` block-waits read-only on `~/.zima/history/pjobs/<code>/<execution_id>.json` until every running execution reaches terminal state (written only after postExec) — changing that history layout or invariant breaks the skill.
 
 ## Development Commands
 
@@ -153,6 +153,7 @@ Customizable via `ZIMA_HOME` env var.
 ## Testing
 
 - **`tests/unit/`** — Pure unit tests for models and config manager
+- **pi skill scripts** have contract tests under `tests/unit/` (`test_wait_cr.py`, `test_cr_batch_*.py`) run by the main pytest suite/CI — run them when editing `pi/*/scripts/*.py`
 - **`tests/integration/`** — CLI command tests using Typer's `CliRunner`, subprocess integration tests
 - **`tests/conftest.py`** — Fixtures: `isolated_zima_home` (temp ZIMA_HOME), `config_manager`, `cli_runner`, `unique_code`
 - **`tests/base.py`** — `TestIsolator` base class with `setup_isolation` autouse fixture
