@@ -15,6 +15,12 @@ from zima.models.pjob import Overrides, PJobConfig
 from zima.models.workflow import WorkflowConfig
 
 
+def _cmd_text(cmd: list[str]) -> str:
+    """Join command args for assertion text, excluding the prompt file path —
+    its random uuid can collide with asserted-forbidden substrings (#192/#177)."""
+    return " ".join(a for a in cmd if not a.endswith(".md"))
+
+
 class TestPreExecIntegration:
     """Test preExec action integration in PJobExecutor.execute()."""
 
@@ -655,7 +661,7 @@ class TestPinnedPrFlow:
 
         def fake_run(**kwargs):
             cmd = kwargs["command"]
-            text = " ".join(cmd)
+            text = _cmd_text(cmd)
             sf = kwargs.get("stdin_file")
             if sf:
                 text += "\n" + Path(sf).read_text()
@@ -689,7 +695,7 @@ class TestPinnedPrFlow:
 
         def fake_run(**kwargs):
             cmd = kwargs["command"]
-            text = " ".join(cmd)
+            text = _cmd_text(cmd)
             sf = kwargs.get("stdin_file")
             if sf:
                 text += "\n" + Path(sf).read_text()
@@ -780,7 +786,7 @@ class TestStaleOverrideCleanup:
 
         def fake_run(**kwargs):
             cmd = kwargs["command"]
-            text = " ".join(cmd)
+            text = _cmd_text(cmd)
             if "--prompt" in cmd:
                 text += "\n" + Path(cmd[cmd.index("--prompt") + 1]).read_text()
             captured["text"] = text
@@ -822,7 +828,7 @@ class TestStaleOverrideCleanupCliPath(TestStaleOverrideCleanup):
 
         def fake_run(**kwargs):
             cmd = kwargs["command"]
-            text = " ".join(cmd)
+            text = _cmd_text(cmd)
             if "--prompt" in cmd:
                 text += "\n" + Path(cmd[cmd.index("--prompt") + 1]).read_text()
             captured["text"] = text
@@ -854,7 +860,7 @@ class TestStaleOverrideCleanupCliPath(TestStaleOverrideCleanup):
 
         def fake_run(**kwargs):
             cmd = kwargs["command"]
-            text = " ".join(cmd)
+            text = _cmd_text(cmd)
             if "--prompt" in cmd:
                 text += "\n" + Path(cmd[cmd.index("--prompt") + 1]).read_text()
             captured["text"] = text
@@ -929,7 +935,7 @@ class TestPrAliasRenderChannel:
 
         def fake_run(**kwargs):
             cmd = kwargs["command"]
-            text = " ".join(cmd)
+            text = _cmd_text(cmd)
             if "--prompt" in cmd:
                 text += "\n" + Path(cmd[cmd.index("--prompt") + 1]).read_text()
             captured["text"] = text
@@ -1019,7 +1025,7 @@ class TestPrRewriteEdgeCases:
 
         def fake_run(**kwargs):
             cmd = kwargs["command"]
-            text = " ".join(cmd)
+            text = _cmd_text(cmd)
             if "--prompt" in cmd:
                 text += "\n" + Path(cmd[cmd.index("--prompt") + 1]).read_text()
             captured["text"] = text
@@ -1126,7 +1132,7 @@ class TestRewriteRound9:
 
         def fake_run(**kwargs):
             cmd = kwargs["command"]
-            text = " ".join(cmd)
+            text = _cmd_text(cmd)
             if "--prompt" in cmd:
                 text += "\n" + Path(cmd[cmd.index("--prompt") + 1]).read_text()
             captured["text"] = text
@@ -1230,7 +1236,7 @@ class TestInvalidScanDiscardedEntirely:
 
         def fake_run(**kwargs):
             cmd = kwargs["command"]
-            text = " ".join(cmd)
+            text = _cmd_text(cmd)
             if "--prompt" in cmd:
                 text += "\n" + Path(cmd[cmd.index("--prompt") + 1]).read_text()
             captured["text"] = text
@@ -1368,7 +1374,7 @@ class TestOverlongRepoDiscarded:
 
         def fake_run(**kwargs):
             cmd = kwargs["command"]
-            text = " ".join(cmd)
+            text = _cmd_text(cmd)
             if "--prompt" in cmd:
                 text += "\n" + Path(cmd[cmd.index("--prompt") + 1]).read_text()
             captured["text"] = text
@@ -1448,7 +1454,7 @@ class TestSingleSinkPrAliasGate:
 
         def fake_run(**kwargs):
             cmd = kwargs["command"]
-            text = " ".join(cmd)
+            text = _cmd_text(cmd)
             if "--prompt" in cmd:
                 text += "\n" + Path(cmd[cmd.index("--prompt") + 1]).read_text()
             captured["text"] = text
