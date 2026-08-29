@@ -165,7 +165,7 @@ git commit -m "docs(skill): step 9 human gate before push/PR + zima-absent degra
 替换为：
 
 ```markdown
-10. **post-merge**：结束 worktree session（回主仓库 session）→ `git_worktree` `action: "remove"`（或 `git worktree remove <repo>/.pi/worktrees/issue-<N>-<shortslug>`）→ `git worktree prune` → 删远端分支 `git push origin --delete issue-<N>-<shortslug>`（本地分支随 worktree remove 一并清理）→ `git checkout main && git pull`。调研目录 `~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/` 设计为跨 harness 留档，**不清理**（release / 部署 / 配置 = 人工，不在自动化环内）
+10. **post-merge**：结束 worktree session（回主仓库 session）→ `git_worktree` `action: "remove"`（或 `git worktree remove <repo>/.pi/worktrees/issue-<N>-<shortslug>`）→ `git worktree prune` → 删本地分支 `git branch -D issue-<N>-<shortslug>`（`git worktree remove` 只删目录不删分支，需单独删）→ 删远端分支 `git push origin --delete issue-<N>-<shortslug> || true`（PR merge 时 GitHub 可能已自动删远端分支，`|| true` 容错）→ `git checkout main && git pull`。调研目录 `~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/` 设计为跨 harness 留档，**不清理**（release / 部署 / 配置 = 人工，不在自动化环内）
 ```
 
 - [ ] **Step 2: 验证渲染**
