@@ -95,7 +95,14 @@ def _read_yaml(path: Path) -> dict:
 
 
 def _scalar(value: str):
-    """Coerce a YAML scalar string to bool/int/float/str."""
+    """Coerce a YAML scalar string to bool/int/float/str.
+
+    Quotes are stripped before coercion so that `enabled: "false"` parses as
+    the boolean False (a quoted boolean is a common YAML habit).  Without
+    this, the quoted string "false" is truthy and silently flips the
+    auto-merge kill switch the wrong way.
+    """
+    value = value.strip().strip("'\"")
     if value in ("true", "True"):
         return True
     if value in ("false", "False"):
@@ -108,7 +115,7 @@ def _scalar(value: str):
         return float(value)
     except ValueError:
         pass
-    return value.strip("'\"")
+    return value
 
 
 class AuditLogger:

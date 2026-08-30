@@ -58,6 +58,32 @@ repos:
         assert repo.sensitive_paths == [".github/**", "*.pjob.*"]
         assert repo.cr_pjob_code == "pi-agent-board-pi-cr-job"
 
+    def test_quoted_booleans_coerce_to_false(self, tmp_path):
+        # Quoted booleans are a common YAML habit; they must NOT be truthy
+        # strings (enabled: "false" flipping the kill switch ON would be a
+        # safety inversion).
+        cfg_file = tmp_path / "auto-merge.yaml"
+        cfg_file.write_text(
+            """
+enabled: "false"
+pushover:
+  config_file: "~/.config/claude-notify.json"
+repos:
+  zhuxixi/pi-agent-board:
+    allow_authors: [ccccyk0919]
+    required_checks: ["Test (Node 22)"]
+    expected_failing_checks: ["Owner approval policy"]
+    merge_method: squash
+    delete_branch: "false"
+    sensitive_paths: [".github/**"]
+    cr_pjob_code: pi-agent-board-pi-cr-job
+""",
+            encoding="utf-8",
+        )
+        cfg = amg.load_config(cfg_file)
+        assert cfg.enabled is False
+        assert cfg.repos["zhuxixi/pi-agent-board"].delete_branch is False
+
     def test_load_config_missing_file_raises(self, tmp_path):
         import pytest
 
