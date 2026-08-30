@@ -830,9 +830,11 @@ class GhClient:
 
         `gh pr list --json files` caps at 100 files, so a larger PR could hide
         a sensitive path beyond the cap; the dedicated pulls/{n}/files API is
-        complete and paginated.
+        complete and paginated.  The REST response keys files by `filename`;
+        gate 2 reads `path`, so map the response to that shape here.
         """
-        return gh_json(["api", f"repos/{repo}/pulls/{number}/files", "--paginate"])
+        data = gh_json(["api", f"repos/{repo}/pulls/{number}/files", "--paginate"])
+        return [{"path": f.get("filename", "")} for f in data]
 
     def check_runs(self, repo: str, head_sha: str) -> list[dict]:
         data = gh_json(["api", f"repos/{repo}/commits/{head_sha}/check-runs", "--paginate"])

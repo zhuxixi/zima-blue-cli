@@ -604,6 +604,26 @@ class TestActions:
         amg.GhClient().fetch_files("r/repo", 5)
         assert calls == [["api", "repos/r/repo/pulls/5/files", "--paginate"]]
 
+    def test_fetch_files_maps_filename_to_path(self, monkeypatch):
+        # The REST pulls/{n}/files response keys files by `filename`, not `path`;
+        # gate 2 reads `path`, so the mapping here is what keeps the
+        # sensitive-path guard from silently failing open.
+        api_shaped = [
+            {"filename": ".github/workflows/ci.yml", "status": "modified", "additions": 3},
+            {"filename": "src/main.ts", "status": "added", "additions": 10},
+        ]
+        monkeypatch.setattr(amg, "gh_json", lambda args: api_shaped)
+        mapped = amg.GhClient().fetch_files("r/repo", 5)
+        assert mapped == [
+            {"path": ".github/workflows/ci.yml"},
+            {"path": "src/main.ts"},
+        ]
+        # The mapped shape feeds gate 2 via run_gates' path extraction
+        # (run_gates does `f.get("path", "")` then calls gate_sensitive_paths).
+        paths = [f.get("path", "") for f in mapped]
+        result = amg.gate_sensitive_paths(paths, [".github/**"])
+        assert result.decision == "attention"
+
     def test_rerun_failed_jobs_no_failed_runs(self, monkeypatch):
         monkeypatch.setattr(
             amg,
