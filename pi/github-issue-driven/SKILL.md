@@ -43,6 +43,9 @@ description: Use when starting work on a GitHub issue — scanning or claiming a
 7. **实现** → **REQUIRED SUB-SKILL: Use subagent-driven-development**（worktree 内，**禁碰 main**）。**🚪 Gate：Step 6 的 plan 文档必须存在才能开始实现——spec 不算 plan。** 派 implementer/reviewer 时**显式传 `cwd: <worktree 绝对路径>`**（subagent 工具原生参数，机制强制），并在 task 里保留 `Work from: <worktree 绝对路径>` 作双保险——别让 subagent 回主仓库作业。
 8. **本地快速 CR** → `requesting-code-review`（superpowers）或 pi 原生 `workflow` 工具的 `code-review` 模式（agent 按问题复杂度自选深度；**必做**，深度自定）
 9. **PR + Zima 单 Bot CR + 前台阻塞等待** → **REQUIRED SUB-SKILL: Use zima-pr-monitor**（**🚪 push/开 PR 前暂停，等用户明确许可**——用户 AGENTS.md 硬规则"不自动 commit/push 除非明确许可"；开 PR、打 `zima:needs-review`、**同 turn 立即前台阻塞等待 CR job 完成（禁止结束 turn，helper 见 zima-pr-monitor）**、解析 review meta（`cc-cr-meta` / `pi-cr-meta` 前缀区分；`kimi-cr-meta` 忽略）、worktree 修、重打标签、收敛判定、合并）。**zima 缺席降级**：个人 fork / 无 bot 仓库（无 zima CR 环境）时，降级为人工 CR 或 pi 原生 `workflow` 工具 `code-review` 模式，并在 issue 评论说明降级原因。
+
+   **验收逐项对账**：本地 CR 和合并前检查必须按 spec 验收矩阵逐项核对。自动化项记录实际执行的命令及结果；用户实测项按清单实际执行并记录观察结果。单测或其他自动化命令通过，不能替代尚未执行的用户实测；用户实测暂时无法执行时标记为 `pending`，不能宣称全部验收完成。自动化验证失败必须修复或明确记录阻塞原因，用户实测失败或 `pending` 状态必须在最终报告中如实呈现。
+
 10. **post-merge**：结束 worktree session（回主仓库 session）→ `git_worktree` `action: "remove"`（或 `git worktree remove <repo>/.pi/worktrees/issue-<N>-<shortslug>`）→ `git worktree prune` → 删本地分支 `git branch -D issue-<N>-<shortslug>`（`git worktree remove` 只删目录不删分支，需单独删）→ 删远端分支 `git push origin --delete issue-<N>-<shortslug> || true`（PR merge 时 GitHub 可能已自动删远端分支，`|| true` 容错）→ `git checkout main && git pull`。调研目录 `~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/` 设计为跨 harness 留档，**不清理**（release / 部署 / 配置 = 人工，不在自动化环内）
 
 ## 为什么高度可自动化
