@@ -91,6 +91,8 @@ def _read_yaml(path: Path) -> dict:
         if ":" in content:
             key, _, value = content.partition(":")
             key = key.strip()
+            # Inline comments: a '#' preceded by whitespace starts a comment (YAML convention)
+            value = re.sub(r"\s+#.*$", "", value)
             value = value.strip()
             if value == "":
                 child: dict = {}

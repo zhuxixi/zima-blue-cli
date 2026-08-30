@@ -92,6 +92,43 @@ repos:
         with pytest.raises(FileNotFoundError):
             amg.load_config(tmp_path / "nope.yaml")
 
+    def test_example_template_parses_correctly(self):
+        """The shipped template must parse to the documented defaults."""
+        template_path = (
+            Path(__file__).resolve().parents[2]
+            / "examples"
+            / "auto-merge"
+            / "auto-merge.yaml.example"
+        )
+        cfg = amg.load_config(template_path)
+        assert cfg.enabled is True
+        assert cfg.pushover_config_file == "~/.config/claude-notify.json"
+        repo = cfg.repos["OWNER/REPO"]
+        assert repo.allow_authors == ["collaborator-login"]
+        assert repo.required_checks == ["Test (Node 22)", "Test (Node 24)"]
+        assert repo.expected_failing_checks == ["Owner approval policy"]
+        assert repo.merge_method == "squash"
+        assert repo.delete_branch is True
+        assert repo.sensitive_paths == [".github/**", "*.pjob.*", "**/branch-protection*"]
+        assert repo.cr_pjob_code == "<repo>-pi-cr-job"
+
+    def test_inline_comments_stripped(self, tmp_path):
+        """Inline comments after a value must not corrupt the parsed config."""
+        cfg_file = tmp_path / "auto-merge.yaml"
+        cfg_file.write_text(
+            """
+repos:
+  r/repo:
+    allow_authors: [ccccyk0919]  # trusted colleague
+    merge_method: squash  # squash | merge
+""",
+            encoding="utf-8",
+        )
+        cfg = amg.load_config(cfg_file)
+        repo = cfg.repos["r/repo"]
+        assert repo.allow_authors == ["ccccyk0919"]
+        assert repo.merge_method == "squash"
+
 
 class TestAuditLogger:
     def test_log_writes_jsonl_line(self, tmp_path):
