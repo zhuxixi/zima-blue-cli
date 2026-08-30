@@ -10,7 +10,11 @@ in ~/.config/claude-notify.json, GitHub auth via the gh CLI login state).
 from __future__ import annotations
 
 import argparse
-import fcntl
+
+try:
+    import fcntl
+except ImportError:  # Windows: fcntl is POSIX-only; flock degrades to a no-op
+    fcntl = None
 import fnmatch
 import json
 import os
@@ -788,12 +792,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     audit = AuditLogger(Path(args.log).expanduser())
 
-    lock_file = open(LOCK_PATH, "w", encoding="utf-8")
-    try:
-        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        print("another auto-merge round is already running (flock held)")
-        return 0
+    if fcntl is not None:
+        lock_file = open(LOCK_PATH, "w", encoding="utf-8")
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            print("another auto-merge round is already running (flock held)")
+            return 0
 
     try:
         for repo, repo_cfg in cfg.repos.items():

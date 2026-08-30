@@ -1137,3 +1137,12 @@ class TestProcessRepo:
         last = json.loads(lines[-1])
         assert last["decision"] == "waiting"
         assert "drift" in last["reason"]
+
+
+class TestPlatformGuards:
+    def test_fcntl_import_guarded(self):
+        # fcntl is POSIX-only; the script must degrade to a no-op lock on
+        # Windows (import fcntl -> None) so collection succeeds there.
+        assert hasattr(amg, "fcntl")
+        if sys.platform != "win32":
+            assert amg.fcntl is not None
