@@ -1,0 +1,15 @@
+# auto-merge-guarded config template.  Copy to ~/.zima/configs/auto-merge.yaml
+# and fill in real values.  Never commit the real file (whitelist + machine
+# paths are local policy, not repo content).
+enabled: true
+pushover:
+  config_file: "~/.config/claude-notify.json"   # shared: PUSHOVER_API_KEY / PUSHOVER_USER_KEY
+repos:
+  OWNER/REPO:
+    allow_authors: [collaborator-login]        # authorization boundary: approve is issued as owner
+    required_checks: ["Test (Node 22)", "Test (Node 24)"]
+    expected_failing_checks: ["Owner approval policy"]   # fails before approve; rerun after
+    merge_method: squash                        # squash | merge
+    delete_branch: true
+    sensitive_paths: [".github/**", "*.pjob.*", "**/branch-protection*"]
+    cr_pjob_code: <repo>-pi-cr-job              # PJob whose execution history feeds gate 5
