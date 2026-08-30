@@ -18,6 +18,17 @@ description: Use when starting work on a GitHub issue — scanning or claiming a
 2. **认领**：`gh issue edit <N> --add-assignee @me`（评论说明开始处理）
 3. **纯调研** → **REQUIRED SUB-SKILL: Use issue-research**（JFox KB + git + 过往 issue/PR；多轮，每轮一主题，结论评论到 issue；调研文件放 `~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/research/`）
 4. **路由**：bug → `systematic-debugging`；新需求/功能 → `brainstorming`（均为 superpowers 包技能）。产 **spec / 根因报告**，draft 在 `~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/spec.md`（和 research 一样**不进 main**）。**⏸ spec 完成后暂停，等用户确认设计再继续。**
+   - **验收方式分层（必答）**：对本次改动的每个功能点建立验收矩阵，标记为 `自动化验证` 或 `用户实测`，并为每项分配稳定 ID（如 `A1`、`U1`）。自动化验证必须注明具体层级（`unit`、`integration`、`static`、`build`、`automated E2E` 等）、验证命令和通过标准；用户实测必须注明操作步骤、观察结果和通过标准。
+   - 自动化验证优先选择足以证明行为的最低成本层级：能用 `unit` 验证的不要升级为 `integration`；必须跨组件时使用 `integration`；类型、格式或依赖约束使用 `static`/`build`；能稳定脚本化的完整流程使用 `automated E2E`。`用户实测` 不是自动化验证暂时没写出来时的兜底分类。
+   - 若某项无法或不适合自动化，spec 必须说明原因，并写出实测步骤、观察结果、通过标准和可执行时机。
+
+   spec 中可使用以下矩阵结构（不要求每个 issue 同时包含两类条目）：
+
+   | ID | 功能点 | 验收方式 | 具体验证 | 通过标准 |
+   |----|--------|----------|----------|----------|
+   | A1 | 配置解析行为 | 自动化验证（unit） | `uv run pytest ...` | 相关测试通过 |
+   | A2 | CLI 跨组件行为 | 自动化验证（integration） | `uv run pytest ...` | 命令返回码和输出符合预期 |
+   | U1 | 真实外部服务交互 | 用户实测 | 按步骤执行并观察结果 | 外部服务产生预期效果 |
 5. **进 worktree（spec 批准后 · 强制）**：写代码前的隔离关卡——两种执行模型，**默认 B，需要机制强制隔离时选 A**：
    - **模型 B（默认 · 同 session 绝对路径作业）**：`git_worktree` `action: "add"`（或 `git worktree add <repo>/.pi/worktrees/issue-<N>-<shortslug> -b issue-<N>-<shortslug>`）建 worktree，**当前 session 不切目录**，后续所有 read/edit/bash 用 worktree 绝对路径作业。**取舍**：流程状态全程可控、无上下文损失；但"在 worktree 里作业"靠纪律，无机制强制。**安全约定**：worktree 根路径记作 `WT=<repo>/.pi/worktrees/issue-<N>-<shortslug>`，所有编辑路径以 `$WT` 开头，git 操作用 `git -C $WT`——把"靠纪律"变成"一个变量可查"。
    - **模型 A（开新 session）**：调原生 `git_worktree` 工具 `action: "open"`，`path: "./.pi/worktrees/issue-<N>-<shortslug>"`，`branch: "issue-<N>-<shortslug>"` → 工具在 `<repo>/.pi/worktrees/` 创建 worktree，并**开一个新 Pi session**（cwd 落在 worktree 内）继续后续步骤。**取舍**：机制强制（session cwd 就在 worktree），但流程状态（spec gate、ledger、SDD 进度）跨 session 传递靠文档，新 session 需先读 spec/plan 再继续。**需要机制强制隔离时选 A。**
