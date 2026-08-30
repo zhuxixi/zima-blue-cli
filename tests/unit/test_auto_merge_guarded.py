@@ -1,0 +1,83 @@
+"""Unit tests for examples/auto-merge/auto-merge-guarded.py."""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+import sys
+from pathlib import Path
+
+SCRIPT_PATH = (
+    Path(__file__).resolve().parents[2] / "examples" / "auto-merge" / "auto-merge-guarded.py"
+)
+
+
+def _load_script():
+    """Load the script as a module via importlib (file has a hyphen, not importable by name)."""
+    spec = importlib.util.spec_from_file_location("auto_merge_guarded", SCRIPT_PATH)
+    module = importlib.util.module_from_spec(spec)
+    # Python 3.13 dataclass processing reads sys.modules[cls.__module__]; the
+    # module must be registered or dataclass() crashes with AttributeError.
+    sys.modules["auto_merge_guarded"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+amg = _load_script()
+
+
+class TestLoadConfig:
+    def test_load_config_parses_repos(self, tmp_path):
+        cfg_file = tmp_path / "auto-merge.yaml"
+        cfg_file.write_text(
+            """
+enabled: true
+pushover:
+  config_file: "~/.config/claude-notify.json"
+repos:
+  zhuxixi/pi-agent-board:
+    allow_authors: [ccccyk0919]
+    required_checks: ["Test (Node 22)", "Test (Node 24)"]
+    expected_failing_checks: ["Owner approval policy"]
+    merge_method: squash
+    delete_branch: true
+    sensitive_paths: [".github/**", "*.pjob.*"]
+    cr_pjob_code: pi-agent-board-pi-cr-job
+""",
+            encoding="utf-8",
+        )
+        cfg = amg.load_config(cfg_file)
+        assert cfg.enabled is True
+        assert cfg.pushover_config_file == "~/.config/claude-notify.json"
+        repo = cfg.repos["zhuxixi/pi-agent-board"]
+        assert repo.allow_authors == ["ccccyk0919"]
+        assert repo.required_checks == ["Test (Node 22)", "Test (Node 24)"]
+        assert repo.expected_failing_checks == ["Owner approval policy"]
+        assert repo.merge_method == "squash"
+        assert repo.delete_branch is True
+        assert repo.sensitive_paths == [".github/**", "*.pjob.*"]
+        assert repo.cr_pjob_code == "pi-agent-board-pi-cr-job"
+
+    def test_load_config_missing_file_raises(self, tmp_path):
+        import pytest
+
+        with pytest.raises(FileNotFoundError):
+            amg.load_config(tmp_path / "nope.yaml")
+
+
+class TestAuditLogger:
+    def test_log_writes_jsonl_line(self, tmp_path):
+        log_path = tmp_path / "audit.log"
+        logger = amg.AuditLogger(log_path)
+        logger.log({"ts": "2026-08-30T00:00:00+00:00", "repo": "r", "pr": 1, "decision": "skip"})
+        lines = log_path.read_text(encoding="utf-8").strip().splitlines()
+        assert len(lines) == 1
+        assert json.loads(lines[0])["decision"] == "skip"
+
+    def test_log_appends_not_overwrites(self, tmp_path):
+        log_path = tmp_path / "audit.log"
+        logger = amg.AuditLogger(log_path)
+        logger.log({"n": 1})
+        logger.log({"n": 2})
+        lines = log_path.read_text(encoding="utf-8").strip().splitlines()
+        assert len(lines) == 2
