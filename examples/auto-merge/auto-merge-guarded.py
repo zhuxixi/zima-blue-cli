@@ -112,14 +112,15 @@ def _scalar(value: str):
     """Coerce a YAML scalar string to bool/int/float/str.
 
     Quotes are stripped before coercion so that `enabled: "false"` parses as
-    the boolean False (a quoted boolean is a common YAML habit).  Without
-    this, the quoted string "false" is truthy and silently flips the
-    auto-merge kill switch the wrong way.
+    the boolean False.  YAML 1.1 boolean spellings (true/false/yes/no/on/off,
+    case-insensitive) are also coerced; otherwise `enabled: no` would parse as
+    the truthy string "no" and silently flip the auto-merge kill switch ON.
     """
     value = value.strip().strip("'\"").strip()
-    if value in ("true", "True"):
+    lowered = value.lower()
+    if lowered in ("true", "yes", "on"):
         return True
-    if value in ("false", "False"):
+    if lowered in ("false", "no", "off"):
         return False
     try:
         return int(value)
@@ -611,6 +612,7 @@ def process_repo(
         number = pr.get("number")
         head_sha = pr.get("headRefOid", "")
         check_runs = gh.check_runs(repo, head_sha)
+        pr["files"] = gh.fetch_files(repo, number)
         executions = executions_for_pr(
             load_executions(zima_home, repo_cfg.cr_pjob_code), repo, number
         )
@@ -639,23 +641,23 @@ def process_repo(
         fresh = gh.view_pr(repo, number)
         if fresh.get("state") == "MERGED":
             continue
+        drift = gate_head_stable(head_sha, fresh.get("headRefOid", ""))
+        if not drift.passed:
+            audit.log(
+                {
+                    "ts": _now_iso(),
+                    "mode": mode,
+                    "repo": repo,
+                    "pr": number,
+                    "head_sha": fresh.get("headRefOid"),
+                    "decision": drift.decision,
+                    "reason": drift.reason,
+                }
+            )
+            continue
         if (fresh.get("reviewDecision") or "") == "APPROVED":
             print(f"[{repo}#{number}] already approved, skipping approve")
         else:
-            drift = gate_head_stable(head_sha, fresh.get("headRefOid", ""))
-            if not drift.passed:
-                audit.log(
-                    {
-                        "ts": _now_iso(),
-                        "mode": mode,
-                        "repo": repo,
-                        "pr": number,
-                        "head_sha": fresh.get("headRefOid"),
-                        "decision": drift.decision,
-                        "reason": drift.reason,
-                    }
-                )
-                continue
             print(f"[{repo}#{number}] would approve" if dry else f"[{repo}#{number}] approving")
             if not dry:
                 approve(repo, number, dry=False)
@@ -709,6 +711,24 @@ def process_repo(
             else f"[{repo}#{number}] merging ({repo_cfg.merge_method})"
         )
         if not dry:
+            # Re-verify the head immediately before merging: a collaborator
+            # push during the rerun poll (up to 5 minutes) would otherwise be
+            # merged on a head whose CR convergence was never checked.
+            fresh = gh.view_pr(repo, number)
+            drift = gate_head_stable(head_sha, fresh.get("headRefOid", ""))
+            if not drift.passed:
+                audit.log(
+                    {
+                        "ts": _now_iso(),
+                        "mode": mode,
+                        "repo": repo,
+                        "pr": number,
+                        "head_sha": fresh.get("headRefOid"),
+                        "decision": drift.decision,
+                        "reason": drift.reason,
+                    }
+                )
+                continue
             merge_pr(repo, number, repo_cfg.merge_method, repo_cfg.delete_branch, dry=False)
             audit.log(
                 {
@@ -801,9 +821,18 @@ class GhClient:
                 "open",
                 "--json",
                 "number,title,author,state,isDraft,headRefOid,mergeable,mergeStateStatus,"
-                "reviewDecision,labels,files,reviews",
+                "reviewDecision,labels,reviews",
             ]
         )
+
+    def fetch_files(self, repo: str, number: int) -> list[dict]:
+        """Fetch the complete changed-files list (paginated).
+
+        `gh pr list --json files` caps at 100 files, so a larger PR could hide
+        a sensitive path beyond the cap; the dedicated pulls/{n}/files API is
+        complete and paginated.
+        """
+        return gh_json(["api", f"repos/{repo}/pulls/{number}/files", "--paginate"])
 
     def check_runs(self, repo: str, head_sha: str) -> list[dict]:
         data = gh_json(["api", f"repos/{repo}/commits/{head_sha}/check-runs", "--paginate"])

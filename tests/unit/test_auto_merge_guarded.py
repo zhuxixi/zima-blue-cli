@@ -94,6 +94,23 @@ repos:
         cfg = amg.load_config(cfg_file)
         assert cfg.enabled is False
 
+    def test_yaml_11_booleans_coerce(self, tmp_path):
+        # YAML 1.1 boolean spellings (yes/no/on/off) must coerce, not parse as
+        # truthy strings — enabled: no silently keeping the kill switch ON is a
+        # safety inversion.
+        cfg_file = tmp_path / "auto-merge.yaml"
+        cfg_file.write_text(
+            "enabled: no\n" "repos:\n" "  r/repo:\n" "    delete_branch: off\n",
+            encoding="utf-8",
+        )
+        cfg = amg.load_config(cfg_file)
+        assert cfg.enabled is False
+        assert cfg.repos["r/repo"].delete_branch is False
+
+        cfg_file.write_text("enabled: yes\n", encoding="utf-8")
+        cfg = amg.load_config(cfg_file)
+        assert cfg.enabled is True
+
     def test_load_config_missing_file_raises(self, tmp_path):
         import pytest
 
@@ -581,6 +598,12 @@ class TestActions:
         with pytest.raises(ValueError, match="unsupported merge method"):
             amg.merge_pr("r/repo", 5, "rebase", True, dry=False)
 
+    def test_fetch_files_builds_paginated_api_call(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(amg, "gh_json", lambda args: calls.append(args) or [])
+        amg.GhClient().fetch_files("r/repo", 5)
+        assert calls == [["api", "repos/r/repo/pulls/5/files", "--paginate"]]
+
     def test_rerun_failed_jobs_no_failed_runs(self, monkeypatch):
         monkeypatch.setattr(
             amg,
@@ -805,6 +828,10 @@ class TestProcessRepo:
                 self.calls.append(("view_pr", repo, number))
                 return prs[0]
 
+            def fetch_files(self, repo, number):
+                self.calls.append(("fetch_files", repo, number))
+                return prs[0].get("files", [])
+
         return FakeGh()
 
     def _make_fake_notify(self):
@@ -965,6 +992,9 @@ class TestProcessRepo:
                 self.view_calls += 1
                 return self.first_pr if self.view_calls == 1 else self.second_pr
 
+            def fetch_files(self, repo, number):
+                return self.first_pr.get("files", [])
+
         pr = self._pr()
         gh = TwoViewGh(pr, self._pr(mergeStateStatus="BLOCKED"), green_runs)
         notify = self._make_fake_notify()
@@ -998,3 +1028,92 @@ class TestProcessRepo:
         amg.process_repo("r/repo", self._repo_cfg(), cfg, "live", gh, tmp_path, audit, notify)
         lines = (tmp_path / "audit.log").read_text(encoding="utf-8").strip().splitlines()
         assert json.loads(lines[-1])["decision"] == "merged"
+
+    def test_drift_after_approval_aborts(self, tmp_path, monkeypatch):
+        # A collaborator push after an approve (or an already-APPROVED PR whose
+        # head moved) must abort — the drift check runs BEFORE the APPROVED
+        # branch, not only in the un-approved path.
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        monkeypatch.setattr(amg, "gh_json", lambda args: [])
+        merged = []
+        monkeypatch.setattr(amg, "merge_pr", lambda *a, **k: merged.append("merge"))
+        monkeypatch.setattr(amg, "approve", lambda *a, **k: None)
+        monkeypatch.setattr(amg, "remove_label", lambda *a, **k: None)
+        monkeypatch.setattr(amg, "rerun_failed_jobs", lambda *a, **k: None)
+        green_runs = [
+            {"name": "Test (Node 22)", "conclusion": "success", "status": "completed"},
+            {"name": "Test (Node 24)", "conclusion": "success", "status": "completed"},
+        ]
+
+        round_pr = self._pr()  # headRefOid "abc"
+        approved_drifted_pr = self._pr(reviewDecision="APPROVED", headRefOid="def")
+
+        class DriftGh:
+            def list_prs(self, repo):
+                return [round_pr]
+
+            def check_runs(self, repo, sha):
+                return green_runs
+
+            def fetch_files(self, repo, number):
+                return round_pr.get("files", [])
+
+            def view_pr(self, repo, number):
+                return approved_drifted_pr
+
+        gh = DriftGh()
+        notify = self._make_fake_notify()
+        audit = amg.AuditLogger(tmp_path / "audit.log")
+        cfg = amg.AppConfig(enabled=True, repos={"r/repo": self._repo_cfg()})
+        amg.process_repo("r/repo", self._repo_cfg(), cfg, "live", gh, tmp_path, audit, notify)
+        assert merged == []
+        lines = (tmp_path / "audit.log").read_text(encoding="utf-8").strip().splitlines()
+        last = json.loads(lines[-1])
+        assert last["decision"] == "waiting"
+        assert "drift" in last["reason"]
+
+    def test_drift_before_merge_aborts(self, tmp_path, monkeypatch):
+        # The pre-merge re-check (third view_pr) must abort on a head that moved
+        # during the rerun poll window.
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        monkeypatch.setattr(amg, "gh_json", lambda args: [])
+        merged = []
+        monkeypatch.setattr(amg, "merge_pr", lambda *a, **k: merged.append("merge"))
+        monkeypatch.setattr(amg, "approve", lambda *a, **k: None)
+        monkeypatch.setattr(amg, "remove_label", lambda *a, **k: None)
+        monkeypatch.setattr(amg, "rerun_failed_jobs", lambda *a, **k: None)
+        green_runs = [
+            {"name": "Test (Node 22)", "conclusion": "success", "status": "completed"},
+            {"name": "Test (Node 24)", "conclusion": "success", "status": "completed"},
+        ]
+
+        round_pr = self._pr()  # headRefOid "abc"
+        drifted_pr = self._pr(headRefOid="def")
+
+        class DriftGh:
+            def __init__(self):
+                self.view_calls = 0
+
+            def list_prs(self, repo):
+                return [round_pr]
+
+            def check_runs(self, repo, sha):
+                return green_runs
+
+            def fetch_files(self, repo, number):
+                return round_pr.get("files", [])
+
+            def view_pr(self, repo, number):
+                self.view_calls += 1
+                return drifted_pr if self.view_calls >= 3 else round_pr
+
+        gh = DriftGh()
+        notify = self._make_fake_notify()
+        audit = amg.AuditLogger(tmp_path / "audit.log")
+        cfg = amg.AppConfig(enabled=True, repos={"r/repo": self._repo_cfg()})
+        amg.process_repo("r/repo", self._repo_cfg(), cfg, "live", gh, tmp_path, audit, notify)
+        assert merged == []
+        lines = (tmp_path / "audit.log").read_text(encoding="utf-8").strip().splitlines()
+        last = json.loads(lines[-1])
+        assert last["decision"] == "waiting"
+        assert "drift" in last["reason"]
