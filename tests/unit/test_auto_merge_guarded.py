@@ -677,3 +677,164 @@ class TestSendPushover:
         assert ok is True
         payload = urllib.parse.parse_qs(posted[0].data.decode("utf-8"))
         assert payload["priority"] == ["0"]
+
+
+class TestLoadExecutions:
+    def test_reads_state_files(self, tmp_path):
+        state_dir = tmp_path / "history" / "pjobs" / "pi-agent-board-pi-cr-job"
+        state_dir.mkdir(parents=True)
+        (state_dir / "a1.json").write_text(
+            json.dumps({"execution_id": "a1", "status": "success"}), encoding="utf-8"
+        )
+        (state_dir / "b2.json").write_text(
+            json.dumps({"execution_id": "b2", "status": "running"}), encoding="utf-8"
+        )
+        (state_dir / "not-json.txt").write_text("junk", encoding="utf-8")
+        executions = amg.load_executions(tmp_path, "pi-agent-board-pi-cr-job")
+        assert len(executions) == 2
+
+    def test_missing_dir_returns_empty(self, tmp_path):
+        assert amg.load_executions(tmp_path, "nope") == []
+
+
+class TestExecutionsForPr:
+    def test_filters_by_repo_and_pr(self):
+        executions = [
+            {"scan_pr_result": {"repo": "r/repo", "pr_number": "5"}},
+            {"scan_pr_result": {"repo": "r/repo", "pr_number": "6"}},
+            {"scan_pr_result": {"repo": "other/repo", "pr_number": "5"}},
+            {},
+        ]
+        result = amg.executions_for_pr(executions, "r/repo", 5)
+        assert len(result) == 1
+        assert result[0]["scan_pr_result"]["pr_number"] == "5"
+
+
+class TestProcessRepo:
+    def _make_fake_gh(self, prs, check_runs):
+        class FakeGh:
+            def __init__(self):
+                self.calls = []
+
+            def list_prs(self, repo):
+                self.calls.append(("list_prs", repo))
+                return prs
+
+            def check_runs(self, repo, sha):
+                self.calls.append(("check_runs", repo, sha))
+                return check_runs
+
+            def view_pr(self, repo, number):
+                self.calls.append(("view_pr", repo, number))
+                return prs[0]
+
+        return FakeGh()
+
+    def _make_fake_notify(self):
+        class FakeNotify:
+            def __init__(self):
+                self.sent = []
+
+            def send(self, level, title, message):
+                self.sent.append((level, title, message))
+                return True
+
+        return FakeNotify()
+
+    def _repo_cfg(self):
+        return amg.RepoConfig(
+            allow_authors=["ccccyk0919"],
+            required_checks=["Test (Node 22)", "Test (Node 24)"],
+            expected_failing_checks=["Owner approval policy"],
+            merge_method="squash",
+            delete_branch=True,
+            sensitive_paths=[".github/**"],
+            cr_pjob_code="pi-agent-board-pi-cr-job",
+        )
+
+    def _pr(self, **overrides):
+        pr = {
+            "number": 1,
+            "title": "t",
+            "author": {"login": "ccccyk0919"},
+            "state": "OPEN",
+            "isDraft": False,
+            "headRefOid": "abc",
+            "mergeable": "MERGEABLE",
+            "mergeStateStatus": "CLEAN",
+            "reviewDecision": None,
+            "labels": [],
+            "files": [{"path": "src/main.ts"}],
+            "reviews": [
+                {
+                    "commit": {"oid": "abc"},
+                    "body": '<!-- pi-cr-meta {"blocking_new_count": 0, "issues": []} -->',
+                }
+            ],
+        }
+        pr.update(overrides)
+        return pr
+
+    def test_merged_pr_skipped(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        pr = self._pr(state="MERGED")
+        gh = self._make_fake_gh([pr], [])
+        notify = self._make_fake_notify()
+        audit = amg.AuditLogger(tmp_path / "audit.log")
+        cfg = amg.AppConfig(enabled=True, repos={"r/repo": self._repo_cfg()})
+        amg.process_repo("r/repo", self._repo_cfg(), cfg, "dry-run", gh, tmp_path, audit, notify)
+        assert notify.sent == []
+        lines = (tmp_path / "audit.log").read_text(encoding="utf-8").strip().splitlines()
+        assert len(lines) == 1
+        assert json.loads(lines[0])["decision"] == "skip"
+
+    def test_dry_run_prints_actions_without_executing(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        monkeypatch.setattr(amg, "gh_json", lambda args: [])  # rerun probe: no failed runs
+        action_calls = []
+        monkeypatch.setattr(amg, "approve", lambda *a, **k: action_calls.append("approve"))
+        monkeypatch.setattr(amg, "merge_pr", lambda *a, **k: action_calls.append("merge_pr"))
+        monkeypatch.setattr(
+            amg, "remove_label", lambda *a, **k: action_calls.append("remove_label")
+        )
+        green_runs = [
+            {"name": "Test (Node 22)", "conclusion": "success", "status": "completed"},
+            {"name": "Test (Node 24)", "conclusion": "success", "status": "completed"},
+        ]
+        pr = self._pr()
+        gh = self._make_fake_gh([pr], green_runs)
+        notify = self._make_fake_notify()
+        audit = amg.AuditLogger(tmp_path / "audit.log")
+        cfg = amg.AppConfig(enabled=True, repos={"r/repo": self._repo_cfg()})
+        amg.process_repo("r/repo", self._repo_cfg(), cfg, "dry-run", gh, tmp_path, audit, notify)
+        out = capsys.readouterr().out
+        assert "would approve" in out
+        assert "would merge" in out
+        # dry-run never executes actions and never notifies
+        assert action_calls == []
+        assert notify.sent == []
+
+    def test_notify_only_sends_attention_for_sensitive_path(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        pr = self._pr(files=[{"path": ".github/workflows/ci.yml"}])
+        gh = self._make_fake_gh([pr], [])
+        notify = self._make_fake_notify()
+        audit = amg.AuditLogger(tmp_path / "audit.log")
+        cfg = amg.AppConfig(enabled=True, repos={"r/repo": self._repo_cfg()})
+        amg.process_repo(
+            "r/repo", self._repo_cfg(), cfg, "notify-only", gh, tmp_path, audit, notify
+        )
+        assert len(notify.sent) == 1
+        assert notify.sent[0][0] == "attention"
+
+    def test_waiting_decision_is_silent(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        pr = self._pr(mergeable="UNKNOWN")
+        gh = self._make_fake_gh([pr], [])
+        notify = self._make_fake_notify()
+        audit = amg.AuditLogger(tmp_path / "audit.log")
+        cfg = amg.AppConfig(enabled=True, repos={"r/repo": self._repo_cfg()})
+        amg.process_repo(
+            "r/repo", self._repo_cfg(), cfg, "notify-only", gh, tmp_path, audit, notify
+        )
+        assert notify.sent == []

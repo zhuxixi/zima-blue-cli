@@ -9,6 +9,8 @@ in ~/.config/claude-notify.json, GitHub auth via the gh CLI login state).
 
 from __future__ import annotations
 
+import argparse
+import fcntl
 import fnmatch
 import json
 import os
@@ -20,6 +22,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -533,3 +536,244 @@ def send_pushover(level: str, title: str, message: str, config_file: str) -> boo
         # failure (URLError, BadStatusLine, IncompleteRead, ...) must degrade
         # to log-only and never block the merge.
         return False
+
+
+LOCK_PATH = "/tmp/auto-merge-guarded.lock"
+DEFAULT_CONFIG = "~/.zima/configs/auto-merge.yaml"
+DEFAULT_LOG = "~/.zima/logs/auto-merge.log"
+
+
+def load_executions(zima_home: Path, pjob_code: str) -> list[dict]:
+    """Read every CR execution state file for a PJob code.
+
+    Torn files (zima writes non-atomically) are skipped — the next round
+    sees the completed file.
+    """
+    state_dir = zima_home / "history" / "pjobs" / pjob_code
+    if not state_dir.is_dir():
+        return []
+    executions: list[dict] = []
+    for path in sorted(state_dir.iterdir()):
+        if path.suffix != ".json":
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+            continue
+        if isinstance(data, dict):
+            executions.append(data)
+    return executions
+
+
+def executions_for_pr(executions: list[dict], repo: str, pr_number: int) -> list[dict]:
+    """Filter executions to those that scanned this (repo, pr)."""
+    result = []
+    for execution in executions:
+        scan = execution.get("scan_pr_result") or {}
+        if scan.get("repo") == repo and str(scan.get("pr_number")) == str(pr_number):
+            result.append(execution)
+    return result
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).astimezone().isoformat()
+
+
+def process_repo(
+    repo: str,
+    repo_cfg: RepoConfig,
+    cfg: AppConfig,
+    mode: str,
+    gh,
+    zima_home: Path,
+    audit: AuditLogger,
+    notify,
+) -> None:
+    """One full round for one repo: fetch PRs, run gates, act, notify.
+
+    mode is "live", "dry-run", or "notify-only".  dry-run prints the action
+    chain without executing; notify-only additionally sends notifications.
+    """
+    dry = mode != "live"
+    notify_enabled = mode != "dry-run"  # dry-run is a pure local rehearsal
+    for pr in gh.list_prs(repo):
+        number = pr.get("number")
+        head_sha = pr.get("headRefOid", "")
+        check_runs = gh.check_runs(repo, head_sha)
+        executions = executions_for_pr(
+            load_executions(zima_home, repo_cfg.cr_pjob_code), repo, number
+        )
+        result = run_gates(pr, check_runs, executions, repo_cfg)
+        audit.log(
+            {
+                "ts": _now_iso(),
+                "mode": mode,
+                "repo": repo,
+                "pr": number,
+                "head_sha": head_sha,
+                "decision": result.decision,
+                "reason": result.reason,
+            }
+        )
+        if not result.passed:
+            if result.decision == "attention" and notify_enabled:
+                notify.send(
+                    "attention",
+                    "[auto-merge] needs your eyes",
+                    f"{repo}#{number} {pr.get('title', '')}: {result.reason}",
+                )
+            # skip / waiting / error are silent (45-min rounds must not spam)
+            continue
+        # Action chain (each step re-checks current state; idempotent)
+        fresh = gh.view_pr(repo, number)
+        if fresh.get("state") == "MERGED":
+            continue
+        if (fresh.get("reviewDecision") or "") == "APPROVED":
+            print(f"[{repo}#{number}] already approved, skipping approve")
+        else:
+            drift = gate_head_stable(head_sha, fresh.get("headRefOid", ""))
+            if not drift.passed:
+                audit.log(
+                    {
+                        "ts": _now_iso(),
+                        "mode": mode,
+                        "repo": repo,
+                        "pr": number,
+                        "head_sha": fresh.get("headRefOid"),
+                        "decision": drift.decision,
+                        "reason": drift.reason,
+                    }
+                )
+                continue
+            print(f"[{repo}#{number}] would approve" if dry else f"[{repo}#{number}] approving")
+            if not dry:
+                approve(repo, number, head_sha, dry=False)
+        labels = [label.get("name", "") for label in fresh.get("labels") or []]
+        if "zima:needs-fix" in labels:
+            print(f"[{repo}#{number}] removing zima:needs-fix")
+            remove_label(repo, number, "zima:needs-fix", dry)
+        for workflow_name in repo_cfg.expected_failing_checks:
+            print(f"[{repo}#{number}] rerunning failed jobs of {workflow_name}")
+            rerun_failed_jobs(repo, head_sha, workflow_name, dry)
+        fresh = gh.view_pr(repo, number)
+        if fresh.get("mergeStateStatus") != "CLEAN":
+            if notify_enabled:
+                notify.send(
+                    "error",
+                    "[auto-merge] error",
+                    f"{repo}#{number}: mergeStateStatus={fresh.get('mergeStateStatus')} after rerun",
+                )
+            continue
+        print(
+            f"[{repo}#{number}] would merge (squash)"
+            if dry
+            else f"[{repo}#{number}] merging (squash)"
+        )
+        if not dry:
+            merge_pr(repo, number, repo_cfg.merge_method, repo_cfg.delete_branch, dry=False)
+        if notify_enabled:
+            notify.send(
+                "action",
+                "[auto-merge] merged",
+                f"{repo}#{number} {pr.get('title', '')} by {pr.get('author', {}).get('login', '?')}",
+            )
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entry point."""
+    parser = argparse.ArgumentParser(
+        description="Auto approve + squash merge whitelisted PRs after CR convergence."
+    )
+    parser.add_argument("--config", default=DEFAULT_CONFIG, help="path to auto-merge.yaml")
+    parser.add_argument("--log", default=DEFAULT_LOG, help="path to the JSONL audit log")
+    parser.add_argument("--zima-home", default=None, help="override ZIMA_HOME")
+    parser.add_argument("--repo", default=None, help="only process this OWNER/REPO (debugging)")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="run gates, print actions, execute nothing"
+    )
+    parser.add_argument(
+        "--notify-only",
+        action="store_true",
+        help="run gates, send notifications, never touch GitHub",
+    )
+    args = parser.parse_args(argv)
+
+    cfg = load_config(Path(args.config).expanduser())
+    if not cfg.enabled:
+        print("auto-merge disabled by config (enabled: false)")
+        return 0
+    mode = "dry-run" if args.dry_run else ("notify-only" if args.notify_only else "live")
+    zima_home = (
+        Path(args.zima_home)
+        if args.zima_home
+        else Path(os.environ.get("ZIMA_HOME") or Path.home() / ".zima")
+    )
+    audit = AuditLogger(Path(args.log).expanduser())
+
+    lock_file = open(LOCK_PATH, "w", encoding="utf-8")
+    try:
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("another auto-merge round is already running (flock held)")
+        return 0
+
+    try:
+        for repo, repo_cfg in cfg.repos.items():
+            if args.repo and repo != args.repo:
+                continue
+            process_repo(repo, repo_cfg, cfg, mode, GhClient(), zima_home, audit, Notifier(cfg))
+    except Exception as exc:  # noqa: BLE001 — top-level guard: log, notify, exit
+        audit.log({"ts": _now_iso(), "mode": mode, "decision": "error", "reason": str(exc)})
+        Notifier(cfg).send("error", "[auto-merge] error", str(exc)[:250])
+        return 1
+    return 0
+
+
+class GhClient:
+    """Thin gh CLI adapter (subclassed/mocked in tests)."""
+
+    def list_prs(self, repo: str) -> list[dict]:
+        return gh_json(
+            [
+                "pr",
+                "list",
+                "--repo",
+                repo,
+                "--state",
+                "open",
+                "--json",
+                "number,title,author,state,isDraft,headRefOid,mergeable,mergeStateStatus,"
+                "reviewDecision,labels,files,reviews",
+            ]
+        )
+
+    def check_runs(self, repo: str, head_sha: str) -> list[dict]:
+        data = gh_json(["api", f"repos/{repo}/commits/{head_sha}/check-runs", "--paginate"])
+        return data.get("check_runs", []) if isinstance(data, dict) else []
+
+    def view_pr(self, repo: str, number: int) -> dict:
+        return gh_json(
+            [
+                "pr",
+                "view",
+                str(number),
+                "--repo",
+                repo,
+                "--json",
+                "state,headRefOid,reviewDecision,labels,mergeStateStatus",
+            ]
+        )
+
+
+class Notifier:
+    """Pushover adapter with log-only degradation."""
+
+    def __init__(self, cfg: AppConfig):
+        self.cfg = cfg
+
+    def send(self, level: str, title: str, message: str) -> bool:
+        return send_pushover(level, title, message, self.cfg.pushover_config_file)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
