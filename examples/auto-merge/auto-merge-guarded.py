@@ -659,13 +659,22 @@ def process_repo(
             rerun_failed_jobs(repo, head_sha, workflow_name, dry)
         fresh = gh.view_pr(repo, number)
         if fresh.get("mergeStateStatus") != "CLEAN":
-            if notify_enabled:
-                notify.send(
-                    "error",
-                    "[auto-merge] error",
-                    f"{repo}#{number}: mergeStateStatus={fresh.get('mergeStateStatus')} after rerun",
+            if dry:
+                # Dry modes never rerun (rerun_failed_jobs returns early), so
+                # the merge state cannot be CLEAN yet; the rehearsal reports
+                # what it would do and falls through to the would-merge step.
+                print(
+                    f"[{repo}#{number}] would check mergeStateStatus "
+                    f"(currently {fresh.get('mergeStateStatus')})"
                 )
-            continue
+            else:
+                if notify_enabled:
+                    notify.send(
+                        "error",
+                        "[auto-merge] error",
+                        f"{repo}#{number}: mergeStateStatus={fresh.get('mergeStateStatus')} after rerun",
+                    )
+                continue
         print(
             f"[{repo}#{number}] would merge (squash)"
             if dry

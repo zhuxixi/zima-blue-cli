@@ -895,3 +895,46 @@ class TestProcessRepo:
         assert notify.sent[0][0] == "action"
         assert notify.sent[0][1] == "[auto-merge] would merge"
         assert not any(title == "[auto-merge] merged" for _, title, _ in notify.sent)
+
+    def test_notify_only_rehearses_through_unclean_merge_state(self, tmp_path, monkeypatch, capsys):
+        """Dry modes must fall through the mergeStateStatus check and report
+        would-merge instead of sending a false error notification."""
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        monkeypatch.setattr(amg, "gh_json", lambda args: [])  # rerun probe: no failed runs
+        green_runs = [
+            {"name": "Test (Node 22)", "conclusion": "success", "status": "completed"},
+            {"name": "Test (Node 24)", "conclusion": "success", "status": "completed"},
+        ]
+
+        class TwoViewGh:
+            """First view_pr returns the clean fixture; the second returns BLOCKED."""
+
+            def __init__(self, first_pr, second_pr, check_runs):
+                self.first_pr = first_pr
+                self.second_pr = second_pr
+                self.check_runs_result = check_runs
+                self.view_calls = 0
+
+            def list_prs(self, repo):
+                return [self.first_pr]
+
+            def check_runs(self, repo, sha):
+                return self.check_runs_result
+
+            def view_pr(self, repo, number):
+                self.view_calls += 1
+                return self.first_pr if self.view_calls == 1 else self.second_pr
+
+        pr = self._pr()
+        gh = TwoViewGh(pr, self._pr(mergeStateStatus="BLOCKED"), green_runs)
+        notify = self._make_fake_notify()
+        audit = amg.AuditLogger(tmp_path / "audit.log")
+        cfg = amg.AppConfig(enabled=True, repos={"r/repo": self._repo_cfg()})
+        amg.process_repo(
+            "r/repo", self._repo_cfg(), cfg, "notify-only", gh, tmp_path, audit, notify
+        )
+        assert len(notify.sent) == 1
+        assert notify.sent[0][1] == "[auto-merge] would merge"
+        assert not any(title == "[auto-merge] error" for _, title, _ in notify.sent)
+        out = capsys.readouterr().out
+        assert "would check mergeStateStatus" in out
