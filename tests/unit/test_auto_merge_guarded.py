@@ -378,3 +378,79 @@ class TestGateCrConvergence:
         ]
         result = amg.gate_cr_convergence(executions, reviews, "abc", [])
         assert result.passed is True
+
+
+class TestGateHeadStable:
+    def test_same_head_passes(self):
+        result = amg.gate_head_stable("abc", "abc")
+        assert result.passed is True
+
+    def test_drifted_head_aborts(self):
+        result = amg.gate_head_stable("abc", "def")
+        assert result.passed is False
+        assert result.decision == "waiting"
+        assert "drift" in result.reason
+
+
+class TestRunGates:
+    def _repo_cfg(self):
+        return amg.RepoConfig(
+            allow_authors=["ccccyk0919"],
+            required_checks=["Test (Node 22)", "Test (Node 24)"],
+            expected_failing_checks=["Owner approval policy"],
+            merge_method="squash",
+            delete_branch=True,
+            sensitive_paths=[".github/**"],
+            cr_pjob_code="pi-agent-board-pi-cr-job",
+        )
+
+    def _pr(self, **overrides):
+        pr = {
+            "number": 1,
+            "title": "t",
+            "author": {"login": "ccccyk0919"},
+            "state": "OPEN",
+            "isDraft": False,
+            "headRefOid": "abc",
+            "mergeable": "MERGEABLE",
+            "labels": [],
+            "files": [{"path": "src/main.ts"}],
+            "reviews": [],
+        }
+        pr.update(overrides)
+        return pr
+
+    def _check_runs(self):
+        return [
+            {"name": "Test (Node 22)", "conclusion": "success", "status": "completed"},
+            {"name": "Test (Node 24)", "conclusion": "success", "status": "completed"},
+        ]
+
+    def test_all_gates_pass(self, monkeypatch):
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        pr = self._pr(
+            reviews=[
+                {
+                    "commit": {"oid": "abc"},
+                    "body": '<!-- pi-cr-meta {"blocking_new_count": 0, "issues": []} -->',
+                }
+            ]
+        )
+        executions = [{"status": "success", "pid": 123}]
+        result = amg.run_gates(pr, self._check_runs(), executions, self._repo_cfg())
+        assert result.passed is True
+        assert result.decision == "merge"
+
+    def test_gate_order_stops_at_first_failure(self, monkeypatch):
+        # Non-whitelisted author: gate 1 fails, later gates never consulted.
+        pr = self._pr(author={"login": "stranger"})
+        result = amg.run_gates(pr, [], [], self._repo_cfg())
+        assert result.passed is False
+        assert result.decision == "skip"
+        assert "whitelist" in result.reason
+
+    def test_sensitive_path_attention(self, monkeypatch):
+        pr = self._pr(files=[{"path": ".github/workflows/ci.yml"}])
+        result = amg.run_gates(pr, self._check_runs(), [], self._repo_cfg())
+        assert result.passed is False
+        assert result.decision == "attention"

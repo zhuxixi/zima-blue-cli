@@ -324,3 +324,40 @@ def gate_cr_convergence(
         if not ok:
             return GateResult(False, "waiting", f"CR not converged: {reason}")
     return GateResult(True, "merge", "CR converged")
+
+
+def gate_head_stable(head_before: str, head_now: str) -> GateResult:
+    """Gate 6: head must not have moved between verification and action.
+
+    A collaborator push between approve and merge invalidates the approve
+    (owner-approval policy binds to the head sha).  A drifted head naturally
+    returns to the not-converged state and is re-evaluated next round.
+    """
+    if head_before != head_now:
+        return GateResult(False, "waiting", f"head drift: {head_before[:8]} -> {head_now[:8]}")
+    return GateResult(True, "merge", "head stable")
+
+
+def run_gates(
+    pr: dict, check_runs: list[dict], executions: list[dict], repo_cfg: RepoConfig
+) -> GateResult:
+    """Run the six gates in order; return the first non-passing result.
+
+    Gate 6 (head drift) is NOT run here — it is checked inside the action
+    chain right before approve, against a freshly fetched head.
+    """
+    files = [f.get("path", "") for f in pr.get("files") or []]
+    labels = [label.get("name", "") for label in pr.get("labels") or []]
+    gates = [
+        gate_candidate(pr, repo_cfg.allow_authors),
+        gate_sensitive_paths(files, repo_cfg.sensitive_paths),
+        gate_required_checks(
+            check_runs, repo_cfg.required_checks, repo_cfg.expected_failing_checks
+        ),
+        gate_mergeable(pr.get("mergeable", "UNKNOWN")),
+        gate_cr_convergence(executions, pr.get("reviews") or [], pr.get("headRefOid", ""), labels),
+    ]
+    for result in gates:
+        if not result.passed:
+            return result
+    return GateResult(True, "merge", "all gates passed")
