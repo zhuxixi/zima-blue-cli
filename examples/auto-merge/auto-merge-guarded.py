@@ -489,13 +489,19 @@ def truncate_chars(text: str, limit: int) -> str:
 
 
 def load_pushover_keys(config_file: str) -> tuple[str, str] | None:
-    """Read (api_key, user_key) from the shared notify config, or None."""
+    """Read (api_key, user_key) from the shared notify config, or None.
+
+    Never raises: a corrupt, non-UTF-8, or non-object config degrades to
+    None so the caller can fall back to log-only notifications.
+    """
     path = Path(config_file).expanduser()
     if not path.is_file():
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, UnicodeDecodeError, AttributeError, OSError):
+        return None
+    if not isinstance(data, dict):
         return None
     api_key = data.get("PUSHOVER_API_KEY")
     user_key = data.get("PUSHOVER_USER_KEY")
@@ -523,5 +529,7 @@ def send_pushover(level: str, title: str, message: str, config_file: str) -> boo
     try:
         with urllib.request.urlopen(request, timeout=15) as response:
             return response.status == 200
-    except (urllib.error.URLError, OSError):
+    except Exception:  # noqa: BLE001 — best-effort notification path: any
+        # failure (URLError, BadStatusLine, IncompleteRead, ...) must degrade
+        # to log-only and never block the merge.
         return False

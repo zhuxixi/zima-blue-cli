@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import importlib.util
 import json
 import sys
@@ -567,6 +568,20 @@ class TestLoadPushoverKeys:
         cfg.write_text('{"BUSY_TIME": "x"}', encoding="utf-8")
         assert amg.load_pushover_keys(str(cfg)) is None
 
+    def test_non_object_json_returns_none(self, tmp_path):
+        # Valid JSON that is not an object (e.g. a list) must not raise
+        # AttributeError on .get; it degrades to None.
+        cfg = tmp_path / "notify.json"
+        cfg.write_text("[]", encoding="utf-8")
+        assert amg.load_pushover_keys(str(cfg)) is None
+
+    def test_non_utf8_file_returns_none(self, tmp_path):
+        # Non-UTF-8 bytes raise UnicodeDecodeError (a ValueError subclass not
+        # covered by json.JSONDecodeError); must degrade to None.
+        cfg = tmp_path / "notify.json"
+        cfg.write_bytes(b"\xff\xfe\x00")
+        assert amg.load_pushover_keys(str(cfg)) is None
+
 
 class TestSendPushover:
     def test_posts_and_returns_true(self, monkeypatch):
@@ -629,3 +644,36 @@ class TestSendPushover:
         monkeypatch.setattr(amg, "load_pushover_keys", lambda config_file: ("k", "u"))
         monkeypatch.setattr(amg.urllib.request, "urlopen", fake_urlopen)
         assert amg.send_pushover("action", "t", "m", "unused") is False
+
+    def test_http_exception_returns_false(self, monkeypatch):
+        # BadStatusLine is an http.client.HTTPException, neither URLError nor
+        # OSError; the notification path must still fail closed to False.
+        def fake_urlopen(req, timeout=None):
+            raise http.client.BadStatusLine("boom")
+
+        monkeypatch.setattr(amg, "load_pushover_keys", lambda config_file: ("k", "u"))
+        monkeypatch.setattr(amg.urllib.request, "urlopen", fake_urlopen)
+        assert amg.send_pushover("action", "t", "m", "unused") is False
+
+    def test_unknown_level_priority_zero(self, monkeypatch):
+        posted = []
+
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        def fake_urlopen(req, timeout=None):
+            posted.append(req)
+            return FakeResponse()
+
+        monkeypatch.setattr(amg, "load_pushover_keys", lambda config_file: ("k", "u"))
+        monkeypatch.setattr(amg.urllib.request, "urlopen", fake_urlopen)
+        ok = amg.send_pushover("unknown", "t", "m", "unused")
+        assert ok is True
+        payload = urllib.parse.parse_qs(posted[0].data.decode("utf-8"))
+        assert payload["priority"] == ["0"]
