@@ -19,7 +19,7 @@
 
 ---
 
-### Task 1: 为 Step 4 增加验收方式分层与矩阵要求
+### Task 1: 为 Step 4 增加验收方式分层、矩阵与可测性拆分设计要求
 
 **验收 ID:** A1
 
@@ -36,6 +36,7 @@
 
 ```markdown
    - **验收方式分层（必答）**：对本次改动的每个功能点建立验收矩阵，标记为 `自动化验证` 或 `用户实测`，并为每项分配稳定 ID（如 `A1`、`U1`）。自动化验证必须注明具体层级（`unit`、`integration`、`static`、`build`、`automated E2E` 等）、验证命令和通过标准；用户实测必须注明操作步骤、观察结果和通过标准。
+   - **可测性拆分设计（必答，自动化验证类功能点）**：spec 对每个可自动化验证的功能点必须给出可测性拆分设计——拆成哪些独立的方法/函数（纯函数优先、副作用隔离）、每个怎么测，并写明由此形成的测试边界。这是设计约束，不是可选建议。
    - 自动化验证优先选择足以证明行为的最低成本层级：能用 `unit` 验证的不要升级为 `integration`；必须跨组件时使用 `integration`；类型、格式或依赖约束使用 `static`/`build`；能稳定脚本化的完整流程使用 `automated E2E`。`用户实测` 不是自动化验证暂时没写出来时的兜底分类。
    - 若某项无法或不适合自动化，spec 必须说明原因，并写出实测步骤、观察结果、通过标准和可执行时机。
 
@@ -56,7 +57,7 @@ Run:
 grep -n -A 12 -B 2 '4\. \*\*路由\*\*' pi/github-issue-driven/SKILL.md
 ```
 
-Expected: 同时看到原有路由、`验收方式分层（必答）`、矩阵字段、`用户实测` 非兜底说明，以及 `spec 完成后暂停`。
+Expected: 同时看到原有路由、`验收方式分层（必答）`、`可测性拆分设计`（含测试边界）、矩阵字段、`用户实测` 非兜底说明，以及 `spec 完成后暂停`。
 
 - [x] **Step 3: Commit Task 1**
 
@@ -107,7 +108,45 @@ git commit -m "docs(skill): trace plan tasks to acceptance ids"
 
 ---
 
-### Task 3: 为 Step 8–9 增加最终逐项验收规则
+### Task 3: 为 Step 7 增加可测性拆分的硬约束
+
+**验收 ID:** A1
+
+**Files:**
+- Modify: `pi/github-issue-driven/SKILL.md`（当前 Step 7）
+
+**Interfaces:**
+- Consumes: Task 1 产生的可测性拆分设计（独立方法/函数、纯函数优先、副作用隔离、测试边界）。
+- Produces: Step 7 实现阶段把 spec 拆分当硬约束的规则，供 implementer/reviewer 执行。
+
+- [x] **Step 1: 在 Step 7 追加硬约束规则**
+
+在当前 Step 7 的 plan gate 和 `cwd` 双保险之后追加：
+
+```markdown
+   - **硬约束**：spec 里定义的可测性拆分设计（独立方法/函数、纯函数优先、副作用隔离、测试边界）是实现阶段的硬约束；plan 的每个 task 必须保留这些测试边界，实现不得把已拆分的纯函数/副作用隔离逻辑重新耦合回去。
+```
+
+- [x] **Step 2: 检查 Step 7 gate 与 cwd 规则未被覆盖**
+
+Run:
+
+```bash
+grep -n -A 6 -B 1 '7\. \*\*实现\*\*' pi/github-issue-driven/SKILL.md
+```
+
+Expected: Step 7 同时保留 plan gate、`cwd: <worktree 绝对路径>` 双保险和硬约束规则；硬约束明确指向 spec 的可测性拆分设计。
+
+- [x] **Step 3: Commit Task 3**
+
+```bash
+git add pi/github-issue-driven/SKILL.md docs/superpowers/specs/2026-08-30-issue-157-acceptance-layering-design.md docs/superpowers/plans/2026-08-30-issue-157-acceptance-layering.md
+git commit -m "docs(skill): add testability decomposition requirement and step 7 hard constraint"
+```
+
+---
+
+### Task 4: 为 Step 8–9 增加最终逐项验收规则
 
 **验收 ID:** A3
 
@@ -150,7 +189,7 @@ git commit -m "docs(skill): require acceptance reconciliation before merge"
 
 ---
 
-### Task 4: 全文一致性验证与本地 CR 准备
+### Task 5: 全文一致性验证与本地 CR 准备
 
 **验收 ID:** A1–A4
 
@@ -160,7 +199,7 @@ git commit -m "docs(skill): require acceptance reconciliation before merge"
 - Verify: `docs/superpowers/plans/2026-08-30-issue-157-acceptance-layering.md`
 
 **Interfaces:**
-- Consumes: Tasks 1–3 的文档改动。
+- Consumes: Tasks 1–4 的文档改动。
 - Produces: 可提交给本地 CR 和 Zima CR 的完整变更集，验收项 A1–A4 均有证据。
 
 - [x] **Step 1: 执行 Markdown 和范围检查**
@@ -170,7 +209,7 @@ Run:
 ```bash
 git diff --check main...HEAD
 printf '%s\n' '--- acceptance terms ---'
-grep -nE '验收方式分层|自动化验证|用户实测|最低成本|验收 ID|双向追溯|验收逐项对账|pending' pi/github-issue-driven/SKILL.md
+grep -nE '验收方式分层|可测性拆分设计|测试边界|自动化验证|用户实测|最低成本|验收 ID|双向追溯|硬约束|验收逐项对账|pending' pi/github-issue-driven/SKILL.md
 printf '%s\n' '--- forbidden legacy wording ---'
 ! grep -nE '双 Bot|EnterWorktree|ExitWorktree|\.claude/worktrees' pi/github-issue-driven/SKILL.md
 printf '%s\n' '--- changed files ---'
@@ -188,7 +227,7 @@ Expected:
 
 逐项确认：
 
-- A1：Step 4 有两类验收定义、矩阵字段、自动化层级和用户实测失败说明；
+- A1：Step 4 有两类验收定义、矩阵字段、自动化层级、可测性拆分设计（独立方法/函数、纯函数优先、副作用隔离、测试边界）和用户实测失败说明；Step 7 明确该拆分为实现硬约束；
 - A2：Step 6 有 task→验收项和验收项→task 的双向追溯；
 - A3：Step 8–9 有命令/结果记录、实测记录、`pending` 和禁止替代规则；
 - A4：单 Bot、worktree、push gate 等当前规则仍保留，且没有恢复旧文案。

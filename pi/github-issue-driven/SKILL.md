@@ -19,6 +19,7 @@ description: Use when starting work on a GitHub issue — scanning or claiming a
 3. **纯调研** → **REQUIRED SUB-SKILL: Use issue-research**（JFox KB + git + 过往 issue/PR；多轮，每轮一主题，结论评论到 issue；调研文件放 `~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/research/`）
 4. **路由**：bug → `systematic-debugging`；新需求/功能 → `brainstorming`（均为 superpowers 包技能）。产 **spec / 根因报告**，draft 在 `~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/spec.md`（和 research 一样**不进 main**）。**⏸ spec 完成后暂停，等用户确认设计再继续。**
    - **验收方式分层（必答）**：对本次改动的每个功能点建立验收矩阵，标记为 `自动化验证` 或 `用户实测`，并为每项分配稳定 ID（如 `A1`、`U1`）。自动化验证必须注明具体层级（`unit`、`integration`、`static`、`build`、`automated E2E` 等）、验证命令和通过标准；用户实测必须注明操作步骤、观察结果和通过标准。
+   - **可测性拆分设计（必答，自动化验证类功能点）**：spec 对每个可自动化验证的功能点必须给出可测性拆分设计——拆成哪些独立的方法/函数（纯函数优先、副作用隔离）、每个怎么测，并写明由此形成的测试边界。这是设计约束，不是可选建议。
    - 自动化验证优先选择足以证明行为的最低成本层级：能用 `unit` 验证的不要升级为 `integration`；必须跨组件时使用 `integration`；类型、格式或依赖约束使用 `static`/`build`；能稳定脚本化的完整流程使用 `automated E2E`。`用户实测` 不是自动化验证暂时没写出来时的兜底分类。
    - 若某项无法或不适合自动化，spec 必须说明原因，并写出实测步骤、观察结果、通过标准和可执行时机。
 
@@ -41,6 +42,7 @@ description: Use when starting work on a GitHub issue — scanning or claiming a
    - plan 的每个实现 task 必须引用一个或多个 spec 验收 ID；自动化验收项必须落到具体测试、检查或构建命令，用户实测项必须落到实测步骤，或单独建立 post-implementation manual verification task。
    - 不允许出现没有验收归属的实现 task，也不允许出现 spec 验收矩阵中没有对应 plan task 的验收项；不强制使用某一种表格格式，但必须能按验收 ID 双向追溯。
 7. **实现** → **REQUIRED SUB-SKILL: Use subagent-driven-development**（worktree 内，**禁碰 main**）。**🚪 Gate：Step 6 的 plan 文档必须存在才能开始实现——spec 不算 plan。** 派 implementer/reviewer 时**显式传 `cwd: <worktree 绝对路径>`**（subagent 工具原生参数，机制强制），并在 task 里保留 `Work from: <worktree 绝对路径>` 作双保险——别让 subagent 回主仓库作业。
+   - **硬约束**：spec 里定义的可测性拆分设计（独立方法/函数、纯函数优先、副作用隔离、测试边界）是实现阶段的硬约束；plan 的每个 task 必须保留这些测试边界，实现不得把已拆分的纯函数/副作用隔离逻辑重新耦合回去。
 8. **本地快速 CR** → `requesting-code-review`（superpowers）或 pi 原生 `workflow` 工具的 `code-review` 模式（agent 按问题复杂度自选深度；**必做**，深度自定）
 9. **PR + Zima 单 Bot CR + 前台阻塞等待** → **REQUIRED SUB-SKILL: Use zima-pr-monitor**（**🚪 push/开 PR 前暂停，等用户明确许可**——用户 AGENTS.md 硬规则"不自动 commit/push 除非明确许可"；开 PR、打 `zima:needs-review`、**同 turn 立即前台阻塞等待 CR job 完成（禁止结束 turn，helper 见 zima-pr-monitor）**、解析 review meta（`cc-cr-meta` / `pi-cr-meta` 前缀区分；`kimi-cr-meta` 忽略）、worktree 修、重打标签、收敛判定、合并）。**zima 缺席降级**：个人 fork / 无 bot 仓库（无 zima CR 环境）时，降级为人工 CR 或 pi 原生 `workflow` 工具 `code-review` 模式，并在 issue 评论说明降级原因。
 
