@@ -234,3 +234,147 @@ class TestGateMergeable:
         result = amg.gate_mergeable("UNKNOWN")
         assert result.passed is False
         assert result.decision == "waiting"
+
+
+class TestParseCrMeta:
+    def test_extracts_json_from_html_comment(self):
+        body = 'review text\n<!-- pi-cr-meta {"round": 1, "blocking_new_count": 0} -->\nmore text'
+        meta = amg.parse_cr_meta(body)
+        assert meta == {"round": 1, "blocking_new_count": 0}
+
+    def test_returns_none_without_meta(self):
+        assert amg.parse_cr_meta("plain review, no meta") is None
+
+    def test_returns_none_on_broken_json(self):
+        assert amg.parse_cr_meta("<!-- pi-cr-meta {not json -->") is None
+
+
+class TestEffectiveBlocking:
+    def test_boolean_blocking_used_directly(self):
+        assert amg.effective_blocking({"blocking": True}) is True
+        assert amg.effective_blocking({"blocking": False}) is False
+
+    def test_legacy_severity_fallback(self):
+        assert amg.effective_blocking({"severity": "low"}) is False
+        assert amg.effective_blocking({"severity": "medium"}) is True
+        assert amg.effective_blocking({"severity": "high"}) is True
+        assert amg.effective_blocking({"severity": "critical"}) is True
+
+    def test_missing_severity_defaults_to_blocking(self):
+        assert amg.effective_blocking({}) is True
+
+
+class TestReviewClean:
+    def test_clean_meta(self):
+        meta = {"blocking_new_count": 0, "issues": []}
+        ok, reason = amg.review_clean(meta)
+        assert ok is True
+
+    def test_blocking_new_count_blocks(self):
+        meta = {"blocking_new_count": 1, "issues": []}
+        ok, reason = amg.review_clean(meta)
+        assert ok is False
+        assert "blocking_new_count" in reason
+
+    def test_open_blocking_finding_blocks(self):
+        meta = {
+            "blocking_new_count": 0,
+            "issues": [{"status": "open", "blocking": True}],
+        }
+        ok, reason = amg.review_clean(meta)
+        assert ok is False
+
+    def test_acknowledged_or_resolved_findings_do_not_block(self):
+        meta = {
+            "blocking_new_count": 0,
+            "issues": [
+                {"status": "acknowledged", "blocking": True},
+                {"status": "resolved", "blocking": True},
+            ],
+        }
+        ok, reason = amg.review_clean(meta)
+        assert ok is True
+
+    def test_open_advisory_finding_does_not_block(self):
+        meta = {
+            "blocking_new_count": 0,
+            "issues": [{"status": "open", "blocking": False}],
+        }
+        ok, reason = amg.review_clean(meta)
+        assert ok is True
+
+
+class TestGateCrConvergence:
+    def _exec(self, status, pid=None):
+        return {"status": status, "pid": pid}
+
+    def _review(self, head_sha, body):
+        return {"commit": {"oid": head_sha}, "body": body}
+
+    def test_all_three_conditions_pass(self, monkeypatch):
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        executions = [self._exec("success", 123)]
+        reviews = [
+            self._review("abc", '<!-- pi-cr-meta {"blocking_new_count": 0, "issues": []} -->')
+        ]
+        result = amg.gate_cr_convergence(executions, reviews, "abc", [])
+        assert result.passed is True
+
+    def test_running_execution_waits(self, monkeypatch):
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        executions = [self._exec("running", 123)]
+        result = amg.gate_cr_convergence(executions, [], "abc", [])
+        assert result.passed is False
+        assert result.decision == "waiting"
+
+    def test_running_with_dead_pid_counts_as_terminated(self, monkeypatch):
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: False)
+        executions = [self._exec("running", 123)]
+        reviews = [
+            self._review("abc", '<!-- pi-cr-meta {"blocking_new_count": 0, "issues": []} -->')
+        ]
+        result = amg.gate_cr_convergence(executions, reviews, "abc", [])
+        assert result.passed is True
+
+    def test_needs_review_label_still_present_waits(self, monkeypatch):
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        executions = [self._exec("success", 123)]
+        reviews = [
+            self._review("abc", '<!-- pi-cr-meta {"blocking_new_count": 0, "issues": []} -->')
+        ]
+        result = amg.gate_cr_convergence(executions, reviews, "abc", ["zima:needs-review"])
+        assert result.passed is False
+        assert result.decision == "waiting"
+
+    def test_no_review_for_head_waits(self, monkeypatch):
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        executions = [self._exec("success", 123)]
+        result = amg.gate_cr_convergence(executions, [], "abc", [])
+        assert result.passed is False
+        assert result.decision == "waiting"
+
+    def test_second_stream_with_blocking_finding_blocks(self, monkeypatch):
+        # Multi-stream trap (jfox #402): ALL reviews for this head must be clean.
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        executions = [self._exec("success", 123)]
+        reviews = [
+            self._review("abc", '<!-- pi-cr-meta {"blocking_new_count": 0, "issues": []} -->'),
+            self._review(
+                "abc",
+                '<!-- pi-cr-meta {"blocking_new_count": 0, '
+                '"issues": [{"status": "open", "blocking": true}]} -->',
+            ),
+        ]
+        result = amg.gate_cr_convergence(executions, reviews, "abc", [])
+        assert result.passed is False
+        assert result.decision == "waiting"
+
+    def test_review_for_other_head_ignored(self, monkeypatch):
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        executions = [self._exec("success", 123)]
+        reviews = [
+            self._review("oldsha", '<!-- pi-cr-meta {"blocking_new_count": 5, "issues": []} -->'),
+            self._review("abc", '<!-- pi-cr-meta {"blocking_new_count": 0, "issues": []} -->'),
+        ]
+        result = amg.gate_cr_convergence(executions, reviews, "abc", [])
+        assert result.passed is True

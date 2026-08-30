@@ -11,6 +11,9 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import os
+import re
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -208,3 +211,116 @@ def gate_mergeable(mergeable: str) -> GateResult:
     if mergeable == "CONFLICTING":
         return GateResult(False, "attention", "merge conflicts need human resolution")
     return GateResult(False, "waiting", f"mergeable={mergeable}")
+
+
+CR_META_RE = re.compile(r"<!--\s*pi-cr-meta\s+(\{.*?\})\s*-->", re.DOTALL)
+
+
+def parse_cr_meta(body: str) -> dict | None:
+    """Extract the pi-cr-meta JSON from a review body, or None.
+
+    The pi CR bot embeds its verdict as an HTML comment:
+    <!-- pi-cr-meta {"round": 1, "blocking_new_count": 0, "issues": [...]} -->
+    """
+    match = CR_META_RE.search(body or "")
+    if not match:
+        return None
+    try:
+        data = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def effective_blocking(finding: dict) -> bool:
+    """Whether a finding blocks merge, with legacy severity fallback.
+
+    New metadata carries a boolean `blocking`.  Old metadata only has
+    `severity`: low -> False, medium/high/critical -> True, missing or
+    invalid severity counts as medium (True).
+    """
+    blocking = finding.get("blocking")
+    if isinstance(blocking, bool):
+        return blocking
+    severity = finding.get("severity", "medium")
+    return severity != "low"
+
+
+def review_clean(meta: dict) -> tuple[bool, str]:
+    """True when one pi-cr-meta review has no blocking findings.
+
+    blocking_new_count == 0 alone is NOT enough: carried open findings from
+    earlier rounds must also be checked one by one.
+    """
+    if meta.get("blocking_new_count", 0) != 0:
+        return False, f"blocking_new_count={meta.get('blocking_new_count')}"
+    for issue in meta.get("issues") or []:
+        if issue.get("status") == "open" and effective_blocking(issue):
+            return False, f"open blocking finding: {issue.get('title', issue.get('id', '?'))}"
+    return True, "clean"
+
+
+def pid_alive(pid: int | None) -> bool:
+    """True when a process with this pid exists (mirrors wait-cr.py)."""
+    if pid is None:
+        return False
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            STILL_ACTIVE = 259
+            handle = ctypes.windll.kernel32.OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+            )
+            if not handle:
+                return False
+            exit_code = ctypes.c_ulong()
+            try:
+                ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+            finally:
+                ctypes.windll.kernel32.CloseHandle(handle)
+            return exit_code.value == STILL_ACTIVE
+        os.kill(int(pid), 0)
+        return True
+    except PermissionError:
+        return True
+    except ProcessLookupError:
+        return False
+    except (ValueError, Exception):  # noqa: BLE001 — mirrors wait-cr.py liveness semantics
+        return False
+
+
+def gate_cr_convergence(
+    executions: list[dict], reviews: list[dict], head_sha: str, labels: list[str]
+) -> GateResult:
+    """Gate 5: CR must have safely converged.  Three conditions, all required:
+
+    a. no execution for this (repo, pr) is still running (a running entry
+       whose pid is dead counts as terminated — zima never writes a terminal
+       state for hard-killed processes);
+    b. every pi-cr-meta review for the current head is clean (multi-stream
+       trap: one clean stream + one late stream with a blocking finding must
+       NOT merge);
+    c. the zima:needs-review label has been removed by postExec.
+    """
+    for execution in executions:
+        if execution.get("status") == "running" and pid_alive(execution.get("pid")):
+            return GateResult(
+                False,
+                "waiting",
+                f"CR execution {execution.get('execution_id')} still running",
+            )
+    if "zima:needs-review" in labels:
+        return GateResult(False, "waiting", "zima:needs-review label still present")
+    head_reviews = [r for r in reviews if ((r.get("commit") or {}).get("oid") or "") == head_sha]
+    if not head_reviews:
+        return GateResult(False, "waiting", "no CR review for current head yet")
+    for review in head_reviews:
+        meta = parse_cr_meta(review.get("body") or "")
+        if meta is None:
+            return GateResult(False, "waiting", "review without pi-cr-meta for current head")
+        ok, reason = review_clean(meta)
+        if not ok:
+            return GateResult(False, "waiting", f"CR not converged: {reason}")
+    return GateResult(True, "merge", "CR converged")
