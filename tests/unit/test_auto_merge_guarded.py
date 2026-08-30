@@ -86,6 +86,14 @@ repos:
         assert cfg.enabled is False
         assert cfg.repos["zhuxixi/pi-agent-board"].delete_branch is False
 
+    def test_quoted_bool_with_inner_whitespace_coerces_false(self, tmp_path):
+        # `enabled: " false "` (quoted + inner whitespace) must still parse as
+        # boolean False, not a truthy string that flips the kill switch ON.
+        cfg_file = tmp_path / "auto-merge.yaml"
+        cfg_file.write_text('enabled: " false "\n', encoding="utf-8")
+        cfg = amg.load_config(cfg_file)
+        assert cfg.enabled is False
+
     def test_load_config_missing_file_raises(self, tmp_path):
         import pytest
 
@@ -178,6 +186,11 @@ class TestGateCandidate:
 
     def test_closed_state_skips(self):
         result = amg.gate_candidate(self._pr(state="CLOSED"), ["ccccyk0919"])
+        assert result.passed is False
+        assert result.decision == "skip"
+
+    def test_author_none_skips(self):
+        result = amg.gate_candidate(self._pr(author=None), ["ccccyk0919"])
         assert result.passed is False
         assert result.decision == "skip"
 
@@ -418,6 +431,29 @@ class TestGateCrConvergence:
         result = amg.gate_cr_convergence(executions, reviews, "abc", [])
         assert result.passed is True
 
+    def test_running_with_none_pid_waits(self, monkeypatch):
+        # Spawn-race window: a running entry with pid=None must be treated as
+        # still running (fail-closed), not terminated.  Reviews are clean so a
+        # fail-open implementation would wrongly return "merge".
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        executions = [self._exec("running", None)]
+        reviews = [
+            self._review("abc", '<!-- pi-cr-meta {"blocking_new_count": 0, "issues": []} -->')
+        ]
+        result = amg.gate_cr_convergence(executions, reviews, "abc", [])
+        assert result.passed is False
+        assert result.decision == "waiting"
+
+    def test_review_without_meta_blocks(self, monkeypatch):
+        # Fail-closed user ruling: any head review without pi-cr-meta (e.g. a
+        # human review) blocks merge.
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        executions = [self._exec("success", 123)]
+        reviews = [self._review("abc", "plain human review, no meta")]
+        result = amg.gate_cr_convergence(executions, reviews, "abc", [])
+        assert result.passed is False
+        assert result.decision == "waiting"
+
 
 class TestGateHeadStable:
     def test_same_head_passes(self):
@@ -498,7 +534,7 @@ class TestRunGates:
 class TestActions:
     def test_remove_label_builds_command(self, monkeypatch):
         calls = []
-        monkeypatch.setattr(amg, "gh_json", lambda args: calls.append(args) or {})
+        monkeypatch.setattr(amg, "gh_run", lambda args: calls.append(args))
         amg.remove_label("r/repo", 5, "zima:needs-fix", dry=False)
         assert calls == [
             ["pr", "edit", "5", "--repo", "r/repo", "--remove-label", "zima:needs-fix"]
@@ -506,14 +542,14 @@ class TestActions:
 
     def test_remove_label_dry_skips_gh(self, monkeypatch):
         calls = []
-        monkeypatch.setattr(amg, "gh_json", lambda args: calls.append(args) or {})
+        monkeypatch.setattr(amg, "gh_run", lambda args: calls.append(args))
         amg.remove_label("r/repo", 5, "zima:needs-fix", dry=True)
         assert calls == []
 
-    def test_approve_binds_head_sha(self, monkeypatch):
+    def test_approve_builds_command(self, monkeypatch):
         calls = []
-        monkeypatch.setattr(amg, "gh_json", lambda args: calls.append(args) or {})
-        amg.approve("r/repo", 5, "abc123", dry=False)
+        monkeypatch.setattr(amg, "gh_run", lambda args: calls.append(args))
+        amg.approve("r/repo", 5, dry=False)
         assert calls == [
             [
                 "pr",
@@ -524,22 +560,26 @@ class TestActions:
                 "--approve",
                 "--body",
                 "auto-merge: CR converged + CI green",
-                "--commit-id",
-                "abc123",
             ]
         ]
 
     def test_merge_pr_squash_delete_branch(self, monkeypatch):
         calls = []
-        monkeypatch.setattr(amg, "gh_json", lambda args: calls.append(args) or {})
+        monkeypatch.setattr(amg, "gh_run", lambda args: calls.append(args))
         amg.merge_pr("r/repo", 5, "squash", True, dry=False)
         assert calls == [["pr", "merge", "5", "--repo", "r/repo", "--squash", "--delete-branch"]]
 
     def test_merge_pr_merge_method_no_delete(self, monkeypatch):
         calls = []
-        monkeypatch.setattr(amg, "gh_json", lambda args: calls.append(args) or {})
+        monkeypatch.setattr(amg, "gh_run", lambda args: calls.append(args))
         amg.merge_pr("r/repo", 5, "merge", False, dry=False)
         assert calls == [["pr", "merge", "5", "--repo", "r/repo", "--merge"]]
+
+    def test_merge_pr_unknown_method_raises(self):
+        import pytest
+
+        with pytest.raises(ValueError, match="unsupported merge method"):
+            amg.merge_pr("r/repo", 5, "rebase", True, dry=False)
 
     def test_rerun_failed_jobs_no_failed_runs(self, monkeypatch):
         monkeypatch.setattr(
@@ -938,3 +978,23 @@ class TestProcessRepo:
         assert not any(title == "[auto-merge] error" for _, title, _ in notify.sent)
         out = capsys.readouterr().out
         assert "would check mergeStateStatus" in out
+
+    def test_live_mode_audits_merge_outcome(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        monkeypatch.setattr(amg, "gh_json", lambda args: [])  # rerun probe: no failed runs
+        monkeypatch.setattr(amg, "approve", lambda *a, **k: None)
+        monkeypatch.setattr(amg, "merge_pr", lambda *a, **k: None)
+        monkeypatch.setattr(amg, "remove_label", lambda *a, **k: None)
+        monkeypatch.setattr(amg, "rerun_failed_jobs", lambda *a, **k: None)
+        green_runs = [
+            {"name": "Test (Node 22)", "conclusion": "success", "status": "completed"},
+            {"name": "Test (Node 24)", "conclusion": "success", "status": "completed"},
+        ]
+        pr = self._pr()
+        gh = self._make_fake_gh([pr], green_runs)
+        notify = self._make_fake_notify()
+        audit = amg.AuditLogger(tmp_path / "audit.log")
+        cfg = amg.AppConfig(enabled=True, repos={"r/repo": self._repo_cfg()})
+        amg.process_repo("r/repo", self._repo_cfg(), cfg, "live", gh, tmp_path, audit, notify)
+        lines = (tmp_path / "audit.log").read_text(encoding="utf-8").strip().splitlines()
+        assert json.loads(lines[-1])["decision"] == "merged"

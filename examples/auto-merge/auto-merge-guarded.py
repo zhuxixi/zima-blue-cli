@@ -116,7 +116,7 @@ def _scalar(value: str):
     this, the quoted string "false" is truthy and silently flips the
     auto-merge kill switch the wrong way.
     """
-    value = value.strip().strip("'\"")
+    value = value.strip().strip("'\"").strip()
     if value in ("true", "True"):
         return True
     if value in ("false", "False"):
@@ -308,14 +308,17 @@ def gate_cr_convergence(
 
     a. no execution for this (repo, pr) is still running (a running entry
        whose pid is dead counts as terminated — zima never writes a terminal
-       state for hard-killed processes);
+       state for hard-killed processes; a running entry with pid=None is the
+       spawn-race window and still blocks);
     b. every pi-cr-meta review for the current head is clean (multi-stream
        trap: one clean stream + one late stream with a blocking finding must
        NOT merge);
     c. the zima:needs-review label has been removed by postExec.
     """
     for execution in executions:
-        if execution.get("status") == "running" and pid_alive(execution.get("pid")):
+        if execution.get("status") == "running" and (
+            execution.get("pid") is None or pid_alive(execution.get("pid"))
+        ):
             return GateResult(
                 False,
                 "waiting",
@@ -351,7 +354,7 @@ def gate_head_stable(head_before: str, head_now: str) -> GateResult:
 def run_gates(
     pr: dict, check_runs: list[dict], executions: list[dict], repo_cfg: RepoConfig
 ) -> GateResult:
-    """Run the six gates in order; return the first non-passing result.
+    """Run gates 1-5 in order; return the first non-passing result.
 
     Gate 6 (head drift) is NOT run here — it is checked inside the action
     chain right before approve, against a freshly fetched head.
@@ -393,14 +396,20 @@ def remove_label(repo: str, number: int, label: str, dry: bool) -> None:
     stream (the webhook only listens for zima:needs-review)."""
     if dry:
         return
-    gh_json(["pr", "edit", str(number), "--repo", repo, "--remove-label", label])
+    gh_run(["pr", "edit", str(number), "--repo", repo, "--remove-label", label])
 
 
-def approve(repo: str, number: int, head_sha: str, dry: bool) -> None:
-    """Approve the PR, binding the review to the verified head sha."""
+def approve(repo: str, number: int, dry: bool) -> None:
+    """Approve the PR.
+
+    The review binds to the PR's current head at submission (GitHub
+    semantics).  Head-drift protection is structural: the action chain
+    re-fetches the head and checks gate_head_stable immediately before this
+    call, so a collaborator push between check and approve aborts the round.
+    """
     if dry:
         return
-    gh_json(
+    gh_run(
         [
             "pr",
             "review",
@@ -410,8 +419,6 @@ def approve(repo: str, number: int, head_sha: str, dry: bool) -> None:
             "--approve",
             "--body",
             "auto-merge: CR converged + CI green",
-            "--commit-id",
-            head_sha,
         ]
     )
 
@@ -469,14 +476,16 @@ def merge_pr(repo: str, number: int, method: str, delete_branch: bool, dry: bool
     """Squash-merge (or merge) the PR, optionally deleting the branch."""
     if dry:
         return
-    cmd = ["pr", "merge", str(number), "--repo", repo]
     if method == "squash":
-        cmd.append("--squash")
+        method_flag = "--squash"
+    elif method == "merge":
+        method_flag = "--merge"
     else:
-        cmd.append("--merge")
+        raise ValueError(f"unsupported merge method: {method!r}")
+    cmd = ["pr", "merge", str(number), "--repo", repo, method_flag]
     if delete_branch:
         cmd.append("--delete-branch")
-    gh_json(cmd)
+    gh_run(cmd)
 
 
 PUSHOVER_URL = "https://api.pushover.net/1/messages.json"
@@ -649,13 +658,21 @@ def process_repo(
                 continue
             print(f"[{repo}#{number}] would approve" if dry else f"[{repo}#{number}] approving")
             if not dry:
-                approve(repo, number, head_sha, dry=False)
+                approve(repo, number, dry=False)
         labels = [label.get("name", "") for label in fresh.get("labels") or []]
         if "zima:needs-fix" in labels:
-            print(f"[{repo}#{number}] removing zima:needs-fix")
+            print(
+                f"[{repo}#{number}] would remove zima:needs-fix"
+                if dry
+                else f"[{repo}#{number}] removing zima:needs-fix"
+            )
             remove_label(repo, number, "zima:needs-fix", dry)
         for workflow_name in repo_cfg.expected_failing_checks:
-            print(f"[{repo}#{number}] rerunning failed jobs of {workflow_name}")
+            print(
+                f"[{repo}#{number}] would rerun failed jobs of {workflow_name}"
+                if dry
+                else f"[{repo}#{number}] rerunning failed jobs of {workflow_name}"
+            )
             rerun_failed_jobs(repo, head_sha, workflow_name, dry)
         fresh = gh.view_pr(repo, number)
         if fresh.get("mergeStateStatus") != "CLEAN":
@@ -668,6 +685,17 @@ def process_repo(
                     f"(currently {fresh.get('mergeStateStatus')})"
                 )
             else:
+                audit.log(
+                    {
+                        "ts": _now_iso(),
+                        "mode": mode,
+                        "repo": repo,
+                        "pr": number,
+                        "head_sha": head_sha,
+                        "decision": "aborted",
+                        "reason": f"mergeStateStatus={fresh.get('mergeStateStatus')}",
+                    }
+                )
                 if notify_enabled:
                     notify.send(
                         "error",
@@ -676,12 +704,23 @@ def process_repo(
                     )
                 continue
         print(
-            f"[{repo}#{number}] would merge (squash)"
+            f"[{repo}#{number}] would merge ({repo_cfg.merge_method})"
             if dry
-            else f"[{repo}#{number}] merging (squash)"
+            else f"[{repo}#{number}] merging ({repo_cfg.merge_method})"
         )
         if not dry:
             merge_pr(repo, number, repo_cfg.merge_method, repo_cfg.delete_branch, dry=False)
+            audit.log(
+                {
+                    "ts": _now_iso(),
+                    "mode": mode,
+                    "repo": repo,
+                    "pr": number,
+                    "head_sha": head_sha,
+                    "decision": "merged",
+                    "reason": "merge completed",
+                }
+            )
         if notify_enabled:
             if dry:
                 notify.send(
