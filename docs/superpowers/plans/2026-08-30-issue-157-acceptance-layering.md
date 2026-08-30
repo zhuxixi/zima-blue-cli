@@ -21,6 +21,8 @@
 
 ### Task 1: 为 Step 4 增加验收方式分层与矩阵要求
 
+**验收 ID:** A1
+
 **Files:**
 - Modify: `pi/github-issue-driven/SKILL.md`（当前 Step 4）
 
@@ -28,7 +30,7 @@
 - Consumes: 已有的 issue 路由、spec 产出和 spec gate 规则。
 - Produces: 后续 Step 6 可引用的验收 ID 约定，以及可直接复制的验收矩阵字段定义。
 
-- [ ] **Step 1: 替换 Step 4 文案，保留原路由和 spec gate**
+- [x] **Step 1: 替换 Step 4 文案，保留原路由和 spec gate**
 
 在当前 Step 4 的“路由”说明之后增加以下要求，不删除原有的 bug/feature 路由、spec draft 路径和“spec 完成后暂停等待用户确认”规则：
 
@@ -46,7 +48,7 @@
    | U1 | 真实外部服务交互 | 用户实测 | 按步骤执行并观察结果 | 外部服务产生预期效果 |
 ```
 
-- [ ] **Step 2: 检查 Step 4 仍保留设计 gate**
+- [x] **Step 2: 检查 Step 4 仍保留设计 gate**
 
 Run:
 
@@ -56,7 +58,7 @@ grep -n -A 12 -B 2 '4\. \*\*路由\*\*' pi/github-issue-driven/SKILL.md
 
 Expected: 同时看到原有路由、`验收方式分层（必答）`、矩阵字段、`用户实测` 非兜底说明，以及 `spec 完成后暂停`。
 
-- [ ] **Step 3: Commit Task 1**
+- [x] **Step 3: Commit Task 1**
 
 ```bash
 git add pi/github-issue-driven/SKILL.md
@@ -67,6 +69,8 @@ git commit -m "docs(skill): require acceptance matrix in spec step"
 
 ### Task 2: 为 Step 6 增加 plan 双向追溯要求
 
+**验收 ID:** A2
+
 **Files:**
 - Modify: `pi/github-issue-driven/SKILL.md`（当前 Step 6）
 
@@ -74,7 +78,7 @@ git commit -m "docs(skill): require acceptance matrix in spec step"
 - Consumes: Task 1 产生的 `A1`/`U1` 等验收 ID 和验收矩阵。
 - Produces: plan 对实现 task、自动化验证和用户实测项的追溯约束，供 Step 7 实现时执行。
 
-- [ ] **Step 1: 在 Step 6 后追加追溯规则**
+- [x] **Step 1: 在 Step 6 后追加追溯规则**
 
 在当前 Step 6 的 writing-plans 要求之后追加：
 
@@ -83,7 +87,7 @@ git commit -m "docs(skill): require acceptance matrix in spec step"
    - 不允许出现没有验收归属的实现 task，也不允许出现 spec 验收矩阵中没有对应 plan task 的验收项；不强制使用某一种表格格式，但必须能按验收 ID 双向追溯。
 ```
 
-- [ ] **Step 2: 检查 Step 6 与 Step 7 gate 未被覆盖**
+- [x] **Step 2: 检查 Step 6 与 Step 7 gate 未被覆盖**
 
 Run:
 
@@ -94,7 +98,7 @@ grep -n -A 2 '7\. \*\*实现\*\*' pi/github-issue-driven/SKILL.md
 
 Expected: Step 6 同时保留 `REQUIRED SUB-SKILL: Use writing-plans`、worktree 要求、双向追溯规则；Step 7 的 plan gate 原文仍存在。
 
-- [ ] **Step 3: Commit Task 2**
+- [x] **Step 3: Commit Task 2**
 
 ```bash
 git add pi/github-issue-driven/SKILL.md
@@ -105,6 +109,8 @@ git commit -m "docs(skill): trace plan tasks to acceptance ids"
 
 ### Task 3: 为 Step 8–9 增加最终逐项验收规则
 
+**验收 ID:** A3
+
 **Files:**
 - Modify: `pi/github-issue-driven/SKILL.md`（当前 Step 8、Step 9）
 
@@ -112,7 +118,7 @@ git commit -m "docs(skill): trace plan tasks to acceptance ids"
 - Consumes: Task 1 的验收矩阵和 Task 2 的 task↔验收 ID 映射。
 - Produces: 本地 CR、Zima CR 和合并前检查的逐项验收要求。
 
-- [ ] **Step 1: 在 Step 8–9 后增加最终对账段落**
+- [x] **Step 1: 在 Step 8–9 后增加最终对账段落**
 
 在现有 Step 9 的 CR/合并条件之后、`## 为什么高度可自动化` 之前追加：
 
@@ -121,7 +127,7 @@ git commit -m "docs(skill): trace plan tasks to acceptance ids"
    **验收逐项对账**：本地 CR 和合并前检查必须按 spec 验收矩阵逐项核对。自动化项记录实际执行的命令及结果；用户实测项按清单实际执行并记录观察结果。单测或其他自动化命令通过，不能替代尚未执行的用户实测；用户实测暂时无法执行时标记为 `pending`，不能宣称全部验收完成。自动化验证失败必须修复或明确记录阻塞原因，用户实测失败或 `pending` 状态必须在最终报告中如实呈现。
 ```
 
-- [ ] **Step 2: 检查最终对账规则与既有 CR 门禁兼容**
+- [x] **Step 2: 检查最终对账规则与既有 CR 门禁兼容**
 
 Run:
 
@@ -135,7 +141,7 @@ Expected:
 - 找到自动化命令/结果记录、用户实测记录、`pending` 和“不能替代”规则；
 - 既有单 Bot、`pi-cr-meta`、push gate、模型 B 和 worktree 规则仍存在，未出现旧双 Bot/旧工作目录要求。
 
-- [ ] **Step 3: Commit Task 3**
+- [x] **Step 3: Commit Task 3**
 
 ```bash
 git add pi/github-issue-driven/SKILL.md
@@ -146,6 +152,8 @@ git commit -m "docs(skill): require acceptance reconciliation before merge"
 
 ### Task 4: 全文一致性验证与本地 CR 准备
 
+**验收 ID:** A1–A4
+
 **Files:**
 - Verify: `pi/github-issue-driven/SKILL.md`
 - Verify: `docs/superpowers/specs/2026-08-30-issue-157-acceptance-layering-design.md`
@@ -155,7 +163,7 @@ git commit -m "docs(skill): require acceptance reconciliation before merge"
 - Consumes: Tasks 1–3 的文档改动。
 - Produces: 可提交给本地 CR 和 Zima CR 的完整变更集，验收项 A1–A4 均有证据。
 
-- [ ] **Step 1: 执行 Markdown 和范围检查**
+- [x] **Step 1: 执行 Markdown 和范围检查**
 
 Run:
 
@@ -176,7 +184,7 @@ Expected:
 - 旧双 Bot、旧 worktree 工具或旧工作目录文案检查返回 0；
 - 变更文件只有 spec、plan 和 `pi/github-issue-driven/SKILL.md`。
 
-- [ ] **Step 2: 按 spec A1–A4 对账**
+- [x] **Step 2: 按 spec A1–A4 对账**
 
 逐项确认：
 
@@ -185,7 +193,7 @@ Expected:
 - A3：Step 8–9 有命令/结果记录、实测记录、`pending` 和禁止替代规则；
 - A4：单 Bot、worktree、push gate 等当前规则仍保留，且没有恢复旧文案。
 
-- [ ] **Step 3: 查看最终 diff，准备本地 CR**
+- [x] **Step 3: 查看最终 diff，准备本地 CR**
 
 Run:
 
