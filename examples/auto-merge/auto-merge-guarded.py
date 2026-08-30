@@ -672,11 +672,19 @@ def process_repo(
         if not dry:
             merge_pr(repo, number, repo_cfg.merge_method, repo_cfg.delete_branch, dry=False)
         if notify_enabled:
-            notify.send(
-                "action",
-                "[auto-merge] merged",
-                f"{repo}#{number} {pr.get('title', '')} by {pr.get('author', {}).get('login', '?')}",
-            )
+            if dry:
+                notify.send(
+                    "action",
+                    "[auto-merge] would merge",
+                    f"{repo}#{number} {pr.get('title', '')} by "
+                    f"{pr.get('author', {}).get('login', '?')} — would merge (notify-only)",
+                )
+            else:
+                notify.send(
+                    "action",
+                    "[auto-merge] merged",
+                    f"{repo}#{number} {pr.get('title', '')} by {pr.get('author', {}).get('login', '?')}",
+                )
 
 
 def main(argv: list[str] | None = None) -> int:

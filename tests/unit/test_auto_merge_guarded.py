@@ -838,3 +838,23 @@ class TestProcessRepo:
             "r/repo", self._repo_cfg(), cfg, "notify-only", gh, tmp_path, audit, notify
         )
         assert notify.sent == []
+
+    def test_notify_only_sends_would_merge_not_merged(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        monkeypatch.setattr(amg, "gh_json", lambda args: [])  # rerun probe: no failed runs
+        green_runs = [
+            {"name": "Test (Node 22)", "conclusion": "success", "status": "completed"},
+            {"name": "Test (Node 24)", "conclusion": "success", "status": "completed"},
+        ]
+        pr = self._pr()
+        gh = self._make_fake_gh([pr], green_runs)
+        notify = self._make_fake_notify()
+        audit = amg.AuditLogger(tmp_path / "audit.log")
+        cfg = amg.AppConfig(enabled=True, repos={"r/repo": self._repo_cfg()})
+        amg.process_repo(
+            "r/repo", self._repo_cfg(), cfg, "notify-only", gh, tmp_path, audit, notify
+        )
+        assert len(notify.sent) == 1
+        assert notify.sent[0][0] == "action"
+        assert notify.sent[0][1] == "[auto-merge] would merge"
+        assert not any(title == "[auto-merge] merged" for _, title, _ in notify.sent)
