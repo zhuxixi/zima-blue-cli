@@ -16,6 +16,9 @@ import re
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -469,3 +472,56 @@ def merge_pr(repo: str, number: int, method: str, delete_branch: bool, dry: bool
     if delete_branch:
         cmd.append("--delete-branch")
     gh_json(cmd)
+
+
+PUSHOVER_URL = "https://api.pushover.net/1/messages.json"
+MESSAGE_CHAR_LIMIT = 250
+
+# Pushover priority per notification level
+LEVEL_PRIORITY = {"action": 0, "attention": 1, "error": 1}
+
+
+def truncate_chars(text: str, limit: int) -> str:
+    """Truncate by characters, never bytes (UTF-8 Chinese would corrupt)."""
+    if len(text) <= limit:
+        return text
+    return text[:limit]
+
+
+def load_pushover_keys(config_file: str) -> tuple[str, str] | None:
+    """Read (api_key, user_key) from the shared notify config, or None."""
+    path = Path(config_file).expanduser()
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    api_key = data.get("PUSHOVER_API_KEY")
+    user_key = data.get("PUSHOVER_USER_KEY")
+    if not api_key or not user_key:
+        return None
+    return str(api_key), str(user_key)
+
+
+def send_pushover(level: str, title: str, message: str, config_file: str) -> bool:
+    """POST a Pushover message.  Returns False on any failure (callers
+    degrade to log-only; notification must never block the merge)."""
+    keys = load_pushover_keys(config_file)
+    if keys is None:
+        return False
+    api_key, user_key = keys
+    payload = {
+        "token": api_key,
+        "user": user_key,
+        "title": title,
+        "message": truncate_chars(message, MESSAGE_CHAR_LIMIT),
+        "priority": LEVEL_PRIORITY.get(level, 0),
+    }
+    data = urllib.parse.urlencode(payload).encode("utf-8")
+    request = urllib.request.Request(PUSHOVER_URL, data=data)
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            return response.status == 200
+    except (urllib.error.URLError, OSError):
+        return False

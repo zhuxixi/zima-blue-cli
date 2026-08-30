@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+import urllib.parse
 from pathlib import Path
 
 SCRIPT_PATH = (
@@ -539,3 +540,92 @@ class TestActions:
         monkeypatch.setattr(amg, "gh_run", lambda args: rerun_calls.append(args))
         amg.rerun_failed_jobs("r/repo", "abc", "Owner approval policy", dry=True)
         assert rerun_calls == []
+
+
+class TestTruncateChars:
+    def test_short_text_unchanged(self):
+        assert amg.truncate_chars("hello", 250) == "hello"
+
+    def test_chinese_truncated_by_characters_not_bytes(self):
+        text = "中" * 300  # 900 bytes, 300 chars
+        result = amg.truncate_chars(text, 250)
+        assert len(result) == 250
+        assert result.endswith("中")  # no broken UTF-8 sequence
+
+
+class TestLoadPushoverKeys:
+    def test_reads_keys(self, tmp_path):
+        cfg = tmp_path / "notify.json"
+        cfg.write_text('{"PUSHOVER_API_KEY": "k", "PUSHOVER_USER_KEY": "u"}', encoding="utf-8")
+        assert amg.load_pushover_keys(str(cfg)) == ("k", "u")
+
+    def test_missing_file_returns_none(self, tmp_path):
+        assert amg.load_pushover_keys(str(tmp_path / "nope.json")) is None
+
+    def test_missing_keys_returns_none(self, tmp_path):
+        cfg = tmp_path / "notify.json"
+        cfg.write_text('{"BUSY_TIME": "x"}', encoding="utf-8")
+        assert amg.load_pushover_keys(str(cfg)) is None
+
+
+class TestSendPushover:
+    def test_posts_and_returns_true(self, monkeypatch):
+        posted = []
+
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        def fake_urlopen(req, timeout=None):
+            posted.append(req)
+            return FakeResponse()
+
+        # Key loading is covered by TestLoadPushoverKeys; mock it here so the
+        # POST path (the behavior under test) is actually exercised.
+        monkeypatch.setattr(amg, "load_pushover_keys", lambda config_file: ("k", "u"))
+        monkeypatch.setattr(amg.urllib.request, "urlopen", fake_urlopen)
+        ok = amg.send_pushover("action", "[auto-merge] merged", "body", "unused")
+        assert ok is True
+        assert len(posted) == 1
+        # Pushover's API accepts form-urlencoded POST bodies (not JSON); the
+        # payload fields must be present and URL-encoded correctly.
+        payload = urllib.parse.parse_qs(posted[0].data.decode("utf-8"))
+        assert payload["token"] == ["k"]
+        assert payload["user"] == ["u"]
+        assert payload["title"] == ["[auto-merge] merged"]
+        assert payload["message"] == ["body"]
+
+    def test_attention_level_sets_priority(self, monkeypatch):
+        posted = []
+
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        def fake_urlopen(req, timeout=None):
+            posted.append(req)
+            return FakeResponse()
+
+        monkeypatch.setattr(amg, "load_pushover_keys", lambda config_file: ("k", "u"))
+        monkeypatch.setattr(amg.urllib.request, "urlopen", fake_urlopen)
+        amg.send_pushover("attention", "t", "m", "unused")
+        payload = urllib.parse.parse_qs(posted[0].data.decode("utf-8"))
+        assert payload["priority"] == ["1"]
+
+    def test_http_error_returns_false(self, monkeypatch):
+        def fake_urlopen(req, timeout=None):
+            raise amg.urllib.error.URLError("boom")
+
+        monkeypatch.setattr(amg, "load_pushover_keys", lambda config_file: ("k", "u"))
+        monkeypatch.setattr(amg.urllib.request, "urlopen", fake_urlopen)
+        assert amg.send_pushover("action", "t", "m", "unused") is False
