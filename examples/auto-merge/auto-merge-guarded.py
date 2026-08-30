@@ -173,3 +173,38 @@ def gate_sensitive_paths(files: list[str], sensitive_paths: list[str]) -> GateRe
                     f"sensitive path {path!r} matches {pattern!r}",
                 )
     return GateResult(True, "merge", "no sensitive paths")
+
+
+def gate_required_checks(
+    check_runs: list[dict], required: list[str], expected_failing: list[str]
+) -> GateResult:
+    """Gate 3: every required check's newest run must be success.
+
+    check_runs comes from GET /commits/{sha}/check-runs (newest first).
+    Checks listed in expected_failing may fail (e.g. Owner approval policy
+    before the approve step) without blocking.
+    """
+    for name in required:
+        newest = next((r for r in check_runs if r.get("name") == name), None)
+        if newest is None:
+            return GateResult(False, "waiting", f"required check {name!r} has no run yet")
+        if newest.get("status") != "completed":
+            return GateResult(
+                False, "waiting", f"required check {name!r} is {newest.get('status')}"
+            )
+        if newest.get("conclusion") != "success" and name not in expected_failing:
+            return GateResult(
+                False,
+                "waiting",
+                f"required check {name!r} conclusion={newest.get('conclusion')}",
+            )
+    return GateResult(True, "merge", "all required checks green")
+
+
+def gate_mergeable(mergeable: str) -> GateResult:
+    """Gate 4: PR must be mergeable (no conflicts)."""
+    if mergeable == "MERGEABLE":
+        return GateResult(True, "merge", "mergeable")
+    if mergeable == "CONFLICTING":
+        return GateResult(False, "attention", "merge conflicts need human resolution")
+    return GateResult(False, "waiting", f"mergeable={mergeable}")

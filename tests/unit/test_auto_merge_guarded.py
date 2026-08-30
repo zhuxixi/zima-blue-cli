@@ -164,3 +164,73 @@ class TestGateSensitivePaths:
     def test_empty_sensitive_paths_passes(self):
         result = amg.gate_sensitive_paths(["anything.ts"], [])
         assert result.passed is True
+
+
+class TestGateRequiredChecks:
+    def _runs(self, *pairs):
+        # pairs of (name, conclusion); later entries are newer (API returns newest first)
+        return [{"name": n, "conclusion": c, "status": "completed"} for n, c in pairs]
+
+    def test_all_required_success_passes(self):
+        runs = self._runs(("Test (Node 22)", "success"), ("Test (Node 24)", "success"))
+        result = amg.gate_required_checks(runs, ["Test (Node 22)", "Test (Node 24)"], [])
+        assert result.passed is True
+
+    def test_required_failure_waits(self):
+        runs = self._runs(("Test (Node 22)", "failure"), ("Test (Node 24)", "success"))
+        result = amg.gate_required_checks(runs, ["Test (Node 22)", "Test (Node 24)"], [])
+        assert result.passed is False
+        assert result.decision == "waiting"
+        assert "Test (Node 22)" in result.reason
+
+    def test_expected_failing_check_ignored(self):
+        runs = self._runs(
+            ("Test (Node 22)", "success"),
+            ("Test (Node 24)", "success"),
+            ("Owner approval policy", "failure"),
+        )
+        result = amg.gate_required_checks(
+            runs, ["Test (Node 22)", "Test (Node 24)"], ["Owner approval policy"]
+        )
+        assert result.passed is True
+
+    def test_in_progress_required_check_waits(self):
+        runs = [
+            {"name": "Test (Node 22)", "conclusion": None, "status": "in_progress"},
+            {"name": "Test (Node 24)", "conclusion": "success", "status": "completed"},
+        ]
+        result = amg.gate_required_checks(runs, ["Test (Node 22)", "Test (Node 24)"], [])
+        assert result.passed is False
+        assert result.decision == "waiting"
+
+    def test_missing_required_check_waits(self):
+        runs = self._runs(("Test (Node 24)", "success"))
+        result = amg.gate_required_checks(runs, ["Test (Node 22)", "Test (Node 24)"], [])
+        assert result.passed is False
+        assert result.decision == "waiting"
+
+    def test_newest_run_wins_for_same_name(self):
+        # API returns newest first; a newer success overrides an older failure
+        runs = self._runs(
+            ("Test (Node 22)", "success"),
+            ("Test (Node 22)", "failure"),
+            ("Test (Node 24)", "success"),
+        )
+        result = amg.gate_required_checks(runs, ["Test (Node 22)", "Test (Node 24)"], [])
+        assert result.passed is True
+
+
+class TestGateMergeable:
+    def test_mergeable_passes(self):
+        result = amg.gate_mergeable("MERGEABLE")
+        assert result.passed is True
+
+    def test_conflicting_attention(self):
+        result = amg.gate_mergeable("CONFLICTING")
+        assert result.passed is False
+        assert result.decision == "attention"
+
+    def test_unknown_waits(self):
+        result = amg.gate_mergeable("UNKNOWN")
+        assert result.passed is False
+        assert result.decision == "waiting"
