@@ -107,3 +107,60 @@ class TestAuditLogger:
         logger.log({"n": 2})
         lines = log_path.read_text(encoding="utf-8").strip().splitlines()
         assert len(lines) == 2
+
+
+class TestGateCandidate:
+    def _pr(self, **overrides):
+        pr = {
+            "number": 1,
+            "title": "t",
+            "author": {"login": "ccccyk0919"},
+            "state": "OPEN",
+            "isDraft": False,
+        }
+        pr.update(overrides)
+        return pr
+
+    def test_open_whitelisted_non_draft_passes(self):
+        result = amg.gate_candidate(self._pr(), ["ccccyk0919"])
+        assert result.passed is True
+        assert result.decision == "merge"
+
+    def test_author_not_whitelisted_skips(self):
+        result = amg.gate_candidate(self._pr(author={"login": "stranger"}), ["ccccyk0919"])
+        assert result.passed is False
+        assert result.decision == "skip"
+        assert "whitelist" in result.reason
+
+    def test_draft_skips(self):
+        result = amg.gate_candidate(self._pr(isDraft=True), ["ccccyk0919"])
+        assert result.passed is False
+        assert result.decision == "skip"
+
+    def test_closed_state_skips(self):
+        result = amg.gate_candidate(self._pr(state="CLOSED"), ["ccccyk0919"])
+        assert result.passed is False
+        assert result.decision == "skip"
+
+
+class TestGateSensitivePaths:
+    def test_no_match_passes(self):
+        result = amg.gate_sensitive_paths(["src/main.ts", "README.md"], [".github/**"])
+        assert result.passed is True
+
+    def test_workflow_file_blocks(self):
+        result = amg.gate_sensitive_paths(
+            ["src/main.ts", ".github/workflows/ci.yml"], [".github/**"]
+        )
+        assert result.passed is False
+        assert result.decision == "attention"
+        assert ".github/workflows/ci.yml" in result.reason
+
+    def test_glob_pattern_matches(self):
+        result = amg.gate_sensitive_paths(["foo.pjob.bar"], ["*.pjob.*"])
+        assert result.passed is False
+        assert result.decision == "attention"
+
+    def test_empty_sensitive_paths_passes(self):
+        result = amg.gate_sensitive_paths(["anything.ts"], [])
+        assert result.passed is True

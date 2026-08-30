@@ -9,6 +9,7 @@ in ~/.config/claude-notify.json, GitHub auth via the gh CLI login state).
 
 from __future__ import annotations
 
+import fnmatch
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -129,3 +130,46 @@ class AuditLogger:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+@dataclass
+class GateResult:
+    """Outcome of one gate: passed flag plus a decision and human reason.
+
+    decision is one of: merge (keep going), skip (silent, not a candidate),
+    attention (notify owner, never auto-merge), waiting (silent, retry next
+    round), error (notify owner, abort this PR).
+    """
+
+    passed: bool
+    decision: str
+    reason: str
+
+
+def gate_candidate(pr: dict, allow_authors: list[str]) -> GateResult:
+    """Gate 1: PR must be open, non-draft, and authored by a whitelisted user."""
+    if pr.get("state") != "OPEN":
+        return GateResult(False, "skip", f"PR #{pr.get('number')} state={pr.get('state')}")
+    if pr.get("isDraft"):
+        return GateResult(False, "skip", f"PR #{pr.get('number')} is draft")
+    author = (pr.get("author") or {}).get("login", "")
+    if author not in allow_authors:
+        return GateResult(False, "skip", f"author {author!r} not in whitelist")
+    return GateResult(True, "merge", "candidate ok")
+
+
+def gate_sensitive_paths(files: list[str], sensitive_paths: list[str]) -> GateResult:
+    """Gate 2: changed files must not match any sensitive glob pattern.
+
+    Sensitive paths (workflows, CI config) can rewrite the review and gate
+    rules themselves, so they always require a human.
+    """
+    for path in files:
+        for pattern in sensitive_paths:
+            if fnmatch.fnmatch(path, pattern):
+                return GateResult(
+                    False,
+                    "attention",
+                    f"sensitive path {path!r} matches {pattern!r}",
+                )
+    return GateResult(True, "merge", "no sensitive paths")
