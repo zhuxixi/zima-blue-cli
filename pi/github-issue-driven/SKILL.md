@@ -38,6 +38,8 @@ description: Use when starting work on a GitHub issue — scanning or claiming a
    - **🚫 禁止** `git checkout -b` / `git switch -c` / `git branch <name>`（只是在当前 checkout 切分支，不是 worktree）。
    - **自检**：模型 A 下 `pwd` 在 `<repo>/.pi/worktrees/` 下（或 `git rev-parse --git-dir` 指向 linked worktree）；模型 B 下确认所有编辑路径以 `$WT` 开头。**ignore 自检**：确认目标仓已 ignore worktree 容器目录（`.gitignore` 含 `.pi/worktrees/`，或写入 `.git/info/exclude`）——否则主 checkout 手滑 `git add -A` 会把 worktree 当 embedded repo 吸入暂存区。
 6. **写计划** → **REQUIRED SUB-SKILL: Use writing-plans**（**在 worktree 内**）→ `docs/superpowers/plans/<YYYY-MM-DD>-<slug>.md`。
+   - plan 的每个实现 task 必须引用一个或多个 spec 验收 ID；自动化验收项必须落到具体测试、检查或构建命令，用户实测项必须落到实测步骤，或单独建立 post-implementation manual verification task。
+   - 不允许出现没有验收归属的实现 task，也不允许出现 spec 验收矩阵中没有对应 plan task 的验收项；不强制使用某一种表格格式，但必须能按验收 ID 双向追溯。
 7. **实现** → **REQUIRED SUB-SKILL: Use subagent-driven-development**（worktree 内，**禁碰 main**）。**🚪 Gate：Step 6 的 plan 文档必须存在才能开始实现——spec 不算 plan。** 派 implementer/reviewer 时**显式传 `cwd: <worktree 绝对路径>`**（subagent 工具原生参数，机制强制），并在 task 里保留 `Work from: <worktree 绝对路径>` 作双保险——别让 subagent 回主仓库作业。
 8. **本地快速 CR** → `requesting-code-review`（superpowers）或 pi 原生 `workflow` 工具的 `code-review` 模式（agent 按问题复杂度自选深度；**必做**，深度自定）
 9. **PR + Zima 单 Bot CR + 前台阻塞等待** → **REQUIRED SUB-SKILL: Use zima-pr-monitor**（**🚪 push/开 PR 前暂停，等用户明确许可**——用户 AGENTS.md 硬规则"不自动 commit/push 除非明确许可"；开 PR、打 `zima:needs-review`、**同 turn 立即前台阻塞等待 CR job 完成（禁止结束 turn，helper 见 zima-pr-monitor）**、解析 review meta（`cc-cr-meta` / `pi-cr-meta` 前缀区分；`kimi-cr-meta` 忽略）、worktree 修、重打标签、收敛判定、合并）。**zima 缺席降级**：个人 fork / 无 bot 仓库（无 zima CR 环境）时，降级为人工 CR 或 pi 原生 `workflow` 工具 `code-review` 模式，并在 issue 评论说明降级原因。
