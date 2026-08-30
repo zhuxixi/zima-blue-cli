@@ -13,7 +13,9 @@ import fnmatch
 import json
 import os
 import re
+import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -361,3 +363,109 @@ def run_gates(
         if not result.passed:
             return result
     return GateResult(True, "merge", "all gates passed")
+
+
+def gh_json(args: list[str]) -> dict | list:
+    """Run `gh <args>` and parse stdout as JSON.  Raises on failure."""
+    proc = subprocess.run(["gh", *args], capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError(f"gh {' '.join(args)} failed: {proc.stderr.strip()[:500]}")
+    return json.loads(proc.stdout)
+
+
+def gh_run(args: list[str]) -> None:
+    """Run `gh <args>` without parsing output.  Raises on failure."""
+    proc = subprocess.run(["gh", *args], capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        raise RuntimeError(f"gh {' '.join(args)} failed: {proc.stderr.strip()[:500]}")
+
+
+def remove_label(repo: str, number: int, label: str, dry: bool) -> None:
+    """Remove a label.  Removing zima:needs-fix does NOT trigger a new CR
+    stream (the webhook only listens for zima:needs-review)."""
+    if dry:
+        return
+    gh_json(["pr", "edit", str(number), "--repo", repo, "--remove-label", label])
+
+
+def approve(repo: str, number: int, head_sha: str, dry: bool) -> None:
+    """Approve the PR, binding the review to the verified head sha."""
+    if dry:
+        return
+    gh_json(
+        [
+            "pr",
+            "review",
+            str(number),
+            "--repo",
+            repo,
+            "--approve",
+            "--body",
+            "auto-merge: CR converged + CI green",
+            "--commit-id",
+            head_sha,
+        ]
+    )
+
+
+def rerun_failed_jobs(
+    repo: str, head_sha: str, workflow_name: str, dry: bool, timeout: int = 300
+) -> None:
+    """Rerun failed runs of the expected-failing workflow on this head.
+
+    After approve, the Owner approval policy workflow re-runs and turns
+    green; without this the PR list icon stays red from the old failed run.
+    Polls until the rerun completes or `timeout` seconds elapse.
+    """
+    runs = gh_json(
+        [
+            "run",
+            "list",
+            "--repo",
+            repo,
+            "--commit",
+            head_sha,
+            "--json",
+            "databaseId,name,conclusion",
+        ]
+    )
+    failed_ids = [
+        str(r["databaseId"])
+        for r in runs
+        if r.get("name") == workflow_name and r.get("conclusion") == "failure"
+    ]
+    if not failed_ids:
+        return
+    if dry:
+        return
+    for run_id in failed_ids:
+        gh_run(["run", "rerun", run_id, "--failed"])
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        statuses = [
+            gh_json_view(["run", "view", run_id, "--repo", repo, "--json", "status,conclusion"])
+            for run_id in failed_ids
+        ]
+        if all(s.get("status") == "completed" for s in statuses):
+            return
+        time.sleep(15)
+    raise RuntimeError(f"rerun of {workflow_name} did not complete within {timeout}s")
+
+
+def gh_json_view(args: list[str]) -> dict:
+    """Alias for gh_json kept separate so tests can mock the poll loop."""
+    return gh_json(args)
+
+
+def merge_pr(repo: str, number: int, method: str, delete_branch: bool, dry: bool) -> None:
+    """Squash-merge (or merge) the PR, optionally deleting the branch."""
+    if dry:
+        return
+    cmd = ["pr", "merge", str(number), "--repo", repo]
+    if method == "squash":
+        cmd.append("--squash")
+    else:
+        cmd.append("--merge")
+    if delete_branch:
+        cmd.append("--delete-branch")
+    gh_json(cmd)

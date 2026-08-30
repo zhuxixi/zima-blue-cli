@@ -454,3 +454,88 @@ class TestRunGates:
         result = amg.run_gates(pr, self._check_runs(), [], self._repo_cfg())
         assert result.passed is False
         assert result.decision == "attention"
+
+
+class TestActions:
+    def test_remove_label_builds_command(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(amg, "gh_json", lambda args: calls.append(args) or {})
+        amg.remove_label("r/repo", 5, "zima:needs-fix", dry=False)
+        assert calls == [
+            ["pr", "edit", "5", "--repo", "r/repo", "--remove-label", "zima:needs-fix"]
+        ]
+
+    def test_remove_label_dry_skips_gh(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(amg, "gh_json", lambda args: calls.append(args) or {})
+        amg.remove_label("r/repo", 5, "zima:needs-fix", dry=True)
+        assert calls == []
+
+    def test_approve_binds_head_sha(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(amg, "gh_json", lambda args: calls.append(args) or {})
+        amg.approve("r/repo", 5, "abc123", dry=False)
+        assert calls == [
+            [
+                "pr",
+                "review",
+                "5",
+                "--repo",
+                "r/repo",
+                "--approve",
+                "--body",
+                "auto-merge: CR converged + CI green",
+                "--commit-id",
+                "abc123",
+            ]
+        ]
+
+    def test_merge_pr_squash_delete_branch(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(amg, "gh_json", lambda args: calls.append(args) or {})
+        amg.merge_pr("r/repo", 5, "squash", True, dry=False)
+        assert calls == [["pr", "merge", "5", "--repo", "r/repo", "--squash", "--delete-branch"]]
+
+    def test_merge_pr_merge_method_no_delete(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(amg, "gh_json", lambda args: calls.append(args) or {})
+        amg.merge_pr("r/repo", 5, "merge", False, dry=False)
+        assert calls == [["pr", "merge", "5", "--repo", "r/repo", "--merge"]]
+
+    def test_rerun_failed_jobs_no_failed_runs(self, monkeypatch):
+        monkeypatch.setattr(
+            amg,
+            "gh_json",
+            lambda args: [
+                {"databaseId": 1, "name": "Owner approval policy", "conclusion": "success"}
+            ],
+        )
+        rerun_calls = []
+        monkeypatch.setattr(amg, "gh_run", lambda args: rerun_calls.append(args))
+        amg.rerun_failed_jobs("r/repo", "abc", "Owner approval policy", dry=False)
+        assert rerun_calls == []
+
+    def test_rerun_failed_jobs_reruns_and_waits(self, monkeypatch):
+        run_list = [
+            {"databaseId": 1, "name": "Owner approval policy", "conclusion": "failure"},
+            {"databaseId": 2, "name": "Test (Node 22)", "conclusion": "success"},
+        ]
+        monkeypatch.setattr(amg, "gh_json", lambda args: run_list)
+        rerun_calls = []
+        monkeypatch.setattr(amg, "gh_run", lambda args: rerun_calls.append(args))
+        # gh run view returns completed immediately so the poll loop exits
+        monkeypatch.setattr(
+            amg,
+            "gh_json_view",
+            lambda args: {"status": "completed", "conclusion": "success"},
+        )
+        amg.rerun_failed_jobs("r/repo", "abc", "Owner approval policy", dry=False)
+        assert rerun_calls == [["run", "rerun", "1", "--failed"]]
+
+    def test_rerun_failed_jobs_dry_skips(self, monkeypatch):
+        run_list = [{"databaseId": 1, "name": "Owner approval policy", "conclusion": "failure"}]
+        monkeypatch.setattr(amg, "gh_json", lambda args: run_list)
+        rerun_calls = []
+        monkeypatch.setattr(amg, "gh_run", lambda args: rerun_calls.append(args))
+        amg.rerun_failed_jobs("r/repo", "abc", "Owner approval policy", dry=True)
+        assert rerun_calls == []
