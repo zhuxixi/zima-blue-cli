@@ -26,7 +26,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -60,11 +60,14 @@ def load_config(path: Path) -> AppConfig:
     pushover = data.get("pushover") or {}
     cfg.pushover_config_file = pushover.get("config_file", cfg.pushover_config_file)
     for repo_name, repo_data in (data.get("repos") or {}).items():
+        merge_method = repo_data.get("merge_method", "squash")
+        if merge_method not in ("squash", "merge"):
+            raise ValueError(f"unsupported merge method: {merge_method!r}")
         cfg.repos[repo_name] = RepoConfig(
             allow_authors=list(repo_data.get("allow_authors") or []),
             required_checks=list(repo_data.get("required_checks") or []),
             expected_failing_checks=list(repo_data.get("expected_failing_checks") or []),
-            merge_method=repo_data.get("merge_method", "squash"),
+            merge_method=merge_method,
             delete_branch=bool(repo_data.get("delete_branch", True)),
             sensitive_paths=list(repo_data.get("sensitive_paths") or []),
             cr_pjob_code=repo_data.get("cr_pjob_code", ""),
@@ -72,17 +75,41 @@ def load_config(path: Path) -> AppConfig:
     return cfg
 
 
+class _Block:
+    """Mutable holder for a `key:` line whose value resolves later.
+
+    An empty value after `key:` is either a block list (`- item` lines) or a
+    nested mapping (`key: value` lines).  Start as a list; convert to a dict
+    on the first nested key line.
+    """
+
+    def __init__(self):
+        self.value: list | dict = []
+
+
+def _resolve(node):
+    """Replace _Block markers with their resolved list/dict values."""
+    if isinstance(node, _Block):
+        return _resolve(node.value)
+    if isinstance(node, dict):
+        return {k: _resolve(v) for k, v in node.items()}
+    if isinstance(node, list):
+        return [_resolve(v) for v in node]
+    return node
+
+
 def _read_yaml(path: Path) -> dict:
     """Minimal YAML subset parser: flat key/value maps and lists of scalars.
 
-    The config schema only needs nested dicts and scalar lists, so a tiny
+    Supports flow lists (`[a, b]`) and block lists (`- item` lines).  The
+    config schema only needs nested dicts and scalar lists, so a tiny
     indentation-based parser avoids a third-party dependency.  Raises
     FileNotFoundError when the file is missing.
     """
     if not path.is_file():
         raise FileNotFoundError(f"config file not found: {path}")
     root: dict = {}
-    stack: list[tuple[int, dict]] = [(-1, root)]
+    stack: list[tuple[int, object]] = [(-1, root)]
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.rstrip()
         if not line.strip() or line.strip().startswith("#"):
@@ -91,25 +118,49 @@ def _read_yaml(path: Path) -> dict:
         content = line.strip()
         while stack and indent <= stack[-1][0]:
             stack.pop()
-        parent = stack[-1][1]
-        if ":" in content:
-            key, _, value = content.partition(":")
-            key = key.strip()
-            # Inline comments: a '#' preceded by whitespace starts a comment (YAML convention)
-            value = re.sub(r"\s+#.*$", "", value)
-            value = value.strip()
-            if value == "":
-                child: dict = {}
-                parent[key] = child
-                stack.append((indent, child))
-            elif value.startswith("[") and value.endswith("]"):
-                inner = value[1:-1].strip()
-                parent[key] = [
-                    item.strip().strip("'\"") for item in inner.split(",") if item.strip()
-                ]
+        top = stack[-1][1]
+
+        if content.startswith("- "):
+            # Block list item.  The enclosing `key:` value must be a list.
+            item = _scalar(re.sub(r"\s+#.*$", "", content[2:]).strip())
+            if isinstance(top, _Block):
+                if not isinstance(top.value, list):
+                    raise ValueError("block list item under a mapping key")
+                top.value.append(item)
+            elif isinstance(top, list):
+                top.append(item)
             else:
-                parent[key] = _scalar(value)
-    return root
+                raise ValueError("block list item without an enclosing list key")
+            continue
+
+        key, _, value = content.partition(":")
+        key = key.strip()
+        # Inline comments: a '#' preceded by whitespace starts a comment (YAML convention)
+        value = re.sub(r"\s+#.*$", "", value)
+        value = value.strip()
+
+        if isinstance(top, _Block):
+            # First nested key line resolves the pending block as a mapping.
+            if isinstance(top.value, list) and not top.value:
+                top.value = {}
+            if not isinstance(top.value, dict):
+                raise ValueError("mapping key mixed with a block list")
+            parent = top.value
+        elif isinstance(top, dict):
+            parent = top
+        else:
+            raise ValueError("mapping key under a block list")
+
+        if value == "":
+            block = _Block()
+            parent[key] = block
+            stack.append((indent, block))
+        elif value.startswith("[") and value.endswith("]"):
+            inner = value[1:-1].strip()
+            parent[key] = [item.strip().strip("'\"") for item in inner.split(",") if item.strip()]
+        else:
+            parent[key] = _scalar(value)
+    return _resolve(root)
 
 
 def _scalar(value: str):
@@ -185,6 +236,14 @@ def gate_sensitive_paths(files: list[str], sensitive_paths: list[str]) -> GateRe
     for path in files:
         for pattern in sensitive_paths:
             if fnmatch.fnmatch(path, pattern):
+                return GateResult(
+                    False,
+                    "attention",
+                    f"sensitive path {path!r} matches {pattern!r}",
+                )
+            if pattern.startswith("**/") and fnmatch.fnmatch(path, pattern[len("**/") :]):
+                # fnmatch's `**/` does not match root-level files, so also test
+                # the pattern without the `**/` prefix (e.g. branch-protection.json).
                 return GateResult(
                     False,
                     "attention",
@@ -306,24 +365,55 @@ def pid_alive(pid: int | None) -> bool:
         return False
 
 
+def _parse_iso(value: str | None) -> datetime | None:
+    """Parse an ISO-8601 timestamp into a tz-aware datetime, or None."""
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+STALE_RUNNING_MINUTES = 90
+
+
 def gate_cr_convergence(
-    executions: list[dict], reviews: list[dict], head_sha: str, labels: list[str]
+    executions: list[dict] | None,
+    reviews: list[dict],
+    head_sha: str,
+    labels: list[str],
+    expected_author: str = "",
 ) -> GateResult:
     """Gate 5: CR must have safely converged.  Three conditions, all required:
 
     a. no execution for this (repo, pr) is still running (a running entry
        whose pid is dead counts as terminated — zima never writes a terminal
        state for hard-killed processes; a running entry with pid=None is the
-       spawn-race window and still blocks);
-    b. every pi-cr-meta review for the current head is clean (multi-stream
-       trap: one clean stream + one late stream with a blocking finding must
-       NOT merge);
+       spawn-race window and still blocks; a running entry started more than
+       90 minutes ago is provably stale and counts as terminated);
+    b. every pi-cr-meta review for the current head, authored by the expected
+       CR bot account, is clean (multi-stream trap: one clean stream + one late
+       stream with a blocking finding must NOT merge; meta from any other
+       author is ignored as forgery);
     c. the zima:needs-review label has been removed by postExec.
     """
+    if executions is None:
+        return GateResult(False, "waiting", "no execution history dir for cr_pjob_code")
     for execution in executions:
         if execution.get("status") == "running" and (
             execution.get("pid") is None or pid_alive(execution.get("pid"))
         ):
+            started = _parse_iso(execution.get("started_at"))
+            if started is not None and (datetime.now(timezone.utc) - started) > timedelta(
+                minutes=STALE_RUNNING_MINUTES
+            ):
+                # Hard-killed process whose pid got recycled: provably stale
+                # (mirrors zima's dedup rule), so treat it as terminated.
+                continue
             return GateResult(
                 False,
                 "waiting",
@@ -331,16 +421,32 @@ def gate_cr_convergence(
             )
     if "zima:needs-review" in labels:
         return GateResult(False, "waiting", "zima:needs-review label still present")
-    head_reviews = [r for r in reviews if ((r.get("commit") or {}).get("oid") or "") == head_sha]
+    head_reviews = [
+        r
+        for r in reviews
+        if ((r.get("commit") or {}).get("oid") or "") == head_sha
+        and ((r.get("author") or {}).get("login") or "") == expected_author
+    ]
     if not head_reviews:
         return GateResult(False, "waiting", "no CR review for current head yet")
+    saw_cr_review = False
     for review in head_reviews:
-        meta = parse_cr_meta(review.get("body") or "")
+        body = review.get("body") or ""
+        if body.startswith("auto-merge:"):
+            # This script's own approve marker carries no pi-cr-meta; skip it
+            # so a prior successful approve cannot deadlock the next round.
+            continue
+        meta = parse_cr_meta(body)
         if meta is None:
+            # Any other non-meta review (e.g. a human review) still blocks
+            # (fail-closed user ruling).
             return GateResult(False, "waiting", "review without pi-cr-meta for current head")
+        saw_cr_review = True
         ok, reason = review_clean(meta)
         if not ok:
             return GateResult(False, "waiting", f"CR not converged: {reason}")
+    if not saw_cr_review:
+        return GateResult(False, "waiting", "no CR review for current head yet")
     return GateResult(True, "merge", "CR converged")
 
 
@@ -357,7 +463,11 @@ def gate_head_stable(head_before: str, head_now: str) -> GateResult:
 
 
 def run_gates(
-    pr: dict, check_runs: list[dict], executions: list[dict], repo_cfg: RepoConfig
+    pr: dict,
+    check_runs: list[dict],
+    executions: list[dict] | None,
+    repo_cfg: RepoConfig,
+    expected_author: str = "",
 ) -> GateResult:
     """Run gates 1-5 in order; return the first non-passing result.
 
@@ -373,7 +483,9 @@ def run_gates(
             check_runs, repo_cfg.required_checks, repo_cfg.expected_failing_checks
         ),
         gate_mergeable(pr.get("mergeable", "UNKNOWN")),
-        gate_cr_convergence(executions, pr.get("reviews") or [], pr.get("headRefOid", ""), labels),
+        gate_cr_convergence(
+            executions, pr.get("reviews") or [], pr.get("headRefOid", ""), labels, expected_author
+        ),
     ]
     for result in gates:
         if not result.passed:
@@ -383,7 +495,12 @@ def run_gates(
 
 def gh_json(args: list[str]) -> dict | list:
     """Run `gh <args>` and parse stdout as JSON.  Raises on failure."""
-    proc = subprocess.run(["gh", *args], capture_output=True, text=True, check=False)
+    try:
+        proc = subprocess.run(
+            ["gh", *args], capture_output=True, text=True, check=False, timeout=120
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"gh {' '.join(args)} timed out after 120s") from exc
     if proc.returncode != 0:
         raise RuntimeError(f"gh {' '.join(args)} failed: {proc.stderr.strip()[:500]}")
     return json.loads(proc.stdout)
@@ -391,7 +508,12 @@ def gh_json(args: list[str]) -> dict | list:
 
 def gh_run(args: list[str]) -> None:
     """Run `gh <args>` without parsing output.  Raises on failure."""
-    proc = subprocess.run(["gh", *args], capture_output=True, text=True, check=False)
+    try:
+        proc = subprocess.run(
+            ["gh", *args], capture_output=True, text=True, check=False, timeout=120
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"gh {' '.join(args)} timed out after 120s") from exc
     if proc.returncode != 0:
         raise RuntimeError(f"gh {' '.join(args)} failed: {proc.stderr.strip()[:500]}")
 
@@ -459,7 +581,8 @@ def rerun_failed_jobs(
     if dry:
         return
     for run_id in failed_ids:
-        gh_run(["run", "rerun", run_id, "--failed"])
+        gh_run(["run", "rerun", run_id, "--failed", "--repo", repo])
+    time.sleep(10)  # GitHub run status flip latency before the first poll
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         statuses = [
@@ -477,8 +600,20 @@ def gh_json_view(args: list[str]) -> dict:
     return gh_json(args)
 
 
-def merge_pr(repo: str, number: int, method: str, delete_branch: bool, dry: bool) -> None:
-    """Squash-merge (or merge) the PR, optionally deleting the branch."""
+def merge_pr(
+    repo: str,
+    number: int,
+    method: str,
+    delete_branch: bool,
+    dry: bool,
+    head_sha: str = "",
+) -> None:
+    """Squash-merge (or merge) the PR, optionally deleting the branch.
+
+    When head_sha is provided, --match-head-commit makes gh reject the merge
+    if the head moved between the last check and the merge call (closing the
+    TOCTOU window the pre-merge drift check can't fully eliminate).
+    """
     if dry:
         return
     if method == "squash":
@@ -490,6 +625,9 @@ def merge_pr(repo: str, number: int, method: str, delete_branch: bool, dry: bool
     cmd = ["pr", "merge", str(number), "--repo", repo, method_flag]
     if delete_branch:
         cmd.append("--delete-branch")
+    if head_sha:
+        cmd.append("--match-head-commit")
+        cmd.append(head_sha)
     gh_run(cmd)
 
 
@@ -554,20 +692,27 @@ def send_pushover(level: str, title: str, message: str, config_file: str) -> boo
         return False
 
 
-LOCK_PATH = "/tmp/auto-merge-guarded.lock"
-DEFAULT_CONFIG = "~/.zima/configs/auto-merge.yaml"
-DEFAULT_LOG = "~/.zima/logs/auto-merge.log"
+def _zima_home() -> Path:
+    """Resolve the Zima home dir, honoring ZIMA_HOME (default ~/.zima)."""
+    return Path(os.environ.get("ZIMA_HOME") or Path.home() / ".zima")
 
 
-def load_executions(zima_home: Path, pjob_code: str) -> list[dict]:
+def _lock_path(zima_home: Path | None = None) -> Path:
+    """Lock file path under the zima home (not world-writable /tmp)."""
+    return (zima_home or _zima_home()) / "logs" / "auto-merge.lock"
+
+
+def load_executions(zima_home: Path, pjob_code: str) -> list[dict] | None:
     """Read every CR execution state file for a PJob code.
 
-    Torn files (zima writes non-atomically) are skipped — the next round
-    sees the completed file.
+    Returns None when the state directory does not exist (typo'd cr_pjob_code
+    or wrong ZIMA_HOME) — distinct from an empty dir, which returns [].  Torn
+    files (zima writes non-atomically) are skipped — the next round sees the
+    completed file.
     """
     state_dir = zima_home / "history" / "pjobs" / pjob_code
     if not state_dir.is_dir():
-        return []
+        return None
     executions: list[dict] = []
     for path in sorted(state_dir.iterdir()):
         if path.suffix != ".json":
@@ -581,12 +726,22 @@ def load_executions(zima_home: Path, pjob_code: str) -> list[dict]:
     return executions
 
 
-def executions_for_pr(executions: list[dict], repo: str, pr_number: int) -> list[dict]:
-    """Filter executions to those that scanned this (repo, pr)."""
+def executions_for_pr(
+    executions: list[dict] | None, repo: str, pr_number: int
+) -> list[dict] | None:
+    """Filter executions to those that scanned this (repo, pr).
+
+    Repo comparison is case-insensitive (GitHub repo names are).  Returns
+    None when executions is None (missing history dir).
+    """
+    if executions is None:
+        return None
     result = []
     for execution in executions:
         scan = execution.get("scan_pr_result") or {}
-        if scan.get("repo") == repo and str(scan.get("pr_number")) == str(pr_number):
+        if (scan.get("repo") or "").lower() == repo.lower() and str(scan.get("pr_number")) == str(
+            pr_number
+        ):
             result.append(execution)
     return result
 
@@ -612,113 +767,49 @@ def process_repo(
     """
     dry = mode != "live"
     notify_enabled = mode != "dry-run"  # dry-run is a pure local rehearsal
+
+    # The CR bot posts reviews as the machine's gh account; only reviews by
+    # that account may carry pi-cr-meta (forgery guard).
+    owner_login = ""
+    try:
+        owner_login = (gh_json(["api", "user"]) or {}).get("login", "")
+    except Exception:  # noqa: BLE001 — best-effort; empty author falls back to legacy filter
+        owner_login = ""
+
     for pr in gh.list_prs(repo):
-        number = pr.get("number")
-        head_sha = pr.get("headRefOid", "")
-        check_runs = gh.check_runs(repo, head_sha)
-        pr["files"] = gh.fetch_files(repo, number)
-        executions = executions_for_pr(
-            load_executions(zima_home, repo_cfg.cr_pjob_code), repo, number
-        )
-        result = run_gates(pr, check_runs, executions, repo_cfg)
-        audit.log(
-            {
-                "ts": _now_iso(),
-                "mode": mode,
-                "repo": repo,
-                "pr": number,
-                "head_sha": head_sha,
-                "decision": result.decision,
-                "reason": result.reason,
-            }
-        )
-        if not result.passed:
-            if result.decision == "attention" and notify_enabled:
-                notify.send(
-                    "attention",
-                    "[auto-merge] needs your eyes",
-                    f"{repo}#{number} {pr.get('title', '')}: {result.reason}",
-                )
-            # skip / waiting / error are silent (45-min rounds must not spam)
-            continue
-        # Action chain (each step re-checks current state; idempotent)
-        fresh = gh.view_pr(repo, number)
-        if fresh.get("state") == "MERGED":
-            continue
-        drift = gate_head_stable(head_sha, fresh.get("headRefOid", ""))
-        if not drift.passed:
+        try:
+            number = pr.get("number")
+            head_sha = pr.get("headRefOid", "")
+            check_runs = gh.check_runs(repo, head_sha)
+            pr["files"] = gh.fetch_files(repo, number)
+            executions = executions_for_pr(
+                load_executions(zima_home, repo_cfg.cr_pjob_code), repo, number
+            )
+            result = run_gates(pr, check_runs, executions, repo_cfg, owner_login)
             audit.log(
                 {
                     "ts": _now_iso(),
                     "mode": mode,
                     "repo": repo,
                     "pr": number,
-                    "head_sha": fresh.get("headRefOid"),
-                    "decision": drift.decision,
-                    "reason": drift.reason,
+                    "head_sha": head_sha,
+                    "decision": result.decision,
+                    "reason": result.reason,
                 }
             )
-            continue
-        if (fresh.get("reviewDecision") or "") == "APPROVED":
-            print(f"[{repo}#{number}] already approved, skipping approve")
-        else:
-            print(f"[{repo}#{number}] would approve" if dry else f"[{repo}#{number}] approving")
-            if not dry:
-                approve(repo, number, dry=False)
-        labels = [label.get("name", "") for label in fresh.get("labels") or []]
-        if "zima:needs-fix" in labels:
-            print(
-                f"[{repo}#{number}] would remove zima:needs-fix"
-                if dry
-                else f"[{repo}#{number}] removing zima:needs-fix"
-            )
-            remove_label(repo, number, "zima:needs-fix", dry)
-        for workflow_name in repo_cfg.expected_failing_checks:
-            print(
-                f"[{repo}#{number}] would rerun failed jobs of {workflow_name}"
-                if dry
-                else f"[{repo}#{number}] rerunning failed jobs of {workflow_name}"
-            )
-            rerun_failed_jobs(repo, head_sha, workflow_name, dry)
-        fresh = gh.view_pr(repo, number)
-        if fresh.get("mergeStateStatus") != "CLEAN":
-            if dry:
-                # Dry modes never rerun (rerun_failed_jobs returns early), so
-                # the merge state cannot be CLEAN yet; the rehearsal reports
-                # what it would do and falls through to the would-merge step.
-                print(
-                    f"[{repo}#{number}] would check mergeStateStatus "
-                    f"(currently {fresh.get('mergeStateStatus')})"
-                )
-            else:
-                audit.log(
-                    {
-                        "ts": _now_iso(),
-                        "mode": mode,
-                        "repo": repo,
-                        "pr": number,
-                        "head_sha": head_sha,
-                        "decision": "aborted",
-                        "reason": f"mergeStateStatus={fresh.get('mergeStateStatus')}",
-                    }
-                )
-                if notify_enabled:
+            if not result.passed:
+                if result.decision == "attention" and notify_enabled:
                     notify.send(
-                        "error",
-                        "[auto-merge] error",
-                        f"{repo}#{number}: mergeStateStatus={fresh.get('mergeStateStatus')} after rerun",
+                        "attention",
+                        "[auto-merge] needs your eyes",
+                        f"{repo}#{number} {pr.get('title', '')}: {result.reason}",
                     )
+                # skip / waiting / error are silent (45-min rounds must not spam)
                 continue
-        print(
-            f"[{repo}#{number}] would merge ({repo_cfg.merge_method})"
-            if dry
-            else f"[{repo}#{number}] merging ({repo_cfg.merge_method})"
-        )
-        if not dry:
-            # Re-verify the head immediately before merging: a collaborator
-            # push during the rerun poll (up to 5 minutes) would otherwise be
-            # merged on a head whose CR convergence was never checked.
+            # Action chain (each step re-checks current state; idempotent)
             fresh = gh.view_pr(repo, number)
+            if fresh.get("state") != "OPEN":
+                continue
             drift = gate_head_stable(head_sha, fresh.get("headRefOid", ""))
             if not drift.passed:
                 audit.log(
@@ -733,41 +824,159 @@ def process_repo(
                     }
                 )
                 continue
-            merge_pr(repo, number, repo_cfg.merge_method, repo_cfg.delete_branch, dry=False)
+            if (fresh.get("reviewDecision") or "") == "APPROVED":
+                print(f"[{repo}#{number}] already approved, skipping approve")
+            else:
+                print(f"[{repo}#{number}] would approve" if dry else f"[{repo}#{number}] approving")
+                if not dry:
+                    approve(repo, number, dry=False)
+            labels = [label.get("name", "") for label in fresh.get("labels") or []]
+            if "zima:needs-fix" in labels:
+                print(
+                    f"[{repo}#{number}] would remove zima:needs-fix"
+                    if dry
+                    else f"[{repo}#{number}] removing zima:needs-fix"
+                )
+                remove_label(repo, number, "zima:needs-fix", dry)
+            for workflow_name in repo_cfg.expected_failing_checks:
+                print(
+                    f"[{repo}#{number}] would rerun failed jobs of {workflow_name}"
+                    if dry
+                    else f"[{repo}#{number}] rerunning failed jobs of {workflow_name}"
+                )
+                rerun_failed_jobs(repo, head_sha, workflow_name, dry)
+            fresh = gh.view_pr(repo, number)
+            merge_state = fresh.get("mergeStateStatus")
+            if merge_state != "CLEAN" and not dry:
+                audit.log(
+                    {
+                        "ts": _now_iso(),
+                        "mode": mode,
+                        "repo": repo,
+                        "pr": number,
+                        "head_sha": head_sha,
+                        "decision": "aborted",
+                        "reason": f"mergeStateStatus={merge_state}",
+                    }
+                )
+                if notify_enabled:
+                    notify.send(
+                        "error",
+                        "[auto-merge] error",
+                        f"{repo}#{number}: mergeStateStatus={merge_state} after rerun",
+                    )
+                continue
+            if dry:
+                if merge_state != "CLEAN":
+                    print(
+                        f"[{repo}#{number}] would merge "
+                        f"(currently {merge_state}; live aborts unless CLEAN)"
+                    )
+                else:
+                    print(f"[{repo}#{number}] would merge ({repo_cfg.merge_method})")
+            else:
+                print(f"[{repo}#{number}] merging ({repo_cfg.merge_method})")
+            if not dry:
+                # Re-verify the head and labels immediately before merging: a
+                # collaborator push or a label re-add during the rerun poll
+                # would otherwise be merged on an unverified state.
+                fresh = gh.view_pr(repo, number)
+                drift = gate_head_stable(head_sha, fresh.get("headRefOid", ""))
+                if not drift.passed:
+                    audit.log(
+                        {
+                            "ts": _now_iso(),
+                            "mode": mode,
+                            "repo": repo,
+                            "pr": number,
+                            "head_sha": fresh.get("headRefOid"),
+                            "decision": drift.decision,
+                            "reason": drift.reason,
+                        }
+                    )
+                    continue
+                labels = [label.get("name", "") for label in fresh.get("labels") or []]
+                if "zima:needs-review" in labels:
+                    audit.log(
+                        {
+                            "ts": _now_iso(),
+                            "mode": mode,
+                            "repo": repo,
+                            "pr": number,
+                            "head_sha": head_sha,
+                            "decision": "waiting",
+                            "reason": "label re-added; new CR stream in flight",
+                        }
+                    )
+                    continue
+                merge_pr(
+                    repo,
+                    number,
+                    repo_cfg.merge_method,
+                    repo_cfg.delete_branch,
+                    dry=False,
+                    head_sha=head_sha,
+                )
+                audit.log(
+                    {
+                        "ts": _now_iso(),
+                        "mode": mode,
+                        "repo": repo,
+                        "pr": number,
+                        "head_sha": head_sha,
+                        "decision": "merged",
+                        "reason": "merge completed",
+                    }
+                )
+            if notify_enabled:
+                if dry:
+                    if merge_state != "CLEAN":
+                        tail = f"would merge (currently {merge_state}; live aborts unless CLEAN)"
+                    else:
+                        tail = "would merge (notify-only)"
+                    notify.send(
+                        "action",
+                        "[auto-merge] would merge",
+                        f"{repo}#{number} {pr.get('title', '')} by "
+                        f"{pr.get('author', {}).get('login', '?')} — {tail}",
+                    )
+                else:
+                    notify.send(
+                        "action",
+                        "[auto-merge] merged",
+                        f"{repo}#{number} {pr.get('title', '')} by {pr.get('author', {}).get('login', '?')}",
+                    )
+        except Exception as exc:  # noqa: BLE001 — per-PR isolation: log and continue
             audit.log(
                 {
                     "ts": _now_iso(),
                     "mode": mode,
                     "repo": repo,
-                    "pr": number,
-                    "head_sha": head_sha,
-                    "decision": "merged",
-                    "reason": "merge completed",
+                    "pr": pr.get("number"),
+                    "head_sha": pr.get("headRefOid", ""),
+                    "decision": "error",
+                    "reason": str(exc)[:200],
                 }
             )
-        if notify_enabled:
-            if dry:
-                notify.send(
-                    "action",
-                    "[auto-merge] would merge",
-                    f"{repo}#{number} {pr.get('title', '')} by "
-                    f"{pr.get('author', {}).get('login', '?')} — would merge (notify-only)",
-                )
-            else:
-                notify.send(
-                    "action",
-                    "[auto-merge] merged",
-                    f"{repo}#{number} {pr.get('title', '')} by {pr.get('author', {}).get('login', '?')}",
-                )
+            continue
 
 
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point."""
+    zima_home = _zima_home()
     parser = argparse.ArgumentParser(
         description="Auto approve + squash merge whitelisted PRs after CR convergence."
     )
-    parser.add_argument("--config", default=DEFAULT_CONFIG, help="path to auto-merge.yaml")
-    parser.add_argument("--log", default=DEFAULT_LOG, help="path to the JSONL audit log")
+    parser.add_argument(
+        "--config",
+        default=str(zima_home / "configs" / "auto-merge.yaml"),
+        help="path to auto-merge.yaml",
+    )
+    parser.add_argument(
+        "--log",
+        default=str(zima_home / "logs" / "auto-merge.log"),
+        help="path to the JSONL audit log",
+    )
     parser.add_argument("--zima-home", default=None, help="override ZIMA_HOME")
     parser.add_argument("--repo", default=None, help="only process this OWNER/REPO (debugging)")
     parser.add_argument(
@@ -780,31 +989,46 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    cfg = load_config(Path(args.config).expanduser())
+    if args.zima_home:
+        zima_home = Path(args.zima_home)
+
+    try:
+        cfg = load_config(Path(args.config).expanduser())
+    except Exception as exc:  # noqa: BLE001 — config unknown: print clean error, exit
+        print(f"failed to load config: {exc}")
+        return 1
     if not cfg.enabled:
         print("auto-merge disabled by config (enabled: false)")
         return 0
     mode = "dry-run" if args.dry_run else ("notify-only" if args.notify_only else "live")
-    zima_home = (
-        Path(args.zima_home)
-        if args.zima_home
-        else Path(os.environ.get("ZIMA_HOME") or Path.home() / ".zima")
-    )
     audit = AuditLogger(Path(args.log).expanduser())
 
-    if fcntl is not None:
-        lock_file = open(LOCK_PATH, "w", encoding="utf-8")
-        try:
-            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            print("another auto-merge round is already running (flock held)")
-            return 0
-
     try:
+        if fcntl is not None:
+            lock_path = _lock_path(zima_home)
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            lock_file = open(lock_path, "w", encoding="utf-8")
+            try:
+                fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                print("another auto-merge round is already running (flock held)")
+                return 0
         for repo, repo_cfg in cfg.repos.items():
             if args.repo and repo != args.repo:
                 continue
-            process_repo(repo, repo_cfg, cfg, mode, GhClient(), zima_home, audit, Notifier(cfg))
+            try:
+                process_repo(repo, repo_cfg, cfg, mode, GhClient(), zima_home, audit, Notifier(cfg))
+            except Exception as exc:  # noqa: BLE001 — per-repo isolation
+                audit.log(
+                    {
+                        "ts": _now_iso(),
+                        "mode": mode,
+                        "repo": repo,
+                        "decision": "error",
+                        "reason": str(exc)[:200],
+                    }
+                )
+                continue
     except Exception as exc:  # noqa: BLE001 — top-level guard: log, notify, exit
         audit.log({"ts": _now_iso(), "mode": mode, "decision": "error", "reason": str(exc)})
         Notifier(cfg).send("error", "[auto-merge] error", str(exc)[:250])
@@ -824,6 +1048,8 @@ class GhClient:
                 repo,
                 "--state",
                 "open",
+                "--limit",
+                "200",
                 "--json",
                 "number,title,author,state,isDraft,headRefOid,mergeable,mergeStateStatus,"
                 "reviewDecision,labels,reviews",
@@ -842,7 +1068,14 @@ class GhClient:
         return [{"path": f.get("filename", "")} for f in data]
 
     def check_runs(self, repo: str, head_sha: str) -> list[dict]:
-        data = gh_json(["api", f"repos/{repo}/commits/{head_sha}/check-runs", "--paginate"])
+        data = gh_json(
+            [
+                "api",
+                f"repos/{repo}/commits/{head_sha}/check-runs",
+                "-f",
+                "per_page=100",
+            ]
+        )
         return data.get("check_runs", []) if isinstance(data, dict) else []
 
     def view_pr(self, repo: str, number: int) -> dict:

@@ -14,6 +14,9 @@ cp examples/auto-merge/auto-merge.yaml.example ~/.zima/configs/auto-merge.yaml
 # edit ~/.zima/configs/auto-merge.yaml: real repo, whitelist, checks, cr_pjob_code
 ```
 
+The whitelist authorizes by PR author only; commit committers on the branch
+are not separately verified (spec-defined boundary).
+
 ## Schedule (Phase 0: notify-only)
 
 ```bash
@@ -35,7 +38,7 @@ enables real merging by removing `--notify-only` from the crontab entry.
 ## Emergency stop
 
 Set `enabled: false` in `~/.zima/configs/auto-merge.yaml`, or remove the
-crontab entry.  The flock at `/tmp/auto-merge-guarded.lock` prevents
+crontab entry.  The flock at `<zima_home>/logs/auto-merge.lock` prevents
 concurrent rounds.
 
 ## Audit

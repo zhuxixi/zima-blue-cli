@@ -154,6 +154,38 @@ repos:
         assert repo.allow_authors == ["ccccyk0919"]
         assert repo.merge_method == "squash"
 
+    def test_block_style_lists_parse(self, tmp_path):
+        # Block-style lists (`- item`) must not be silently dropped (fail-open).
+        cfg_file = tmp_path / "auto-merge.yaml"
+        cfg_file.write_text(
+            """
+repos:
+  r/repo:
+    allow_authors:
+      - ccccyk0919
+      - someone-else
+    required_checks:
+      - "Test (Node 22)"
+      - "Test (Node 24)"
+    sensitive_paths:
+      - ".github/**"
+      - "**/branch-protection*"
+""",
+            encoding="utf-8",
+        )
+        repo = amg.load_config(cfg_file).repos["r/repo"]
+        assert repo.allow_authors == ["ccccyk0919", "someone-else"]
+        assert repo.required_checks == ["Test (Node 22)", "Test (Node 24)"]
+        assert repo.sensitive_paths == [".github/**", "**/branch-protection*"]
+
+    def test_unsupported_merge_method_raises(self, tmp_path):
+        cfg_file = tmp_path / "auto-merge.yaml"
+        cfg_file.write_text("repos:\n  r/repo:\n    merge_method: rebase\n", encoding="utf-8")
+        import pytest
+
+        with pytest.raises(ValueError, match="unsupported merge method"):
+            amg.load_config(cfg_file)
+
 
 class TestAuditLogger:
     def test_log_writes_jsonl_line(self, tmp_path):
@@ -233,6 +265,13 @@ class TestGateSensitivePaths:
     def test_empty_sensitive_paths_passes(self):
         result = amg.gate_sensitive_paths(["anything.ts"], [])
         assert result.passed is True
+
+    def test_double_star_matches_root_file(self):
+        # fnmatch's `**/` does not match root-level files; gate 2 must also
+        # test the pattern without the `**/` prefix.
+        result = amg.gate_sensitive_paths(["branch-protection.json"], ["**/branch-protection*"])
+        assert result.passed is False
+        assert result.decision == "attention"
 
 
 class TestGateRequiredChecks:
@@ -471,6 +510,87 @@ class TestGateCrConvergence:
         assert result.passed is False
         assert result.decision == "waiting"
 
+    def test_self_approve_review_is_skipped(self, monkeypatch):
+        # This script's own approve marker has no pi-cr-meta; it must not
+        # deadlock the next round when one clean meta review is also present.
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        executions = [self._exec("success", 123)]
+        reviews = [
+            self._review("abc", "auto-merge: CR converged + CI green"),
+            self._review("abc", '<!-- pi-cr-meta {"blocking_new_count": 0, "issues": []} -->'),
+        ]
+        result = amg.gate_cr_convergence(executions, reviews, "abc", [])
+        assert result.passed is True
+
+    def test_non_meta_human_review_still_blocks(self, monkeypatch):
+        # A non-meta review without the auto-merge: prefix still blocks.
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        executions = [self._exec("success", 123)]
+        reviews = [self._review("abc", "LGTM")]
+        result = amg.gate_cr_convergence(executions, reviews, "abc", [])
+        assert result.passed is False
+        assert result.decision == "waiting"
+
+    def test_meta_from_other_author_ignored(self, monkeypatch):
+        # Forgery guard: pi-cr-meta from a non-expected author is ignored.
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        executions = [self._exec("success", 123)]
+        reviews = [
+            {
+                "commit": {"oid": "abc"},
+                "author": {"login": "attacker"},
+                "body": '<!-- pi-cr-meta {"blocking_new_count": 0, "issues": []} -->',
+            }
+        ]
+        result = amg.gate_cr_convergence(executions, reviews, "abc", [], expected_author="owner")
+        assert result.passed is False
+        assert result.decision == "waiting"
+        assert "no CR review" in result.reason
+
+    def test_meta_from_owner_evaluated(self, monkeypatch):
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        executions = [self._exec("success", 123)]
+        reviews = [
+            {
+                "commit": {"oid": "abc"},
+                "author": {"login": "owner"},
+                "body": '<!-- pi-cr-meta {"blocking_new_count": 0, "issues": []} -->',
+            }
+        ]
+        result = amg.gate_cr_convergence(executions, reviews, "abc", [], expected_author="owner")
+        assert result.passed is True
+
+    def test_none_executions_waits(self, monkeypatch):
+        # Missing history dir must fail closed, not vacuous.
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        reviews = [
+            self._review("abc", '<!-- pi-cr-meta {"blocking_new_count": 0, "issues": []} -->')
+        ]
+        result = amg.gate_cr_convergence(None, reviews, "abc", [])
+        assert result.passed is False
+        assert result.decision == "waiting"
+
+    def test_stale_running_entry_counts_terminated(self, monkeypatch):
+        # A running entry started > 90 min ago is provably stale.
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        stale_started = (
+            amg.datetime.now(amg.timezone.utc) - amg.timedelta(minutes=120)
+        ).isoformat()
+        executions = [{"status": "running", "pid": 123, "started_at": stale_started}]
+        reviews = [
+            self._review("abc", '<!-- pi-cr-meta {"blocking_new_count": 0, "issues": []} -->')
+        ]
+        result = amg.gate_cr_convergence(executions, reviews, "abc", [])
+        assert result.passed is True
+
+    def test_fresh_running_entry_waits(self, monkeypatch):
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        fresh_started = (amg.datetime.now(amg.timezone.utc) - amg.timedelta(minutes=10)).isoformat()
+        executions = [{"status": "running", "pid": 123, "started_at": fresh_started}]
+        result = amg.gate_cr_convergence(executions, [], "abc", [])
+        assert result.passed is False
+        assert result.decision == "waiting"
+
 
 class TestGateHeadStable:
     def test_same_head_passes(self):
@@ -598,6 +718,49 @@ class TestActions:
         with pytest.raises(ValueError, match="unsupported merge method"):
             amg.merge_pr("r/repo", 5, "rebase", True, dry=False)
 
+    def test_merge_pr_appends_match_head_commit(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(amg, "gh_run", lambda args: calls.append(args))
+        amg.merge_pr("r/repo", 5, "squash", True, dry=False, head_sha="abc123")
+        assert calls == [
+            [
+                "pr",
+                "merge",
+                "5",
+                "--repo",
+                "r/repo",
+                "--squash",
+                "--delete-branch",
+                "--match-head-commit",
+                "abc123",
+            ]
+        ]
+
+    def test_gh_json_timeout_raises_runtime_error(self, monkeypatch):
+        import subprocess
+
+        def fake_run(*args, **kwargs):
+            raise subprocess.TimeoutExpired(cmd="gh", timeout=120)
+
+        monkeypatch.setattr(amg.subprocess, "run", fake_run)
+        import pytest
+
+        with pytest.raises(RuntimeError, match="timed out"):
+            amg.gh_json(["api", "user"])
+
+    def test_check_runs_uses_per_page_not_paginate(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(amg, "gh_json", lambda args: calls.append(args) or {"check_runs": []})
+        amg.GhClient().check_runs("r/repo", "abc")
+        assert calls == [["api", "repos/r/repo/commits/abc/check-runs", "-f", "per_page=100"]]
+
+    def test_list_prs_uses_limit(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(amg, "gh_json", lambda args: calls.append(args) or [])
+        amg.GhClient().list_prs("r/repo")
+        assert "--limit" in calls[0]
+        assert "200" in calls[0]
+
     def test_fetch_files_builds_paginated_api_call(self, monkeypatch):
         calls = []
         monkeypatch.setattr(amg, "gh_json", lambda args: calls.append(args) or [])
@@ -643,6 +806,7 @@ class TestActions:
             {"databaseId": 2, "name": "Test (Node 22)", "conclusion": "success"},
         ]
         monkeypatch.setattr(amg, "gh_json", lambda args: run_list)
+        monkeypatch.setattr(amg.time, "sleep", lambda s: None)  # avoid the 10s poll latency
         rerun_calls = []
         monkeypatch.setattr(amg, "gh_run", lambda args: rerun_calls.append(args))
         # gh run view returns completed immediately so the poll loop exits
@@ -652,7 +816,7 @@ class TestActions:
             lambda args: {"status": "completed", "conclusion": "success"},
         )
         amg.rerun_failed_jobs("r/repo", "abc", "Owner approval policy", dry=False)
-        assert rerun_calls == [["run", "rerun", "1", "--failed"]]
+        assert rerun_calls == [["run", "rerun", "1", "--failed", "--repo", "r/repo"]]
 
     def test_rerun_failed_jobs_dry_skips(self, monkeypatch):
         run_list = [{"databaseId": 1, "name": "Owner approval policy", "conclusion": "failure"}]
@@ -813,8 +977,9 @@ class TestLoadExecutions:
         executions = amg.load_executions(tmp_path, "pi-agent-board-pi-cr-job")
         assert len(executions) == 2
 
-    def test_missing_dir_returns_empty(self, tmp_path):
-        assert amg.load_executions(tmp_path, "nope") == []
+    def test_missing_dir_returns_none(self, tmp_path):
+        # Missing dir must fail closed (None), distinct from an empty dir ([]).
+        assert amg.load_executions(tmp_path, "nope") is None
 
 
 class TestExecutionsForPr:
@@ -828,6 +993,16 @@ class TestExecutionsForPr:
         result = amg.executions_for_pr(executions, "r/repo", 5)
         assert len(result) == 1
         assert result[0]["scan_pr_result"]["pr_number"] == "5"
+
+    def test_none_executions_returns_none(self):
+        assert amg.executions_for_pr(None, "r/repo", 5) is None
+
+    def test_repo_match_is_case_insensitive(self):
+        executions = [
+            {"scan_pr_result": {"repo": "Zhuxixi/Repo", "pr_number": "5"}},
+        ]
+        result = amg.executions_for_pr(executions, "zhuxixi/repo", 5)
+        assert len(result) == 1
 
 
 class TestProcessRepo:
@@ -876,6 +1051,16 @@ class TestProcessRepo:
             cr_pjob_code="pi-agent-board-pi-cr-job",
         )
 
+    def _empty_state_dir(self, tmp_path):
+        """Create (and return) an empty CR state dir so load_executions -> [].
+
+        A missing dir now fails closed (None -> waiting); the action-chain
+        tests need an empty-but-present dir to pass gate 5a.
+        """
+        d = tmp_path / "history" / "pjobs" / "pi-agent-board-pi-cr-job"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
     def _pr(self, **overrides):
         pr = {
             "number": 1,
@@ -901,6 +1086,7 @@ class TestProcessRepo:
 
     def test_merged_pr_skipped(self, tmp_path, monkeypatch):
         monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        monkeypatch.setattr(amg, "gh_json", lambda args: [])  # owner fetch probe
         pr = self._pr(state="MERGED")
         gh = self._make_fake_gh([pr], [])
         notify = self._make_fake_notify()
@@ -915,6 +1101,7 @@ class TestProcessRepo:
     def test_dry_run_prints_actions_without_executing(self, tmp_path, monkeypatch, capsys):
         monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
         monkeypatch.setattr(amg, "gh_json", lambda args: [])  # rerun probe: no failed runs
+        self._empty_state_dir(tmp_path)
         action_calls = []
         monkeypatch.setattr(amg, "approve", lambda *a, **k: action_calls.append("approve"))
         monkeypatch.setattr(amg, "merge_pr", lambda *a, **k: action_calls.append("merge_pr"))
@@ -940,6 +1127,7 @@ class TestProcessRepo:
 
     def test_notify_only_sends_attention_for_sensitive_path(self, tmp_path, monkeypatch):
         monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        monkeypatch.setattr(amg, "gh_json", lambda args: [])  # owner fetch probe
         pr = self._pr(files=[{"path": ".github/workflows/ci.yml"}])
         gh = self._make_fake_gh([pr], [])
         notify = self._make_fake_notify()
@@ -953,6 +1141,7 @@ class TestProcessRepo:
 
     def test_waiting_decision_is_silent(self, tmp_path, monkeypatch):
         monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        monkeypatch.setattr(amg, "gh_json", lambda args: [])  # owner fetch probe
         pr = self._pr(mergeable="UNKNOWN")
         gh = self._make_fake_gh([pr], [])
         notify = self._make_fake_notify()
@@ -966,6 +1155,7 @@ class TestProcessRepo:
     def test_notify_only_sends_would_merge_not_merged(self, tmp_path, monkeypatch):
         monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
         monkeypatch.setattr(amg, "gh_json", lambda args: [])  # rerun probe: no failed runs
+        self._empty_state_dir(tmp_path)
         green_runs = [
             {"name": "Test (Node 22)", "conclusion": "success", "status": "completed"},
             {"name": "Test (Node 24)", "conclusion": "success", "status": "completed"},
@@ -988,6 +1178,7 @@ class TestProcessRepo:
         would-merge instead of sending a false error notification."""
         monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
         monkeypatch.setattr(amg, "gh_json", lambda args: [])  # rerun probe: no failed runs
+        self._empty_state_dir(tmp_path)
         green_runs = [
             {"name": "Test (Node 22)", "conclusion": "success", "status": "completed"},
             {"name": "Test (Node 24)", "conclusion": "success", "status": "completed"},
@@ -1025,13 +1216,15 @@ class TestProcessRepo:
         )
         assert len(notify.sent) == 1
         assert notify.sent[0][1] == "[auto-merge] would merge"
+        assert "live aborts unless CLEAN" in notify.sent[0][2]
         assert not any(title == "[auto-merge] error" for _, title, _ in notify.sent)
         out = capsys.readouterr().out
-        assert "would check mergeStateStatus" in out
+        assert "would merge (currently BLOCKED; live aborts unless CLEAN)" in out
 
     def test_live_mode_audits_merge_outcome(self, tmp_path, monkeypatch):
         monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
         monkeypatch.setattr(amg, "gh_json", lambda args: [])  # rerun probe: no failed runs
+        self._empty_state_dir(tmp_path)
         monkeypatch.setattr(amg, "approve", lambda *a, **k: None)
         monkeypatch.setattr(amg, "merge_pr", lambda *a, **k: None)
         monkeypatch.setattr(amg, "remove_label", lambda *a, **k: None)
@@ -1055,6 +1248,7 @@ class TestProcessRepo:
         # branch, not only in the un-approved path.
         monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
         monkeypatch.setattr(amg, "gh_json", lambda args: [])
+        self._empty_state_dir(tmp_path)
         merged = []
         monkeypatch.setattr(amg, "merge_pr", lambda *a, **k: merged.append("merge"))
         monkeypatch.setattr(amg, "approve", lambda *a, **k: None)
@@ -1097,6 +1291,7 @@ class TestProcessRepo:
         # during the rerun poll window.
         monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
         monkeypatch.setattr(amg, "gh_json", lambda args: [])
+        self._empty_state_dir(tmp_path)
         merged = []
         monkeypatch.setattr(amg, "merge_pr", lambda *a, **k: merged.append("merge"))
         monkeypatch.setattr(amg, "approve", lambda *a, **k: None)
@@ -1138,6 +1333,81 @@ class TestProcessRepo:
         assert last["decision"] == "waiting"
         assert "drift" in last["reason"]
 
+    def test_needs_review_label_blocks_merge(self, tmp_path, monkeypatch):
+        # If needs-review was re-added on the same head (spawning a new CR
+        # stream), the pre-merge re-check must abort.
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        monkeypatch.setattr(amg, "gh_json", lambda args: [])
+        self._empty_state_dir(tmp_path)
+        merged = []
+        monkeypatch.setattr(amg, "merge_pr", lambda *a, **k: merged.append("merge"))
+        monkeypatch.setattr(amg, "approve", lambda *a, **k: None)
+        monkeypatch.setattr(amg, "remove_label", lambda *a, **k: None)
+        monkeypatch.setattr(amg, "rerun_failed_jobs", lambda *a, **k: None)
+        green_runs = [
+            {"name": "Test (Node 22)", "conclusion": "success", "status": "completed"},
+            {"name": "Test (Node 24)", "conclusion": "success", "status": "completed"},
+        ]
+
+        round_pr = self._pr()
+        re_added_pr = self._pr(labels=[{"name": "zima:needs-review"}])
+
+        class LabelGh:
+            def __init__(self):
+                self.view_calls = 0
+
+            def list_prs(self, repo):
+                return [round_pr]
+
+            def check_runs(self, repo, sha):
+                return green_runs
+
+            def fetch_files(self, repo, number):
+                return round_pr.get("files", [])
+
+            def view_pr(self, repo, number):
+                self.view_calls += 1
+                return re_added_pr if self.view_calls >= 3 else round_pr
+
+        gh = LabelGh()
+        notify = self._make_fake_notify()
+        audit = amg.AuditLogger(tmp_path / "audit.log")
+        cfg = amg.AppConfig(enabled=True, repos={"r/repo": self._repo_cfg()})
+        amg.process_repo("r/repo", self._repo_cfg(), cfg, "live", gh, tmp_path, audit, notify)
+        assert merged == []
+        lines = (tmp_path / "audit.log").read_text(encoding="utf-8").strip().splitlines()
+        last = json.loads(lines[-1])
+        assert last["decision"] == "waiting"
+        assert "label re-added" in last["reason"]
+
+    def test_per_pr_isolation_logs_error_and_continues(self, tmp_path, monkeypatch):
+        # An exception in one PR must not abort the whole round.
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        monkeypatch.setattr(amg, "gh_json", lambda args: [])
+
+        class RaisingGh:
+            def list_prs(self, repo):
+                return [{"number": 1, "headRefOid": "abc", "title": "t"}]
+
+            def check_runs(self, repo, sha):
+                raise RuntimeError("boom")
+
+            def fetch_files(self, repo, number):
+                return []
+
+            def view_pr(self, repo, number):
+                return {}
+
+        notify = self._make_fake_notify()
+        audit = amg.AuditLogger(tmp_path / "audit.log")
+        cfg = amg.AppConfig(enabled=True, repos={"r/repo": self._repo_cfg()})
+        amg.process_repo(
+            "r/repo", self._repo_cfg(), cfg, "live", RaisingGh(), tmp_path, audit, notify
+        )
+        lines = (tmp_path / "audit.log").read_text(encoding="utf-8").strip().splitlines()
+        assert json.loads(lines[-1])["decision"] == "error"
+        assert "boom" in json.loads(lines[-1])["reason"]
+
 
 class TestPlatformGuards:
     def test_fcntl_import_guarded(self):
@@ -1146,3 +1416,18 @@ class TestPlatformGuards:
         assert hasattr(amg, "fcntl")
         if sys.platform != "win32":
             assert amg.fcntl is not None
+
+    def test_zima_home_respects_env(self, monkeypatch):
+        monkeypatch.setenv("ZIMA_HOME", "/tmp/custom-zima")
+        assert str(amg._zima_home()).startswith("/tmp/custom-zima")
+
+    def test_lock_path_under_zima_home(self, monkeypatch):
+        monkeypatch.setenv("ZIMA_HOME", "/tmp/custom-zima")
+        p = str(amg._lock_path())
+        assert p.startswith("/tmp/custom-zima")
+        assert p.endswith("auto-merge.lock")
+
+    def test_main_returns_1_on_bad_config(self, tmp_path, monkeypatch, capsys):
+        rc = amg.main(["--config", str(tmp_path / "nope.yaml")])
+        assert rc == 1
+        assert "failed to load config" in capsys.readouterr().out
