@@ -1419,13 +1419,12 @@ class TestPlatformGuards:
 
     def test_zima_home_respects_env(self, monkeypatch):
         monkeypatch.setenv("ZIMA_HOME", "/tmp/custom-zima")
-        assert str(amg._zima_home()).startswith("/tmp/custom-zima")
+        assert amg._zima_home() == Path("/tmp/custom-zima")
 
     def test_lock_path_under_zima_home(self, monkeypatch):
         monkeypatch.setenv("ZIMA_HOME", "/tmp/custom-zima")
-        p = str(amg._lock_path())
-        assert p.startswith("/tmp/custom-zima")
-        assert p.endswith("auto-merge.lock")
+        # Pure-path equality is lexical, so this holds on both POSIX and Windows
+        assert amg._lock_path() == Path("/tmp/custom-zima") / "logs" / "auto-merge.lock"
 
     def test_main_returns_1_on_bad_config(self, tmp_path, monkeypatch, capsys):
         rc = amg.main(["--config", str(tmp_path / "nope.yaml")])
