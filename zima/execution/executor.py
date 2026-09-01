@@ -562,30 +562,37 @@ class PJobExecutor:
                         # review. Independent of the dedup guard above:
                         # --dedup-off bypasses dedup ONLY; only the explicit
                         # failure-guard override bypasses this check.
+                        # Same predicate as the finally-block recording below
+                        # (repo AND pr_number): a repo-only scan would probe a
+                        # bucket that is never written.
+                        _fg_spr = result.scan_pr_result or {}
                         if (
                             not dry_run
-                            and result.scan_pr_result
+                            and _fg_spr.get("repo")
+                            and _fg_spr.get("pr_number")
                             and not (runtime_overrides and runtime_overrides.failure_guard_off)
                         ):
                             _fg_target = normalize_target(
                                 pjob_code=pjob_code,
-                                repo=result.scan_pr_result.get("repo", ""),
-                                pr_number=result.scan_pr_result.get("pr_number", ""),
-                                head_sha=result.scan_pr_result.get("head_sha", ""),
+                                repo=_fg_spr.get("repo", ""),
+                                pr_number=_fg_spr.get("pr_number", ""),
+                                head_sha=_fg_spr.get("head_sha", ""),
                             )
                             try:
                                 _fg_reason = FailureGuard().check(_fg_target)
+                                _fg_status = "cooldown_skip"
                             except GuardStateError as _fg_exc:
                                 _fg_reason = (
                                     "failure-guard: state unreadable — refusing to "
                                     f"start a paid execution (fail closed): {_fg_exc}"
                                 )
+                                _fg_status = "guard_error"
                             if _fg_reason:
                                 self._history.update_runtime_state(
                                     pjob_code,
                                     execution_id,
                                     failure_guard={
-                                        "status": "cooldown_skip",
+                                        "status": _fg_status,
                                         "target": _fg_target.to_dict(),
                                         "reason": _fg_reason,
                                     },

@@ -117,6 +117,11 @@ class TestCooldownSkip(_Base):
         assert "cooldown" in result.stderr
         assert "next allowed at" in result.stderr
         provider.add_label.assert_not_called()  # no postExec on SKIPPED
+        # Genuine cooldown hit is labeled cooldown_skip (not guard_error).
+        from zima.execution.history import ExecutionHistory
+
+        rec = ExecutionHistory().list_executions("fg-pjob")[0]
+        assert rec["failure_guard"]["status"] == "cooldown_skip"
 
     def test_corrupt_state_fails_closed(self, configs, isolated_zima_home):
         path = _write_guard_state(HEAD, streak=1, cooldown_until="")
@@ -126,6 +131,11 @@ class TestCooldownSkip(_Base):
         result = executor.execute("fg-pjob", overrides=_pin())
         assert result.status.value == "skipped"
         assert "fail closed" in result.stderr
+        # Corrupt state is labeled guard_error, not cooldown_skip.
+        from zima.execution.history import ExecutionHistory
+
+        rec = ExecutionHistory().list_executions("fg-pjob")[0]
+        assert rec["failure_guard"]["status"] == "guard_error"
 
     def test_dedup_off_does_not_bypass_guard(self, configs, isolated_zima_home):
         future = (

@@ -41,6 +41,12 @@ _ENV_COOLDOWN = "ZIMA_FAILURE_GUARD_COOLDOWN_MINUTES"
 
 _SAFE_PART = re.compile(r"[^a-z0-9._-]+")
 
+# Spec §5.1: a review is valid when it has an explicit verdict/status output
+# (PASS, NEEDS_FIX, NO_NEW_COMMITS) or a verifiable zima-review result. The
+# ``Status:`` line is the scheduler's documented grep contract — every
+# batch-skill version emits it — so text-only review agents count as valid.
+_STATUS_LINE_RE = re.compile(r"^Status: (PASS|NEEDS_FIX|NO_NEW_COMMITS)\s*$", re.MULTILINE)
+
 
 def _sanitize(part: str, default: str) -> str:
     """Make a target component safe for a filesystem key."""
@@ -143,10 +149,20 @@ def _has_review_verdict(stdout: str) -> bool:
     block = match.group(0)
     try:
         root = ET.fromstring(block)
-    except (ET.ParseError, Exception):
+    except Exception:
         return False
     verdict = root.findtext("verdict")
     return bool(verdict and verdict.strip())
+
+
+def _has_valid_review_signal(stdout: str) -> bool:
+    """True when stdout carries ANY spec §5.1 valid-review signal.
+
+    Accepts a well-formed ``<zima-review>`` XML verdict OR a complete
+    ``Status: PASS|NEEDS_FIX|NO_NEW_COMMITS`` line. Truncated output lacking
+    BOTH a closed XML block and a complete Status line stays invalid.
+    """
+    return _has_review_verdict(stdout) or bool(_STATUS_LINE_RE.search(stdout or ""))
 
 
 def classify_execution_result(
@@ -158,13 +174,16 @@ def classify_execution_result(
 ) -> GuardOutcome:
     """Classify one terminal execution (pure function).
 
-    A verdict in stdout always wins, even when postExec flipped status to failed
-    afterwards (the review itself is valid). Skipped executions are neutral —
-    they never touch the streak.
+    A valid review signal in stdout always wins, even when postExec flipped
+    status to failed afterwards (the review itself is valid). The signal is a
+    well-formed ``<zima-review>`` verdict or a complete ``Status:`` line — the
+    scheduler's documented grep contract, so text-only review agents count as
+    valid per spec §5.1. Skipped executions are neutral — they never touch
+    the streak.
     """
     if status == "skipped":
         return GuardOutcome("skipped", countable_failure=False, clears_streak=False)
-    if _has_review_verdict(stdout):
+    if _has_valid_review_signal(stdout):
         return GuardOutcome("valid_review", countable_failure=False, clears_streak=True)
     if status == "success":
         if expect_review_verdict:
@@ -295,11 +314,16 @@ class FailureGuardStore:
                 pass
             raise
 
+    def _lock_path_for(self, target: FailureTarget) -> Path:
+        """Lock file path for a target (mirrors _locked's derivation)."""
+        return self.path_for(target).with_suffix(".json.lock")
+
     def clear(self, target: FailureTarget) -> None:
-        try:
-            self.path_for(target).unlink()
-        except FileNotFoundError:
-            pass
+        for _path in (self.path_for(target), self._lock_path_for(target)):
+            try:
+                _path.unlink()
+            except FileNotFoundError:
+                pass
 
 
 class FailureGuard:
@@ -354,11 +378,13 @@ class FailureGuard:
 
     def record(self, target: FailureTarget, outcome: GuardOutcome, execution_id: str = "") -> None:
         """Record one terminal outcome for the target."""
+        # Neutral outcomes (skipped/unknown) never touch state: return BEFORE
+        # taking the lock so they cannot create the state dir or lock file.
+        if not outcome.countable_failure and not outcome.clears_streak:
+            return
         with _locked(self._store.path_for(target)):
             if outcome.clears_streak:
                 self._store.clear(target)
-                return
-            if not outcome.countable_failure:
                 return
             state = self._store.read(target)  # GuardStateError propagates — never reset
             now = self._now()

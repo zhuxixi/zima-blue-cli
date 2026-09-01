@@ -132,6 +132,33 @@ class TestClassify:
         )
         assert o.kind == "valid_review" and o.clears_streak and not o.countable_failure
 
+    def test_status_line_report_only_is_valid_and_clears(self):
+        # Spec §5.1: text-only agent with a full status-report block ending in
+        # a Status: line (scheduler's grep contract) — no XML anywhere.
+        report = "## Code Review Report\n\nFindings: none\n\nStatus: PASS\n"
+        o = classify_execution_result(
+            status="success", returncode=0, stdout=report, expect_review_verdict=True
+        )
+        assert o.kind == "valid_review" and o.clears_streak and not o.countable_failure
+
+    def test_status_line_needs_fix_valid_despite_postexec_flip(self):
+        o = classify_execution_result(
+            status="failed",  # postExec flipped the run after a valid review
+            returncode=1,
+            stdout="Findings: 2 issues\n\nStatus: NEEDS_FIX\n",
+            expect_review_verdict=True,
+        )
+        assert o.kind == "valid_review" and o.clears_streak and not o.countable_failure
+
+    def test_text_only_without_status_line_or_xml_is_invalid(self):
+        o = classify_execution_result(
+            status="success",
+            returncode=0,
+            stdout="looked at it, all good",  # neither Status: line nor XML
+            expect_review_verdict=True,
+        )
+        assert o.kind == "invalid_no_review" and o.countable_failure
+
 
 class TestGuardRules:
     def test_threshold_reached_sets_cooldown(self, tmp_path):
@@ -173,7 +200,9 @@ class TestGuardRules:
             status="success", returncode=0, stdout=VALID_XML, expect_review_verdict=True
         )
         g.record(t, ok)
-        assert not FailureGuardStore(tmp_path).path_for(t).exists()
+        store = FailureGuardStore(tmp_path)
+        assert not store.path_for(t).exists()
+        assert not store._lock_path_for(t).exists()  # clear() removes the lock too
 
     def test_skipped_outcome_is_not_recorded(self, tmp_path):
         g = _guard(tmp_path)
@@ -182,7 +211,10 @@ class TestGuardRules:
             status="skipped", returncode=0, stdout="", expect_review_verdict=True
         )
         g.record(t, skipped)
-        assert not FailureGuardStore(tmp_path).path_for(t).exists()
+        store = FailureGuardStore(tmp_path)
+        assert not store.path_for(t).exists()
+        # Neutral outcomes return BEFORE taking the lock: no lock file either.
+        assert not store._lock_path_for(t).exists()
 
     def test_env_threshold_override_and_invalid_fallback(self, tmp_path, monkeypatch):
         monkeypatch.setenv("ZIMA_FAILURE_GUARD_THRESHOLD", "1")
