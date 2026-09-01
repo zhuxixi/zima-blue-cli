@@ -398,7 +398,9 @@ def gate_cr_convergence(
     b. every pi-cr-meta review for the current head, authored by the expected
        CR bot account, is clean (multi-stream trap: one clean stream + one late
        stream with a blocking finding must NOT merge; meta from any other
-       author is ignored as forgery);
+       author is ignored as forgery).  expected_author must be a non-empty
+       owner login — there is no legacy fallback for an empty value (an empty
+       sentinel matches no real review and wedges every PR in "waiting");
     c. the zima:needs-review label has been removed by postExec.
     """
     if executions is None:
@@ -769,12 +771,14 @@ def process_repo(
     notify_enabled = mode != "dry-run"  # dry-run is a pure local rehearsal
 
     # The CR bot posts reviews as the machine's gh account; only reviews by
-    # that account may carry pi-cr-meta (forgery guard).
-    owner_login = ""
-    try:
-        owner_login = (gh_json(["api", "user"]) or {}).get("login", "")
-    except Exception:  # noqa: BLE001 — best-effort; empty author falls back to legacy filter
-        owner_login = ""
+    # that account may carry pi-cr-meta (forgery guard).  Resolving the login
+    # must never fall back to a "" sentinel: an empty expected_author matches
+    # no real review and silently wedges every PR in "waiting".  Fail loudly
+    # instead — the per-repo guard notifies and the next cron round retries.
+    user = gh_json(["api", "user"])
+    if not isinstance(user, dict) or not user.get("login"):
+        raise RuntimeError("failed to resolve gh login for CR author verification")
+    owner_login = user["login"]
 
     for pr in gh.list_prs(repo):
         try:
@@ -909,6 +913,32 @@ def process_repo(
                         }
                     )
                     continue
+                # The whitelist gates the head commit's GitHub account too:
+                # a write collaborator could otherwise push non-whitelisted
+                # commits onto the whitelisted author's PR branch and ride
+                # the auto-merge.  An unresolvable account ("") also blocks
+                # (fail-closed).
+                commit_login = gh.fetch_commit_login(repo, head_sha)
+                if commit_login not in repo_cfg.allow_authors:
+                    audit.log(
+                        {
+                            "ts": _now_iso(),
+                            "mode": mode,
+                            "repo": repo,
+                            "pr": number,
+                            "head_sha": head_sha,
+                            "decision": "attention",
+                            "reason": f"head commit by non-whitelisted account {commit_login!r}",
+                        }
+                    )
+                    if notify_enabled:
+                        notify.send(
+                            "attention",
+                            "[auto-merge] needs your eyes",
+                            f"{repo}#{number}: head commit pushed by {commit_login!r}, "
+                            "not in whitelist",
+                        )
+                    continue
                 merge_pr(
                     repo,
                     number,
@@ -958,6 +988,14 @@ def process_repo(
                     "reason": str(exc)[:200],
                 }
             )
+            # A persistent failure must be visible unattended, not only in the
+            # audit log (GateResult's error contract says "notify owner").
+            if notify_enabled:
+                notify.send(
+                    "error",
+                    "[auto-merge] error",
+                    f"{repo}#{pr.get('number')}: {str(exc)[:200]}",
+                )
             continue
 
 
@@ -1028,6 +1066,10 @@ def main(argv: list[str] | None = None) -> int:
                         "reason": str(exc)[:200],
                     }
                 )
+                # Same visibility contract as the per-PR guard: a repo whose
+                # round failed (e.g. gh login probe failure) must notify so a
+                # persistent outage is not only discoverable in the audit log.
+                Notifier(cfg).send("error", "[auto-merge] error", f"{repo}: {str(exc)[:200]}")
                 continue
     except Exception as exc:  # noqa: BLE001 — top-level guard: log, notify, exit
         audit.log({"ts": _now_iso(), "mode": mode, "decision": "error", "reason": str(exc)})
@@ -1068,14 +1110,12 @@ class GhClient:
         return [{"path": f.get("filename", "")} for f in data]
 
     def check_runs(self, repo: str, head_sha: str) -> list[dict]:
-        data = gh_json(
-            [
-                "api",
-                f"repos/{repo}/commits/{head_sha}/check-runs",
-                "-f",
-                "per_page=100",
-            ]
-        )
+        """Fetch check runs for a head commit (GET-only endpoint).
+
+        The page size rides in the URL: `gh api -f` switches the request to
+        POST, and this endpoint rejects POST with 404 (verified live).
+        """
+        data = gh_json(["api", f"repos/{repo}/commits/{head_sha}/check-runs?per_page=100"])
         return data.get("check_runs", []) if isinstance(data, dict) else []
 
     def view_pr(self, repo: str, number: int) -> dict:
@@ -1089,6 +1129,19 @@ class GhClient:
                 "--json",
                 "state,headRefOid,reviewDecision,labels,mergeStateStatus",
             ]
+        )
+
+    def fetch_commit_login(self, repo: str, head_sha: str) -> str:
+        """Return the head commit's GitHub account (author, else committer).
+
+        Used by the pre-merge whitelist gate; "" means the account could not
+        be resolved (anonymous commit), which fails closed upstream.
+        """
+        commit = gh_json(["api", f"repos/{repo}/commits/{head_sha}"])
+        return (
+            (commit.get("author") or {}).get("login")
+            or (commit.get("committer") or {}).get("login")
+            or ""
         )
 
 

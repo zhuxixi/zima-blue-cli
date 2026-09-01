@@ -748,11 +748,13 @@ class TestActions:
         with pytest.raises(RuntimeError, match="timed out"):
             amg.gh_json(["api", "user"])
 
-    def test_check_runs_uses_per_page_not_paginate(self, monkeypatch):
+    def test_check_runs_uses_url_query_not_post_field(self, monkeypatch):
+        # `gh api -f` switches the request to POST; this endpoint is GET-only
+        # (a -f field returns 404).  The page size must ride in the URL instead.
         calls = []
         monkeypatch.setattr(amg, "gh_json", lambda args: calls.append(args) or {"check_runs": []})
         amg.GhClient().check_runs("r/repo", "abc")
-        assert calls == [["api", "repos/r/repo/commits/abc/check-runs", "-f", "per_page=100"]]
+        assert calls == [["api", "repos/r/repo/commits/abc/check-runs?per_page=100"]]
 
     def test_list_prs_uses_limit(self, monkeypatch):
         calls = []
@@ -1006,6 +1008,23 @@ class TestExecutionsForPr:
 
 
 class TestProcessRepo:
+    OWNER_LOGIN = "zhuxixi"  # the machine's gh account (CR bot identity)
+
+    def _probe(self, monkeypatch):
+        """Mock module-level gh_json: owner-login probe + empty rerun run list.
+
+        The probe must return a real dict with a non-empty login (fix for the
+        "" sentinel that silently wedged every PR in waiting); the rerun
+        probe sees an empty run list (no failed runs to rerun).
+        """
+
+        def fake_gh_json(args):
+            if args == ["api", "user"]:
+                return {"login": self.OWNER_LOGIN}
+            return []
+
+        monkeypatch.setattr(amg, "gh_json", fake_gh_json)
+
     def _make_fake_gh(self, prs, check_runs):
         class FakeGh:
             def __init__(self):
@@ -1026,6 +1045,11 @@ class TestProcessRepo:
             def fetch_files(self, repo, number):
                 self.calls.append(("fetch_files", repo, number))
                 return prs[0].get("files", [])
+
+            def fetch_commit_login(self, repo, head_sha):
+                # Default: the whitelisted author pushed the head commit.
+                self.calls.append(("fetch_commit_login", repo, head_sha))
+                return prs[0].get("author", {}).get("login", "")
 
         return FakeGh()
 
@@ -1077,6 +1101,7 @@ class TestProcessRepo:
             "reviews": [
                 {
                     "commit": {"oid": "abc"},
+                    "author": {"login": "zhuxixi"},
                     "body": '<!-- pi-cr-meta {"blocking_new_count": 0, "issues": []} -->',
                 }
             ],
@@ -1086,7 +1111,7 @@ class TestProcessRepo:
 
     def test_merged_pr_skipped(self, tmp_path, monkeypatch):
         monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
-        monkeypatch.setattr(amg, "gh_json", lambda args: [])  # owner fetch probe
+        self._probe(monkeypatch)
         pr = self._pr(state="MERGED")
         gh = self._make_fake_gh([pr], [])
         notify = self._make_fake_notify()
@@ -1100,7 +1125,7 @@ class TestProcessRepo:
 
     def test_dry_run_prints_actions_without_executing(self, tmp_path, monkeypatch, capsys):
         monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
-        monkeypatch.setattr(amg, "gh_json", lambda args: [])  # rerun probe: no failed runs
+        self._probe(monkeypatch)
         self._empty_state_dir(tmp_path)
         action_calls = []
         monkeypatch.setattr(amg, "approve", lambda *a, **k: action_calls.append("approve"))
@@ -1127,7 +1152,7 @@ class TestProcessRepo:
 
     def test_notify_only_sends_attention_for_sensitive_path(self, tmp_path, monkeypatch):
         monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
-        monkeypatch.setattr(amg, "gh_json", lambda args: [])  # owner fetch probe
+        self._probe(monkeypatch)
         pr = self._pr(files=[{"path": ".github/workflows/ci.yml"}])
         gh = self._make_fake_gh([pr], [])
         notify = self._make_fake_notify()
@@ -1141,7 +1166,7 @@ class TestProcessRepo:
 
     def test_waiting_decision_is_silent(self, tmp_path, monkeypatch):
         monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
-        monkeypatch.setattr(amg, "gh_json", lambda args: [])  # owner fetch probe
+        self._probe(monkeypatch)
         pr = self._pr(mergeable="UNKNOWN")
         gh = self._make_fake_gh([pr], [])
         notify = self._make_fake_notify()
@@ -1154,7 +1179,7 @@ class TestProcessRepo:
 
     def test_notify_only_sends_would_merge_not_merged(self, tmp_path, monkeypatch):
         monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
-        monkeypatch.setattr(amg, "gh_json", lambda args: [])  # rerun probe: no failed runs
+        self._probe(monkeypatch)
         self._empty_state_dir(tmp_path)
         green_runs = [
             {"name": "Test (Node 22)", "conclusion": "success", "status": "completed"},
@@ -1177,7 +1202,7 @@ class TestProcessRepo:
         """Dry modes must fall through the mergeStateStatus check and report
         would-merge instead of sending a false error notification."""
         monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
-        monkeypatch.setattr(amg, "gh_json", lambda args: [])  # rerun probe: no failed runs
+        self._probe(monkeypatch)
         self._empty_state_dir(tmp_path)
         green_runs = [
             {"name": "Test (Node 22)", "conclusion": "success", "status": "completed"},
@@ -1223,7 +1248,7 @@ class TestProcessRepo:
 
     def test_live_mode_audits_merge_outcome(self, tmp_path, monkeypatch):
         monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
-        monkeypatch.setattr(amg, "gh_json", lambda args: [])  # rerun probe: no failed runs
+        self._probe(monkeypatch)
         self._empty_state_dir(tmp_path)
         monkeypatch.setattr(amg, "approve", lambda *a, **k: None)
         monkeypatch.setattr(amg, "merge_pr", lambda *a, **k: None)
@@ -1242,12 +1267,66 @@ class TestProcessRepo:
         lines = (tmp_path / "audit.log").read_text(encoding="utf-8").strip().splitlines()
         assert json.loads(lines[-1])["decision"] == "merged"
 
+    def test_live_mode_blocks_non_whitelisted_commit_account(self, tmp_path, monkeypatch):
+        # The whitelist gates the head commit's account too: a write
+        # collaborator pushing onto the whitelisted author's PR branch must
+        # not ride the auto-merge (attention notification, no merge).
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        self._probe(monkeypatch)
+        self._empty_state_dir(tmp_path)
+        merged = []
+        monkeypatch.setattr(amg, "merge_pr", lambda *a, **k: merged.append("merge"))
+        monkeypatch.setattr(amg, "approve", lambda *a, **k: None)
+        monkeypatch.setattr(amg, "remove_label", lambda *a, **k: None)
+        monkeypatch.setattr(amg, "rerun_failed_jobs", lambda *a, **k: None)
+        green_runs = [
+            {"name": "Test (Node 22)", "conclusion": "success", "status": "completed"},
+            {"name": "Test (Node 24)", "conclusion": "success", "status": "completed"},
+        ]
+        pr = self._pr()
+        gh = self._make_fake_gh([pr], green_runs)
+        monkeypatch.setattr(gh, "fetch_commit_login", lambda repo, sha: "intruder")
+        notify = self._make_fake_notify()
+        audit = amg.AuditLogger(tmp_path / "audit.log")
+        cfg = amg.AppConfig(enabled=True, repos={"r/repo": self._repo_cfg()})
+        amg.process_repo("r/repo", self._repo_cfg(), cfg, "live", gh, tmp_path, audit, notify)
+        assert merged == []
+        attention = [m for lvl, ttl, m in notify.sent if lvl == "attention"]
+        assert len(attention) == 1
+        assert "not in whitelist" in attention[0]
+        assert "intruder" in attention[0]
+        lines = (tmp_path / "audit.log").read_text(encoding="utf-8").strip().splitlines()
+        last = json.loads(lines[-1])
+        assert last["decision"] == "attention"
+        assert "non-whitelisted" in last["reason"]
+
+    def test_live_mode_allows_whitelisted_commit_account(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        self._probe(monkeypatch)
+        self._empty_state_dir(tmp_path)
+        merged = []
+        monkeypatch.setattr(amg, "merge_pr", lambda *a, **k: merged.append("merge"))
+        monkeypatch.setattr(amg, "approve", lambda *a, **k: None)
+        monkeypatch.setattr(amg, "remove_label", lambda *a, **k: None)
+        monkeypatch.setattr(amg, "rerun_failed_jobs", lambda *a, **k: None)
+        green_runs = [
+            {"name": "Test (Node 22)", "conclusion": "success", "status": "completed"},
+            {"name": "Test (Node 24)", "conclusion": "success", "status": "completed"},
+        ]
+        pr = self._pr()  # FakeGh.fetch_commit_login returns the PR author login
+        gh = self._make_fake_gh([pr], green_runs)
+        notify = self._make_fake_notify()
+        audit = amg.AuditLogger(tmp_path / "audit.log")
+        cfg = amg.AppConfig(enabled=True, repos={"r/repo": self._repo_cfg()})
+        amg.process_repo("r/repo", self._repo_cfg(), cfg, "live", gh, tmp_path, audit, notify)
+        assert merged == ["merge"]
+
     def test_drift_after_approval_aborts(self, tmp_path, monkeypatch):
         # A collaborator push after an approve (or an already-APPROVED PR whose
         # head moved) must abort — the drift check runs BEFORE the APPROVED
         # branch, not only in the un-approved path.
         monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
-        monkeypatch.setattr(amg, "gh_json", lambda args: [])
+        self._probe(monkeypatch)
         self._empty_state_dir(tmp_path)
         merged = []
         monkeypatch.setattr(amg, "merge_pr", lambda *a, **k: merged.append("merge"))
@@ -1290,7 +1369,7 @@ class TestProcessRepo:
         # The pre-merge re-check (third view_pr) must abort on a head that moved
         # during the rerun poll window.
         monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
-        monkeypatch.setattr(amg, "gh_json", lambda args: [])
+        self._probe(monkeypatch)
         self._empty_state_dir(tmp_path)
         merged = []
         monkeypatch.setattr(amg, "merge_pr", lambda *a, **k: merged.append("merge"))
@@ -1337,7 +1416,7 @@ class TestProcessRepo:
         # If needs-review was re-added on the same head (spawning a new CR
         # stream), the pre-merge re-check must abort.
         monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
-        monkeypatch.setattr(amg, "gh_json", lambda args: [])
+        self._probe(monkeypatch)
         self._empty_state_dir(tmp_path)
         merged = []
         monkeypatch.setattr(amg, "merge_pr", lambda *a, **k: merged.append("merge"))
@@ -1383,7 +1462,7 @@ class TestProcessRepo:
     def test_per_pr_isolation_logs_error_and_continues(self, tmp_path, monkeypatch):
         # An exception in one PR must not abort the whole round.
         monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
-        monkeypatch.setattr(amg, "gh_json", lambda args: [])
+        self._probe(monkeypatch)
 
         class RaisingGh:
             def list_prs(self, repo):
@@ -1407,6 +1486,234 @@ class TestProcessRepo:
         lines = (tmp_path / "audit.log").read_text(encoding="utf-8").strip().splitlines()
         assert json.loads(lines[-1])["decision"] == "error"
         assert "boom" in json.loads(lines[-1])["reason"]
+
+    def test_per_pr_isolation_notifies_and_continues(self, tmp_path, monkeypatch):
+        # A failing PR must send an error notification (notify-only mode) and
+        # the next PR must still be processed (its audit line present).
+        monkeypatch.setattr(amg, "pid_alive", lambda pid: True)
+        self._probe(monkeypatch)
+        self._empty_state_dir(tmp_path)
+        green_runs = [
+            {"name": "Test (Node 22)", "conclusion": "success", "status": "completed"},
+            {"name": "Test (Node 24)", "conclusion": "success", "status": "completed"},
+        ]
+        pr1 = self._pr(number=1)
+        pr2 = self._pr(number=2)
+
+        class FirstRaisesGh:
+            def __init__(self):
+                self.check_calls = 0
+
+            def list_prs(self, repo):
+                return [pr1, pr2]
+
+            def check_runs(self, repo, sha):
+                self.check_calls += 1
+                if self.check_calls == 1:
+                    raise RuntimeError("boom first pr")
+                return green_runs
+
+            def fetch_files(self, repo, number):
+                return pr2.get("files", [])
+
+            def view_pr(self, repo, number):
+                return pr2
+
+        notify = self._make_fake_notify()
+        audit = amg.AuditLogger(tmp_path / "audit.log")
+        cfg = amg.AppConfig(enabled=True, repos={"r/repo": self._repo_cfg()})
+        amg.process_repo(
+            "r/repo", self._repo_cfg(), cfg, "notify-only", FirstRaisesGh(), tmp_path, audit, notify
+        )
+        errors = [m for lvl, ttl, m in notify.sent if lvl == "error"]
+        assert len(errors) == 1
+        assert "r/repo#1" in errors[0]
+        assert "boom first pr" in errors[0]
+        # The second PR was still processed (its own audit line exists).
+        lines = (tmp_path / "audit.log").read_text(encoding="utf-8").strip().splitlines()
+        assert any(json.loads(line)["pr"] == 2 for line in lines)
+
+    def test_owner_login_probe_gh_failure_raises(self, tmp_path, monkeypatch):
+        # A gh failure during the login probe must propagate loudly — never
+        # fall back to a "" sentinel that wedges every PR in "waiting".
+        import pytest
+
+        def raise_gh_json(args):
+            raise RuntimeError("429")
+
+        monkeypatch.setattr(amg, "gh_json", raise_gh_json)
+        gh = self._make_fake_gh([self._pr()], [])
+        notify = self._make_fake_notify()
+        audit = amg.AuditLogger(tmp_path / "audit.log")
+        cfg = amg.AppConfig(enabled=True, repos={"r/repo": self._repo_cfg()})
+        with pytest.raises(RuntimeError, match="429"):
+            amg.process_repo(
+                "r/repo", self._repo_cfg(), cfg, "notify-only", gh, tmp_path, audit, notify
+            )
+
+    def test_owner_login_probe_empty_login_raises(self, tmp_path, monkeypatch):
+        # A non-dict or login-less api/user response is also a probe failure.
+        import pytest
+
+        monkeypatch.setattr(amg, "gh_json", lambda args: {"login": ""})
+        gh = self._make_fake_gh([self._pr()], [])
+        notify = self._make_fake_notify()
+        audit = amg.AuditLogger(tmp_path / "audit.log")
+        cfg = amg.AppConfig(enabled=True, repos={"r/repo": self._repo_cfg()})
+        with pytest.raises(RuntimeError, match="gh login"):
+            amg.process_repo(
+                "r/repo", self._repo_cfg(), cfg, "notify-only", gh, tmp_path, audit, notify
+            )
+
+
+class TestMainGuards:
+    """main()'s per-repo guard: audit + notify + continue with the next repo."""
+
+    def _repo_cfg(self):
+        return amg.RepoConfig(
+            allow_authors=["ccccyk0919"],
+            required_checks=["Test (Node 22)", "Test (Node 24)"],
+            expected_failing_checks=["Owner approval policy"],
+            merge_method="squash",
+            delete_branch=True,
+            sensitive_paths=[".github/**"],
+            cr_pjob_code="pi-agent-board-pi-cr-job",
+        )
+
+    def test_main_per_repo_failure_notifies_and_continues(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("ZIMA_HOME", str(tmp_path))
+        order = []
+
+        def fake_process_repo(repo, *args, **kwargs):
+            order.append(repo)
+            if repo == "a/repo":
+                raise RuntimeError("repo-level boom")
+
+        monkeypatch.setattr(amg, "process_repo", fake_process_repo)
+        monkeypatch.setattr(amg, "GhClient", lambda: object())
+        sent = []
+
+        class FakeNotifier:
+            def __init__(self, cfg):
+                pass
+
+            def send(self, level, title, message):
+                sent.append((level, title, message))
+                return True
+
+        monkeypatch.setattr(amg, "Notifier", FakeNotifier)
+        monkeypatch.setattr(
+            amg,
+            "load_config",
+            lambda path: amg.AppConfig(
+                enabled=True, repos={"a/repo": self._repo_cfg(), "b/repo": self._repo_cfg()}
+            ),
+        )
+        rc = amg.main(["--config", str(tmp_path / "auto-merge.yaml")])
+        assert rc == 0
+        # Both repos were attempted; the failure did not stop the loop.
+        assert order == ["a/repo", "b/repo"]
+        errors = [m for lvl, ttl, m in sent if lvl == "error"]
+        assert len(errors) == 1
+        assert "a/repo" in errors[0]
+        assert "repo-level boom" in errors[0]
+        # The guard also wrote the failure to the audit log.
+        audit_file = tmp_path / "logs" / "auto-merge.log"
+        lines = audit_file.read_text(encoding="utf-8").strip().splitlines()
+        error_lines = [
+            json.loads(line) for line in lines if json.loads(line)["decision"] == "error"
+        ]
+        assert len(error_lines) == 1
+        assert error_lines[0]["repo"] == "a/repo"
+        assert "repo-level boom" in error_lines[0]["reason"]
+
+    def test_probe_failure_notifies_and_next_repo_continues(self, tmp_path, monkeypatch):
+        # Repo A's login probe fails -> error notification mentioning the
+        # probe; repo B runs the full round (its PR reaches would-merge).
+        monkeypatch.setenv("ZIMA_HOME", str(tmp_path))
+        state_dir = tmp_path / "history" / "pjobs" / "pi-agent-board-pi-cr-job"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        probe = {"n": 0}
+
+        def fake_gh_json(args):
+            if args == ["api", "user"]:
+                probe["n"] += 1
+                if probe["n"] == 1:
+                    return []  # non-dict: probe failure for repo A
+                return {"login": "zhuxixi"}
+            return []
+
+        monkeypatch.setattr(amg, "gh_json", fake_gh_json)
+        green_runs = [
+            {"name": "Test (Node 22)", "conclusion": "success", "status": "completed"},
+            {"name": "Test (Node 24)", "conclusion": "success", "status": "completed"},
+        ]
+        pr = {
+            "number": 1,
+            "title": "t",
+            "author": {"login": "ccccyk0919"},
+            "state": "OPEN",
+            "isDraft": False,
+            "headRefOid": "abc",
+            "mergeable": "MERGEABLE",
+            "mergeStateStatus": "CLEAN",
+            "reviewDecision": None,
+            "labels": [],
+            "files": [{"path": "src/main.ts"}],
+            "reviews": [
+                {
+                    "commit": {"oid": "abc"},
+                    "author": {"login": "zhuxixi"},
+                    "body": '<!-- pi-cr-meta {"blocking_new_count": 0, "issues": []} -->',
+                }
+            ],
+        }
+
+        class FakeGh:
+            def list_prs(self, repo):
+                return [pr]
+
+            def check_runs(self, repo, sha):
+                return green_runs
+
+            def fetch_files(self, repo, number):
+                return pr["files"]
+
+            def view_pr(self, repo, number):
+                return pr
+
+            def fetch_commit_login(self, repo, sha):
+                return "ccccyk0919"
+
+        monkeypatch.setattr(amg, "GhClient", FakeGh)
+        sent = []
+
+        class FakeNotifier:
+            def __init__(self, cfg):
+                pass
+
+            def send(self, level, title, message):
+                sent.append((level, title, message))
+                return True
+
+        monkeypatch.setattr(amg, "Notifier", FakeNotifier)
+        monkeypatch.setattr(
+            amg,
+            "load_config",
+            lambda path: amg.AppConfig(
+                enabled=True, repos={"a/repo": self._repo_cfg(), "b/repo": self._repo_cfg()}
+            ),
+        )
+        rc = amg.main(["--config", str(tmp_path / "auto-merge.yaml"), "--notify-only"])
+        assert rc == 0  # no crash: the guard caught the probe failure
+        errors = [m for lvl, ttl, m in sent if lvl == "error"]
+        assert len(errors) == 1
+        assert "a/repo" in errors[0]
+        assert "gh login" in errors[0]
+        # Repo B's round ran to completion (would-merge notification sent).
+        would = [m for lvl, ttl, m in sent if ttl == "[auto-merge] would merge"]
+        assert len(would) == 1
+        assert "b/repo#1" in would[0]
 
 
 class TestPlatformGuards:

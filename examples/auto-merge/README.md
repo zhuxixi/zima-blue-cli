@@ -14,8 +14,8 @@ cp examples/auto-merge/auto-merge.yaml.example ~/.zima/configs/auto-merge.yaml
 # edit ~/.zima/configs/auto-merge.yaml: real repo, whitelist, checks, cr_pjob_code
 ```
 
-The whitelist authorizes by PR author only; commit committers on the branch
-are not separately verified (spec-defined boundary).
+The whitelist gates both the PR author and the head commit's GitHub account
+(author.login); commits pushed by other accounts block auto-merge.
 
 ## Schedule (Phase 0: notify-only)
 
