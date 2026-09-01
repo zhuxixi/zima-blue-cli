@@ -509,6 +509,14 @@ def run(
         "--dedup-off",
         help="Skip the duplicate-execution check (force run even if the same PR is already being or was recently reviewed)",
     ),
+    failure_guard_off: bool = typer.Option(
+        False,
+        "--failure-guard-off",
+        help=(
+            "Bypass the failure-guard cooldown for this run (operator override; "
+            "the dedup guard still applies unless --dedup-off is also given)"
+        ),
+    ),
     timeout: Optional[int] = typer.Option(None, "--timeout", "-t", help="Override timeout"),
     skip_validation: bool = typer.Option(
         False, "--skip-validation", help="Skip pre-execution validation"
@@ -582,6 +590,8 @@ def run(
             if "=" in param:
                 key, value = param.split("=", 1)
                 overrides.agent_params[key] = value
+    if failure_guard_off:
+        overrides.failure_guard_off = True
 
     # ==================================================================
     # Dry-run: render only, no background spawn
