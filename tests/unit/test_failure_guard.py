@@ -259,13 +259,8 @@ class TestStore:
 
 class TestOverridesFlag:
     def test_roundtrip_and_default(self):
-        # Overrides.failure_guard_off is added in Task 2 (executor wiring).
-        # This test verifies the planned contract so it can be enabled after
-        # zima/models/pjob.py is updated.
         from zima.models.pjob import Overrides
 
-        if not hasattr(Overrides, "failure_guard_off"):
-            pytest.skip("Overrides.failure_guard_off not yet implemented (Task 2)")
         assert Overrides().failure_guard_off is False
         assert Overrides.from_dict({}).failure_guard_off is False
         o = Overrides(failure_guard_off=True)

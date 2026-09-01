@@ -22,6 +22,12 @@ from zima.execution.actions_runner import (
     pr_number_ok,
     repo_ok,
 )
+from zima.execution.failure_guard import (
+    FailureGuard,
+    GuardStateError,
+    classify_execution_result,
+    normalize_target,
+)
 from zima.execution.history import ExecutionHistory
 from zima.models.config_bundle import ConfigBundle
 from zima.models.pjob import Overrides, PJobConfig
@@ -551,6 +557,40 @@ class PJobExecutor:
                                     f"#{_dup_spr.get('pr_number')}); re-run with "
                                     "--dedup-off to force"
                                 )
+                        # Failure guard (#202): stop burning paid calls on a
+                        # target whose recent executions produced no valid
+                        # review. Independent of the dedup guard above:
+                        # --dedup-off bypasses dedup ONLY; only the explicit
+                        # failure-guard override bypasses this check.
+                        if (
+                            not dry_run
+                            and result.scan_pr_result
+                            and not (runtime_overrides and runtime_overrides.failure_guard_off)
+                        ):
+                            _fg_target = normalize_target(
+                                pjob_code=pjob_code,
+                                repo=result.scan_pr_result.get("repo", ""),
+                                pr_number=result.scan_pr_result.get("pr_number", ""),
+                                head_sha=result.scan_pr_result.get("head_sha", ""),
+                            )
+                            try:
+                                _fg_reason = FailureGuard().check(_fg_target)
+                            except GuardStateError as _fg_exc:
+                                _fg_reason = (
+                                    "failure-guard: state unreadable — refusing to "
+                                    f"start a paid execution (fail closed): {_fg_exc}"
+                                )
+                            if _fg_reason:
+                                self._history.update_runtime_state(
+                                    pjob_code,
+                                    execution_id,
+                                    failure_guard={
+                                        "status": "cooldown_skip",
+                                        "target": _fg_target.to_dict(),
+                                        "reason": _fg_reason,
+                                    },
+                                )
+                                raise SkipAction(_fg_reason)
                 except SkipAction as e:
                     result.status = ExecutionStatus.SKIPPED
                     result.returncode = 0
@@ -713,6 +753,50 @@ class PJobExecutor:
             if result.status == ExecutionStatus.SUCCESS and result.action_errors:
                 result.status = ExecutionStatus.FAILED
                 result.returncode = 1
+
+            # Failure-guard accounting (#202): once the terminal status is
+            # final, record whether this execution produced a valid review.
+            # Skipped / dry-run executions never touch the guard; the operator
+            # override bypasses the check but still records outcomes so the
+            # streak stays truthful. Recording failures must not fail the run.
+            _fg_spr = getattr(result, "scan_pr_result", None) or {}
+            if (
+                not dry_run
+                and result.status != ExecutionStatus.SKIPPED
+                and _fg_spr.get("repo")
+                and _fg_spr.get("pr_number")
+            ):
+                try:
+                    _fg_outcome = classify_execution_result(
+                        status=result.status.value,
+                        returncode=result.returncode,
+                        stdout=result.stdout,
+                        expect_review_verdict=True,
+                    )
+                    _fg_target = normalize_target(
+                        pjob_code=pjob_code,
+                        repo=_fg_spr.get("repo", ""),
+                        pr_number=_fg_spr.get("pr_number", ""),
+                        head_sha=_fg_spr.get("head_sha", ""),
+                    )
+                    FailureGuard().record(_fg_target, _fg_outcome, execution_id=execution_id)
+                    if _fg_outcome.countable_failure:
+                        self._history.update_runtime_state(
+                            pjob_code,
+                            execution_id,
+                            failure_guard={
+                                "status": "recorded_failure",
+                                "kind": _fg_outcome.kind,
+                            },
+                        )
+                    elif _fg_outcome.clears_streak:
+                        self._history.update_runtime_state(
+                            pjob_code,
+                            execution_id,
+                            failure_guard={"status": "cleared"},
+                        )
+                except Exception as _fg_exc:  # noqa: BLE001 - observability must not fail the run
+                    print(f"Warning: failure-guard record failed: {_fg_exc}")
 
             # Cleanup temp directory
             _pjob_cleanup = locals().get("pjob")
