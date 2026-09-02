@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1] - 2026-09-02
+
+### Features
+- **cr**: failure guard — cooldown after repeated invalid CR executions (#202) (#209)
+
+[0.8.1]: https://github.com/zhuxixi/zima-blue-cli/compare/v0.8.0...v0.8.1
+
 ## [0.8.0] - 2026-09-02
 
 ### Features
