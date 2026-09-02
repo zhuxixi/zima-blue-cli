@@ -318,12 +318,30 @@ class FailureGuardStore:
         """Lock file path for a target (mirrors _locked's derivation)."""
         return self.path_for(target).with_suffix(".json.lock")
 
+    def clear_state(self, target: FailureTarget) -> None:
+        """Remove the state file only. Safe to call while holding the lock."""
+        try:
+            self.path_for(target).unlink()
+        except FileNotFoundError:
+            pass
+
+    def clear_lock(self, target: FailureTarget) -> None:
+        """Best-effort lock-file removal.
+
+        Must run OUTSIDE the lock region: unlinking a file with an open
+        msvcrt-locked handle raises PermissionError on Windows (POSIX allows
+        unlink-while-open). Failures are tolerated — a leftover zero-byte
+        lock file is harmless and gets removed by the next clear.
+        """
+        try:
+            self._lock_path_for(target).unlink()
+        except (FileNotFoundError, PermissionError, OSError):
+            pass
+
     def clear(self, target: FailureTarget) -> None:
-        for _path in (self.path_for(target), self._lock_path_for(target)):
-            try:
-                _path.unlink()
-            except FileNotFoundError:
-                pass
+        """Remove state and lock files (for callers not holding the lock)."""
+        self.clear_state(target)
+        self.clear_lock(target)
 
 
 class FailureGuard:
@@ -382,17 +400,24 @@ class FailureGuard:
         # taking the lock so they cannot create the state dir or lock file.
         if not outcome.countable_failure and not outcome.clears_streak:
             return
+        cleared = False
         with _locked(self._store.path_for(target)):
             if outcome.clears_streak:
-                self._store.clear(target)
-                return
-            state = self._store.read(target)  # GuardStateError propagates — never reset
-            now = self._now()
-            state.target = target.to_dict()
-            state.failure_streak += 1
-            state.last_failure_at = _fmt_ts(now)
-            state.last_failure_kind = outcome.kind
-            state.last_execution_id = execution_id
-            if state.failure_streak >= self._threshold:
-                state.cooldown_until = _fmt_ts(now + timedelta(minutes=self._cooldown))
-            self._store.write(target, state)
+                # State-file removal under the lock serializes with concurrent
+                # recorders; the lock FILE is removed after release (Windows
+                # cannot unlink a file with an open locked handle).
+                self._store.clear_state(target)
+                cleared = True
+            else:
+                state = self._store.read(target)  # GuardStateError propagates — never reset
+                now = self._now()
+                state.target = target.to_dict()
+                state.failure_streak += 1
+                state.last_failure_at = _fmt_ts(now)
+                state.last_failure_kind = outcome.kind
+                state.last_execution_id = execution_id
+                if state.failure_streak >= self._threshold:
+                    state.cooldown_until = _fmt_ts(now + timedelta(minutes=self._cooldown))
+                self._store.write(target, state)
+        if cleared:
+            self._store.clear_lock(target)
