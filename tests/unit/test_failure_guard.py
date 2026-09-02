@@ -50,6 +50,25 @@ class TestNormalizeTarget:
         assert _target(head_sha="").key().endswith("--nohead")
         assert _target(head_sha="a1").key() != _target(head_sha="b2").key()
 
+    def test_oversized_key_is_hash_truncated_within_filename_limit(self):
+        # A repo at GitHub's 256-char limit ("/"→"__" can double it) plus the
+        # other components blows past ext4's 255-byte filename limit; the key
+        # must truncate to <=200 chars so state and lock filenames stay legal.
+        long_repo = "a" * 256
+        key = _target(repo=long_repo).key()
+        assert len(key) <= 200
+        assert len(f"{key}.json.lock") <= 255  # both state and lock filenames fit
+        assert key.startswith("zima-pi-cr-job--" + "a" * 170)  # readable prefix kept
+        assert key[-14:-12] == "--" and len(key[-12:]) == 12  # hash suffix shape
+
+    def test_truncated_keys_remain_deterministic_and_distinct(self):
+        repo_a = "a" * 256
+        repo_b = "b" * 256
+        assert _target(repo=repo_a).key() == _target(repo=repo_a).key()
+        assert _target(repo=repo_a).key() != _target(repo=repo_b).key()
+        # Short targets keep the plain readable form (no hash suffix).
+        assert _target().key() == "zima-pi-cr-job--owner__repo--42--abc123"
+
 
 class TestClassify:
     @pytest.mark.parametrize("status", ["success", "failed"])
