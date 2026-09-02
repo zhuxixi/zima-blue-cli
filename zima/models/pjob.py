@@ -78,6 +78,9 @@ class Overrides(YamlSerializable):
         variable_values: Override Variable values
         env_vars: Override/add environment variables
         pmg_params: Additional PMG parameters
+        failure_guard_off: Operator override — bypass the failure-guard
+            cooldown check for this run (#202). Does not bypass the dedup
+            guard (use --dedup-off for that); outcomes are still recorded.
     """
 
     FIELD_ALIASES = {
@@ -91,6 +94,7 @@ class Overrides(YamlSerializable):
     variable_values: dict = field(default_factory=dict)
     env_vars: dict = field(default_factory=dict)
     pmg_params: list[dict] = field(default_factory=list)
+    failure_guard_off: bool = False
 
     def is_empty(self) -> bool:
         """Check if overrides are empty."""
@@ -100,6 +104,7 @@ class Overrides(YamlSerializable):
                 self.variable_values,
                 self.env_vars,
                 self.pmg_params,
+                self.failure_guard_off,
             ]
         )
 

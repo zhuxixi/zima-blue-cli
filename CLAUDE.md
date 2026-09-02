@@ -125,6 +125,8 @@ zima pjob run <code>
 │   └── history/*.jsonl
 ├── temp/                      # Temporary execution artifacts
 │   └── pjobs/                # PJob execution working directories (auto-cleaned)
+├── state/
+│   └── failure-guard/       # Failure-guard streak/cooldown state per (pjob, repo, pr, head) target (#202)
 └── history/
     ├── pjobs.json           # Execution history (per-PJob records, max 100 each)
     └── pjobs/<code>/<execution_id>.json   # Runtime state files (per-execution, written at start + updated on completion)
@@ -216,6 +218,12 @@ PR 评论有三个独立 API，不同 CR 工具用不同 API 提交，获取完�
 - preExec 后立即把 scan_pr_result（含 head_sha）与 pid 写进 running 状态文件，webhook/manual/daemon 并发流在 agent 运行期间即可互见（`update_runtime_state` 是 read-merge-write，文件不存在则 no-op）
 - 同 PJob 同 (repo, pr_number, head_sha) 已有执行 running、或 30min 内 success → SkipAction（SKIPPED，无 postExec、无 label 变更）；`zima pjob run --dedup-off` 强制重跑
 - 两侧 head_sha 都已知且不同 = 新 commit 新 review round，不去重；任一侧缺 head 保守视为同 head；failed/timeout/skipped 记录永不阻塞重跑；running 超 90min 视为崩溃死记录放行（PJob timeout 仅 30min）
+
+### Failure guard (#202)
+
+Repeated invalid CR executions on the same `(pjob, repo, pr_number, head_sha)` target trip a cooldown: after `ZIMA_FAILURE_GUARD_THRESHOLD` (default 2) consecutive executions with no valid `<zima-review>` verdict, the executor skips agent launch for `ZIMA_FAILURE_GUARD_COOLDOWN_MINUTES` (default 60). The skip happens before launch (status `skipped`, no postExec, no label churn). State lives in `<ZIMA_HOME>/state/failure-guard/*.json`; a corrupt state file fails closed (skip, not run). `NEEDS_FIX` is a valid review and clears the streak. `--dedup-off` does NOT bypass this guard — use `zima pjob run --failure-guard-off` for a deliberate operator retry (outcomes are still recorded).
+
+Polling-path executions (daemon, no `head_sha` pin) collapse into a `--nohead` bucket — a new push does NOT reset that budget; `--failure-guard-off` is the operator escape. The override is runtime-only (`zima pjob run --failure-guard-off`); `spec.overrides.failureGuardOff` in PJob YAML has no effect.
 
 ### Agent CLIs
 
