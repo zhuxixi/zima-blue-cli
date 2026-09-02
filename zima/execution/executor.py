@@ -804,6 +804,22 @@ class PJobExecutor:
                         )
                 except Exception as _fg_exc:  # noqa: BLE001 - observability must not fail the run
                     print(f"Warning: failure-guard record failed: {_fg_exc}")
+                    # Spec §6.1-3: guard errors must leave a runtime-state
+                    # trace. A corrupt state file first surfacing at record
+                    # time would otherwise leave this execution unmarked
+                    # until the next run's check (#202 advisory 5).
+                    try:
+                        self._history.update_runtime_state(
+                            pjob_code,
+                            execution_id,
+                            failure_guard={
+                                "status": "guard_error",
+                                "phase": "record",
+                                "reason": str(_fg_exc),
+                            },
+                        )
+                    except Exception:  # noqa: BLE001 - observability must not fail the run
+                        pass
 
             # Cleanup temp directory
             _pjob_cleanup = locals().get("pjob")

@@ -17,6 +17,7 @@ Spec: docs/superpowers/specs/2026-08-31-cr-failure-guard-design.md
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -40,6 +41,14 @@ _ENV_THRESHOLD = "ZIMA_FAILURE_GUARD_THRESHOLD"
 _ENV_COOLDOWN = "ZIMA_FAILURE_GUARD_COOLDOWN_MINUTES"
 
 _SAFE_PART = re.compile(r"[^a-z0-9._-]+")
+
+# Joined key components can far exceed ext4's 255-byte filename limit (a
+# repo alone allows 256 chars, and "/" doubles to "__"), which would make
+# record() fail ENAMETOOLONG (swallowed as a warning) while check() never
+# finds the state — a silent fail-open (#202 advisory 2). Oversized keys are
+# truncated with a sha256 suffix of the full key so filenames stay within
+# limits AND unique. 200 leaves headroom for the ".json.lock" suffix.
+_MAX_KEY_LEN = 200
 
 # Spec §5.1: a review is valid when it has an explicit verdict/status output
 # (PASS, NEEDS_FIX, NO_NEW_COMMITS) or a verifiable zima-review result. The
@@ -96,8 +105,13 @@ class FailureTarget:
     head_sha: str
 
     def key(self) -> str:
-        """Filesystem-safe unique key for this target."""
-        return "--".join(
+        """Filesystem-safe unique key for this target.
+
+        Short targets keep the readable joined form; keys longer than
+        ``_MAX_KEY_LEN`` are truncated and suffixed with a hash of the full
+        key so the filename stays unique and under the 255-byte name limit.
+        """
+        full = "--".join(
             [
                 _sanitize(self.pjob_code, "nopjob"),
                 _sanitize(self.repo.replace("/", "__"), "norepo"),
@@ -105,6 +119,10 @@ class FailureTarget:
                 _sanitize(self.head_sha, "nohead"),
             ]
         )
+        if len(full) <= _MAX_KEY_LEN:
+            return full
+        digest = hashlib.sha256(full.encode("utf-8")).hexdigest()[:12]
+        return f"{full[:_MAX_KEY_LEN - 14]}--{digest}"
 
     def to_dict(self) -> dict:
         return {

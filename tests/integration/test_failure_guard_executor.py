@@ -196,6 +196,29 @@ class TestRecording(_Base):
         assert "cooldown" in result.stderr
         assert provider.add_label.call_count == 0
 
+    def test_record_error_writes_guard_error_state_note(
+        self, configs, config_manager, isolated_zima_home
+    ):
+        # Spec §6.1-3: guard errors must leave a runtime-state trace. A
+        # corrupt state file first surfacing at record time (only reachable
+        # via the override, since check fails closed first) must annotate
+        # this execution instead of waiting for the next run's check.
+        path = _write_guard_state(HEAD, streak=1, cooldown_until="")
+        path.write_text("{ corrupted", encoding="utf-8")
+        self._agent(config_manager, ["false"])  # countable-failure outcome
+        executor = PJobExecutor()
+        _mock_provider(executor)
+        overrides = _pin()
+        overrides.failure_guard_off = True  # bypass the fail-closed check; record still runs
+        result = executor.execute("fg-pjob", overrides=overrides)
+        assert result.status.value == "failed"  # record error must not fail the run
+        from zima.execution.history import ExecutionHistory
+
+        rec = ExecutionHistory().list_executions("fg-pjob")[0]
+        assert rec["failure_guard"]["status"] == "guard_error"
+        assert rec["failure_guard"]["phase"] == "record"
+        assert "unreadable" in rec["failure_guard"]["reason"]
+
     def test_valid_review_clears_streak(self, configs, isolated_zima_home):
         _write_guard_state(HEAD, streak=1, cooldown_until="")
         executor = PJobExecutor()
