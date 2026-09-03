@@ -308,6 +308,20 @@ class TestStore:
         assert data["failure_streak"] == 4
 
 
+def test_has_valid_review_signal_public():
+    """Public review-signal predicate reused by the postExec gate (#201)."""
+    from zima.execution.failure_guard import has_valid_review_signal
+
+    assert has_valid_review_signal("some output\nStatus: NEEDS_FIX\n") is True
+    assert has_valid_review_signal("Status: PASS") is True
+    assert has_valid_review_signal("Status: NO_NEW_COMMITS\n") is True
+    assert has_valid_review_signal("<zima-review><verdict>approved</verdict></zima-review>") is True
+    assert has_valid_review_signal("") is False
+    assert has_valid_review_signal("Status: NEEDS_F") is False  # truncated line
+    assert has_valid_review_signal("<zima-review><verdict></verdict>") is False  # unclosed
+    assert has_valid_review_signal(None) is False
+
+
 class TestOverridesFlag:
     def test_roundtrip_and_default(self):
         from zima.models.pjob import Overrides

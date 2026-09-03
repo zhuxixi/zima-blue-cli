@@ -173,12 +173,13 @@ def _has_review_verdict(stdout: str) -> bool:
     return bool(verdict and verdict.strip())
 
 
-def _has_valid_review_signal(stdout: str) -> bool:
+def has_valid_review_signal(stdout: str) -> bool:
     """True when stdout carries ANY spec §5.1 valid-review signal.
 
     Accepts a well-formed ``<zima-review>`` XML verdict OR a complete
     ``Status: PASS|NEEDS_FIX|NO_NEW_COMMITS`` line. Truncated output lacking
     BOTH a closed XML block and a complete Status line stays invalid.
+    Also used by the executor's postExec requireReview gate (#201).
     """
     return _has_review_verdict(stdout) or bool(_STATUS_LINE_RE.search(stdout or ""))
 
@@ -201,7 +202,7 @@ def classify_execution_result(
     """
     if status == "skipped":
         return GuardOutcome("skipped", countable_failure=False, clears_streak=False)
-    if _has_valid_review_signal(stdout):
+    if has_valid_review_signal(stdout):
         return GuardOutcome("valid_review", countable_failure=False, clears_streak=True)
     if status == "success":
         if expect_review_verdict:
