@@ -26,6 +26,7 @@ from zima.execution.failure_guard import (
     FailureGuard,
     GuardStateError,
     classify_execution_result,
+    has_valid_review_signal,
     normalize_target,
 )
 from zima.execution.history import ExecutionHistory
@@ -1059,6 +1060,11 @@ class PJobExecutor:
                 actions=pjob.spec.actions,
                 returncode=effective_returncode,
                 env=env_vars,
+                # requireReview gate (#201): pass whether agent stdout carried
+                # a valid review signal (Status line / zima-review XML); actions
+                # with require_review=True are skipped when no review happened
+                # (e.g. E2BIG startup failure must not label needs-fix).
+                has_review_signal=has_valid_review_signal(result.stdout or ""),
             )
             result.action_errors.extend(action_errors)
         except Exception as e:

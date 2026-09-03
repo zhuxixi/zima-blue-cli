@@ -1,5 +1,6 @@
 """Integration tests for PJobExecutor postExec actions."""
 
+import sys
 from unittest.mock import MagicMock
 
 import pytest
@@ -298,3 +299,118 @@ class TestPreExecToPostExecFlow(TestIsolator):
         # postExec should use the dynamic vars for label action
         mock_ops.add_label.assert_called_once_with("owner/repo", "99", "zima:approved")
         mock_ops.remove_label.assert_called_once_with("owner/repo", "99", "zima:needs-review")
+
+
+class TestRequireReviewExecutorGate(TestIsolator):
+    """requireReview gate wiring: the executor must pass the review-signal
+    flag (from agent stdout) through to ActionsRunner.run (#201)."""
+
+    def _run_gate_pjob(self, isolated_zima_home, config_manager, mock_command, post_exec):
+        """Build agent+workflow+variable+pjob with the given mock command and
+        postExec actions, execute with a mocked provider registry, and return
+        (result, mock_ops)."""
+        from zima.config.manager import ConfigManager
+        from zima.models.variable import VariableConfig
+        from zima.models.workflow import WorkflowConfig
+
+        agent_data = {
+            "apiVersion": "zima.io/v1",
+            "kind": "Agent",
+            "metadata": {"code": "gate-agent", "name": "Gate Agent"},
+            "spec": {"type": "kimi", "parameters": {"mockCommand": mock_command}},
+        }
+        config_manager.save_config("agent", "gate-agent", agent_data)
+
+        wf = WorkflowConfig.create(code="gate-wf", name="Gate Workflow", template="Hello")
+        config_manager.save_config("workflow", "gate-wf", wf.to_dict())
+
+        var = VariableConfig.create(code="gate-var", name="Gate Variables", values={})
+        config_manager.save_config("variable", "gate-var", var.to_dict())
+
+        pjob = PJobConfig.create(
+            code="gate-pjob",
+            name="Gate PJob",
+            agent="gate-agent",
+            workflow="gate-wf",
+            variable="gate-var",
+        )
+        pjob.spec.actions = ActionsConfig(post_exec=post_exec)
+        manager = ConfigManager()
+        manager.save_config("pjob", "gate-pjob", pjob.to_dict())
+
+        executor = PJobExecutor()
+        mock_ops = MagicMock()
+        mock_registry = MagicMock()
+        mock_registry.get.return_value = mock_ops
+        executor._actions_runner._registry = mock_registry
+        result = executor.execute("gate-pjob")
+        return result, mock_ops
+
+    def test_startup_failure_skips_require_review_action(self, isolated_zima_home, config_manager):
+        """Agent exits 1 with empty stdout (E2BIG-like): the requireReview
+        failure action must NOT fire — label stays untouched (#201)."""
+        result, mock_ops = self._run_gate_pjob(
+            isolated_zima_home,
+            config_manager,
+            [sys.executable, "-c", "raise SystemExit(1)"],
+            [
+                PostExecAction(
+                    condition="failure",
+                    type="add_label",
+                    add_labels=["zima:needs-fix"],
+                    remove_labels=["zima:needs-review"],
+                    repo="owner/repo",
+                    issue="42",
+                    require_review=True,
+                )
+            ],
+        )
+        assert result.status.value == "failed"
+        mock_ops.add_label.assert_not_called()
+        mock_ops.remove_label.assert_not_called()
+
+    def test_needs_fix_status_line_still_fires_require_review_action(
+        self, isolated_zima_home, config_manager
+    ):
+        """Agent exits 1 but stdout carries 'Status: NEEDS_FIX': action fires.
+        No <zima-review> XML — effective_returncode stays 1 (failure condition
+        matches) AND the Status line opens the gate (#201)."""
+        result, mock_ops = self._run_gate_pjob(
+            isolated_zima_home,
+            config_manager,
+            [sys.executable, "-c", "print('Status: NEEDS_FIX'); raise SystemExit(1)"],
+            [
+                PostExecAction(
+                    condition="failure",
+                    type="add_label",
+                    add_labels=["zima:needs-fix"],
+                    remove_labels=["zima:needs-review"],
+                    repo="owner/repo",
+                    issue="42",
+                    require_review=True,
+                )
+            ],
+        )
+        assert result.status.value == "failed"
+        mock_ops.add_label.assert_called_once_with("owner/repo", "42", "zima:needs-fix")
+
+    def test_success_without_review_skips_remove_label(self, isolated_zima_home, config_manager):
+        """exit 0 但无 review 信号：requireReview 的 success 动作（摘
+        needs-review）同样被跳过 —— 无审查不摘待审标签（spec §2.2 连带语义）。"""
+        result, mock_ops = self._run_gate_pjob(
+            isolated_zima_home,
+            config_manager,
+            [sys.executable, "-c", "print('finished without a review verdict')"],
+            [
+                PostExecAction(
+                    condition="success",
+                    type="add_label",
+                    remove_labels=["zima:needs-review"],
+                    repo="owner/repo",
+                    issue="42",
+                    require_review=True,
+                )
+            ],
+        )
+        assert result.status.value == "success"
+        mock_ops.remove_label.assert_not_called()
