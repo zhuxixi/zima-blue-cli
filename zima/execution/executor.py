@@ -38,16 +38,11 @@ from zima.utils import generate_timestamp, get_zima_home
 # repo allow-list). Scan-provided repo values must match before they may
 # drive rendering or postExec gh targets (#158).
 
-# Free-text scan values (pr_title/pr_url/pr_diff) entering the agent env /
-# templates are capped to keep E2BIG and render blowups off the table
-# (#158 R21). Diff text is the largest legitimate payload — 1 MiB headroom.
-_DISCOVERED_TEXT_MAX = 1_048_576
-
-# Byte-based cap for the same free-text values. The kernel limits a single
-# argv/envp string to MAX_ARG_STRLEN = 131072 BYTES (incl. the "KEY=" prefix
-# and trailing NUL), so a char-based cap cannot bound byte length for CJK
-# text (1 char = 3 bytes UTF-8) — #158's 1 MiB char cap never actually
-# prevented E2BIG (#201). Task 2 rewires the truncation loop to this.
+# Byte-based cap for free-text scan values (pr_title/pr_url/pr_diff).
+# The kernel limits a single argv/envp string to MAX_ARG_STRLEN = 131072
+# BYTES (incl. the "KEY=" prefix and trailing NUL), so a char-based cap
+# cannot bound byte length for CJK text (1 char = 3 bytes UTF-8) — #158's
+# 1 MiB char cap never actually prevented E2BIG (#201).
 _DISCOVERED_TEXT_MAX_BYTES = 100_000
 
 
@@ -482,18 +477,19 @@ class PJobExecutor:
 
                     # Remaining scan-discovered values (pr_title / pr_url /
                     # pr_diff) are provider/author-controlled free text: cap
-                    # them before they enter the agent subprocess env (E2BIG)
+                    # them BYTES-wise before they enter the agent subprocess
+                    # env (E2BIG / MAX_ARG_STRLEN is a per-string byte limit)
                     # and Jinja2 rendering. A cap hit means a pathological
-                    # payload, so the value is truncated loudly (#158 R21).
+                    # payload, so the value is truncated loudly (#201).
                     for _dk in [k for k in dynamic_vars if k.startswith("pr_")]:
                         _dv = str(dynamic_vars[_dk])
-                        if len(_dv) > _DISCOVERED_TEXT_MAX:
+                        if len(_dv.encode("utf-8")) > _DISCOVERED_TEXT_MAX_BYTES:
                             print(
                                 f"Warning: discovered {_dk} exceeds "
-                                f"{_DISCOVERED_TEXT_MAX} chars (len={len(_dv)}); "
-                                f"truncating (#158)"
+                                f"{_DISCOVERED_TEXT_MAX_BYTES} bytes "
+                                f"(len={len(_dv)} chars); truncating (#201)"
                             )
-                            dynamic_vars[_dk] = _dv[:_DISCOVERED_TEXT_MAX]
+                            dynamic_vars[_dk] = truncate_utf8_bytes(_dv, _DISCOVERED_TEXT_MAX_BYTES)
 
                     # Merge discovered vars into env (for postExec substitution)
                     # Skip keys that already exist in runtime overrides (higher priority)

@@ -1494,16 +1494,30 @@ class TestSingleSinkPrAliasGate:
         assert "99" not in text
 
     def test_overlong_pr_diff_truncated_loudly(self, isolated_zima_home, capsys):
-        """A >1MiB discovered pr_diff is capped before entering env/render
-        (#158 R21)."""
-        from zima.execution.executor import _DISCOVERED_TEXT_MAX
+        """A >100KB-byte discovered pr_diff is capped before entering env/render
+        (#201 — byte-based; #158's char cap could not prevent E2BIG for CJK)."""
+        from zima.execution.executor import _DISCOVERED_TEXT_MAX_BYTES
 
         result, _ = self._run_with_discovered(
-            isolated_zima_home, {"pr_number": "42", "pr_diff": "x" * (_DISCOVERED_TEXT_MAX + 5)}
+            isolated_zima_home,
+            {"pr_number": "42", "pr_diff": "x" * (_DISCOVERED_TEXT_MAX_BYTES + 5)},
         )
         assert result.status == ExecutionStatus.SUCCESS
         out = capsys.readouterr().out
         assert "pr_diff exceeds" in out
+        assert "bytes" in out
+
+    def test_overlong_cjk_pr_diff_truncated_by_bytes(self, isolated_zima_home):
+        """CJK diff: byte cap binds even when char count is far below it (#201).
+        100_000 CJK chars = 300KB bytes — must still land under the byte cap."""
+        from zima.execution.executor import _DISCOVERED_TEXT_MAX_BYTES
+
+        cjk_diff = "汉" * _DISCOVERED_TEXT_MAX_BYTES
+        result, _ = self._run_with_discovered(
+            isolated_zima_home, {"pr_number": "42", "pr_diff": cjk_diff}
+        )
+        assert result.status == ExecutionStatus.SUCCESS
+        assert len(result.env["pr_diff"].encode("utf-8")) <= _DISCOVERED_TEXT_MAX_BYTES
 
     def test_truncate_utf8_bytes_ascii_boundary(self):
         from zima.execution.executor import truncate_utf8_bytes
