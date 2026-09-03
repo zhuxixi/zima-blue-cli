@@ -106,7 +106,7 @@
 
 | ID | 功能点 | 验收方式 | 具体验证 | 通过标准 |
 |----|--------|----------|----------|----------|
-| A1 | 主派发示例不再硬编码模型 | 自动化验证（unit/static） | `uv run pytest tests/unit/test_cr_batch_contracts.py -k model_routing_docs` | Step 4 的 `runs.all` 示例中不存在 `model` 字段，且 `flow.md` / `subagent-prompts.md` 不再把具体模型写成通用推荐 |
+| A1 | 主派发示例不再硬编码模型 | 自动化验证（unit/static） | `uv run pytest tests/unit/test_cr_batch_contracts.py::TestModelDispatchDocs` | Step 4 的 `runs.all` 示例中不存在 `model` 字段，且 `flow.md` / `subagent-prompts.md` 不再把具体模型写成通用推荐 |
 | A2 | 显式模型确认流程准确 | 自动化验证（unit/static） | 同上 | 文档明确父 Pi 负责确认、完整 `provider/id`、registry 与 effective modelScope 分开检查；无法确认时省略 `model` |
 | A3 | modelScope 语义准确 | 自动化验证（unit/static） | 同上 | 文档涵盖 global allow、`agents.reviewer.allow`、`enforce`、`strict`、thinking suffix 和项目级替换规则 |
 | A4 | enabledModels 语义准确 | 自动化验证（unit/static） | 同上 | 文档明确 `enabledModels` 只定义主会话范围/循环候选，不是 subagent allowlist，并说明可能的 parent inheritance 间接影响 |

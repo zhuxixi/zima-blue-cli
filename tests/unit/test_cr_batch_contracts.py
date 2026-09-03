@@ -309,7 +309,8 @@ class TestModelDispatchDocs:
 
     def test_docs_no_hardcoded_deepseek_models(self, texts):
         for name, text in texts.items():
-            assert "deepseek-v4" not in text, f"hardcoded model remains in {name}"
+            for pattern in ("deepseek-v4", "zai-coding-cn"):
+                assert pattern not in text, f"hardcoded model remains in {name}"
 
     # --- A2: explicit-model confirmation flow is documented ---
 
