@@ -4,6 +4,7 @@
 
 ### Fixes
 - **cr**: failure-guard advisory follow-ups (#202) (#215)
+- **executor**: byte-cap pr_diff env injection + requireReview postExec gate (#201) (#218)
 
 ### Changes
 - **cr-batch**: fix model dispatch guidance for modelScope compatibility (#207) (#216)
