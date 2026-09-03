@@ -309,6 +309,10 @@ class TestReviewerPJob:
         assert "zima:needs-fix" in config.spec.actions.post_exec[1].add_labels
         assert config.spec.actions.post_exec[1].repo == "{{repo}}"
         assert config.spec.actions.post_exec[1].issue == "{{pr_number}}"
+        # Both actions require a review signal (#201) — no mislabeling when
+        # the agent never produced a review (e.g. E2BIG startup failure)
+        assert config.spec.actions.post_exec[0].require_review is True
+        assert config.spec.actions.post_exec[1].require_review is True
         assert config.is_valid()
 
     def test_reviewer_pjob_constant_matches_dict(self):

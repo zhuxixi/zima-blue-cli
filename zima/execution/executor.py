@@ -26,6 +26,7 @@ from zima.execution.failure_guard import (
     FailureGuard,
     GuardStateError,
     classify_execution_result,
+    has_valid_review_signal,
     normalize_target,
 )
 from zima.execution.history import ExecutionHistory
@@ -38,10 +39,24 @@ from zima.utils import generate_timestamp, get_zima_home
 # repo allow-list). Scan-provided repo values must match before they may
 # drive rendering or postExec gh targets (#158).
 
-# Free-text scan values (pr_title/pr_url/pr_diff) entering the agent env /
-# templates are capped to keep E2BIG and render blowups off the table
-# (#158 R21). Diff text is the largest legitimate payload — 1 MiB headroom.
-_DISCOVERED_TEXT_MAX = 1_048_576
+# Byte-based cap for free-text scan values (pr_title/pr_url/pr_diff).
+# The kernel limits a single argv/envp string to MAX_ARG_STRLEN = 131072
+# BYTES (incl. the "KEY=" prefix and trailing NUL), so a char-based cap
+# cannot bound byte length for CJK text (1 char = 3 bytes UTF-8) — #158's
+# 1 MiB char cap never actually prevented E2BIG (#201).
+_DISCOVERED_TEXT_MAX_BYTES = 100_000
+
+
+def truncate_utf8_bytes(text: str, limit: int) -> str:
+    """Truncate text to at most ``limit`` UTF-8 bytes without splitting a
+    codepoint; the partial tail is dropped via errors="ignore" (#201).
+
+    The kernel counts envp strings in bytes, so env-injected free text must
+    be capped in bytes, not characters.
+    """
+    if limit < 0:
+        raise ValueError(f"limit must be >= 0, got {limit}")
+    return text.encode("utf-8")[:limit].decode("utf-8", errors="ignore")
 
 
 class ExecutionStatus(Enum):
@@ -463,18 +478,19 @@ class PJobExecutor:
 
                     # Remaining scan-discovered values (pr_title / pr_url /
                     # pr_diff) are provider/author-controlled free text: cap
-                    # them before they enter the agent subprocess env (E2BIG)
+                    # them BYTES-wise before they enter the agent subprocess
+                    # env (E2BIG / MAX_ARG_STRLEN is a per-string byte limit)
                     # and Jinja2 rendering. A cap hit means a pathological
-                    # payload, so the value is truncated loudly (#158 R21).
+                    # payload, so the value is truncated loudly (#201).
                     for _dk in [k for k in dynamic_vars if k.startswith("pr_")]:
                         _dv = str(dynamic_vars[_dk])
-                        if len(_dv) > _DISCOVERED_TEXT_MAX:
+                        if len(_dv.encode("utf-8")) > _DISCOVERED_TEXT_MAX_BYTES:
                             print(
                                 f"Warning: discovered {_dk} exceeds "
-                                f"{_DISCOVERED_TEXT_MAX} chars (len={len(_dv)}); "
-                                f"truncating (#158)"
+                                f"{_DISCOVERED_TEXT_MAX_BYTES} bytes "
+                                f"(len={len(_dv)} chars); truncating (#201)"
                             )
-                            dynamic_vars[_dk] = _dv[:_DISCOVERED_TEXT_MAX]
+                            dynamic_vars[_dk] = truncate_utf8_bytes(_dv, _DISCOVERED_TEXT_MAX_BYTES)
 
                     # Merge discovered vars into env (for postExec substitution)
                     # Skip keys that already exist in runtime overrides (higher priority)
@@ -1044,6 +1060,11 @@ class PJobExecutor:
                 actions=pjob.spec.actions,
                 returncode=effective_returncode,
                 env=env_vars,
+                # requireReview gate (#201): pass whether agent stdout carried
+                # a valid review signal (Status line / zima-review XML); actions
+                # with require_review=True are skipped when no review happened
+                # (e.g. E2BIG startup failure must not label needs-fix).
+                has_review_signal=has_valid_review_signal(result.stdout or ""),
             )
             result.action_errors.extend(action_errors)
         except Exception as e:

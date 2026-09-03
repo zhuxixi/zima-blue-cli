@@ -105,6 +105,47 @@ class TestPostExecAction:
             assert "Invalid type" in errors[0]
 
 
+class TestPostExecActionRequireReview:
+    def test_default_false(self):
+        action = PostExecAction.from_dict(
+            {"condition": "failure", "type": "add_label", "repo": "a/b", "issue": "1"}
+        )
+        assert action.require_review is False
+
+    def test_yaml_alias_roundtrip(self):
+        action = PostExecAction.from_dict(
+            {
+                "condition": "failure",
+                "type": "add_label",
+                "repo": "a/b",
+                "issue": "1",
+                "requireReview": True,
+            }
+        )
+        assert action.require_review is True
+        assert action.to_dict()["requireReview"] is True
+
+    def test_false_omitted_in_to_dict(self):
+        """omit_empty preserves False (serialization.py:338), so to_dict must
+        explicitly drop the flag to keep saved YAMLs noise-free (#201)."""
+        action = PostExecAction(condition="failure", type="add_label", repo="a/b", issue="1")
+        assert "requireReview" not in action.to_dict()
+
+    def test_legacy_yaml_without_field_loads(self):
+        """Pre-#201 PJob YAMLs (no requireReview key) load unchanged."""
+        action = PostExecAction.from_dict(
+            {
+                "condition": "success",
+                "type": "add_label",
+                "removeLabels": ["zima:needs-review"],
+                "repo": "{{repo}}",
+                "issue": "{{pr_number}}",
+            }
+        )
+        assert action.require_review is False
+        assert action.remove_labels == ["zima:needs-review"]
+
+
 class TestActionsConfig:
     def test_empty_config(self):
         """Test creating an empty ActionsConfig."""

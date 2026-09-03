@@ -224,12 +224,14 @@ spec:
     postExec:
       - condition: success
         type: add_label
+        requireReview: true
         removeLabels:
           - zima:needs-review
         repo: "{{repo}}"
         issue: "{{pr_number}}"
       - condition: failure
         type: add_label
+        requireReview: true
         addLabels:
           - zima:needs-fix
         removeLabels:
