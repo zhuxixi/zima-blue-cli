@@ -348,6 +348,20 @@ class TestModelDispatchDocs:
         # indirect parent-model inheritance influence acknowledged
         assert "继承父 session 模型" in flow
 
+    # --- A5: prompts header has no stale guidance ---
+
+    def test_prompts_header_no_stale_inheritance_claim(self, texts):
+        prompts = texts["prompts"]
+        assert "缺省继承当前模型" not in prompts
+        assert "以 `enabledModels` 为准" not in prompts
+
+    def test_prompts_header_documents_resolution_chain(self, texts):
+        prompts = texts["prompts"]
+        assert "subagents.defaultModel" in prompts
+        assert "modelScope" in prompts
+        # model selection belongs to the parent Pi, not the child reviewer
+        assert "父 Pi" in prompts
+
 
 # ---------------------------------------------------------------------------
 # Contract 2: status report block + 3-state Status enum
