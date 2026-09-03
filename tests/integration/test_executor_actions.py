@@ -1,12 +1,13 @@
 """Integration tests for PJobExecutor postExec actions."""
 
+import os
 import sys
 from unittest.mock import MagicMock
 
 import pytest
 
 from tests.base import TestIsolator
-from zima.execution.executor import PJobExecutor
+from zima.execution.executor import _DISCOVERED_TEXT_MAX_BYTES, PJobExecutor
 from zima.models.actions import ActionsConfig, PostExecAction
 from zima.models.pjob import PJobConfig
 
@@ -414,3 +415,23 @@ class TestRequireReviewExecutorGate(TestIsolator):
         )
         assert result.status.value == "success"
         mock_ops.remove_label.assert_not_called()
+
+
+def test_large_cjk_env_value_does_not_e2big(isolated_zima_home):
+    """A 100KB-byte UTF-8 CJK env value must not trigger E2BIG at Popen (#201).
+
+    Per-string budget: MAX_ARG_STRLEN=131072 bytes incl. "KEY=" and NUL;
+    the #201 byte cap (100_000) keeps any single envp string under it.
+    """
+    cjk_value = "汉" * (_DISCOVERED_TEXT_MAX_BYTES // 3)  # 99_999 bytes
+    assert len(cjk_value.encode("utf-8")) <= _DISCOVERED_TEXT_MAX_BYTES
+
+    executor = PJobExecutor()
+    env = {**os.environ, "pr_diff": cjk_value}
+    returncode, stdout, stderr, pid = executor._run_command(
+        command=[sys.executable, "-c", "pass"],
+        env=env,
+        work_dir=str(isolated_zima_home),
+        timeout=30,
+    )
+    assert returncode == 0
