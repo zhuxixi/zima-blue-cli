@@ -284,12 +284,20 @@ class TestModelDispatchDocs:
 
     @pytest.fixture(scope="class")
     def texts(self) -> dict[str, str]:
-        return {
+        # A5 directory-wide contract: load every *.md under the skill dir so the
+        # no-hardcoded-model guard covers SKILL.md and all references/*.md files.
+        docs = {
             "flow": (SKILL_DIR / "references" / "flow.md").read_text(encoding="utf-8"),
             "prompts": (SKILL_DIR / "references" / "subagent-prompts.md").read_text(
                 encoding="utf-8"
             ),
         }
+        for md_path in sorted(SKILL_DIR.rglob("*.md")):
+            docs.setdefault(
+                str(md_path.relative_to(SKILL_DIR)),
+                md_path.read_text(encoding="utf-8"),
+            )
+        return docs
 
     @staticmethod
     def _step4_runs_all_example(flow_text: str) -> str:
