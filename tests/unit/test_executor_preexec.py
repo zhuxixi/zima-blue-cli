@@ -1504,3 +1504,31 @@ class TestSingleSinkPrAliasGate:
         assert result.status == ExecutionStatus.SUCCESS
         out = capsys.readouterr().out
         assert "pr_diff exceeds" in out
+
+    def test_truncate_utf8_bytes_ascii_boundary(self):
+        from zima.execution.executor import truncate_utf8_bytes
+
+        assert truncate_utf8_bytes("x" * 200, 100) == "x" * 100
+        assert truncate_utf8_bytes("short", 100) == "short"
+
+    def test_truncate_utf8_bytes_cjk_no_split(self):
+        from zima.execution.executor import truncate_utf8_bytes
+
+        text = "汉" * 100  # 300 bytes UTF-8
+        out = truncate_utf8_bytes(text, 100)
+        # 100 bytes cuts mid-codepoint (99 = 33 chars); tail must be dropped,
+        # never a decode error or replacement char
+        assert len(out.encode("utf-8")) == 99
+        assert out == "汉" * 33
+
+    def test_truncate_utf8_bytes_empty_and_zero(self):
+        from zima.execution.executor import truncate_utf8_bytes
+
+        assert truncate_utf8_bytes("", 100) == ""
+        assert truncate_utf8_bytes("abc", 0) == ""
+
+    def test_cap_fits_max_arg_strlen(self):
+        """Byte cap + "pr_diff=" prefix + NUL must stay under 131072 (#201)."""
+        from zima.execution.executor import _DISCOVERED_TEXT_MAX_BYTES
+
+        assert _DISCOVERED_TEXT_MAX_BYTES + len("pr_diff=") + 1 <= 131072

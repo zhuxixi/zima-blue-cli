@@ -43,6 +43,25 @@ from zima.utils import generate_timestamp, get_zima_home
 # (#158 R21). Diff text is the largest legitimate payload — 1 MiB headroom.
 _DISCOVERED_TEXT_MAX = 1_048_576
 
+# Byte-based cap for the same free-text values. The kernel limits a single
+# argv/envp string to MAX_ARG_STRLEN = 131072 BYTES (incl. the "KEY=" prefix
+# and trailing NUL), so a char-based cap cannot bound byte length for CJK
+# text (1 char = 3 bytes UTF-8) — #158's 1 MiB char cap never actually
+# prevented E2BIG (#201). Task 2 rewires the truncation loop to this.
+_DISCOVERED_TEXT_MAX_BYTES = 100_000
+
+
+def truncate_utf8_bytes(text: str, limit: int) -> str:
+    """Truncate text to at most ``limit`` UTF-8 bytes without splitting a
+    codepoint; the partial tail is dropped via errors="ignore" (#201).
+
+    The kernel counts envp strings in bytes, so env-injected free text must
+    be capped in bytes, not characters.
+    """
+    if limit < 0:
+        raise ValueError(f"limit must be >= 0, got {limit}")
+    return text.encode("utf-8")[:limit].decode("utf-8", errors="ignore")
+
 
 class ExecutionStatus(Enum):
     """Execution status enum."""
