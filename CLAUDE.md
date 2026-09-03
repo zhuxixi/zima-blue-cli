@@ -157,7 +157,7 @@ Customizable via `ZIMA_HOME` env var.
 ## Testing
 
 - **`tests/unit/`** — Pure unit tests for models and config manager
-- **pi skill scripts** have contract tests under `tests/unit/` (`test_wait_cr.py`, `test_cr_batch_*.py`) run by the main pytest suite/CI — run them when editing `pi/*/scripts/*.py`
+- **pi skill scripts** have contract tests under `tests/unit/` (`test_wait_cr.py`, `test_cr_batch_*.py`) run by the main pytest suite/CI — run them when editing `pi/*/scripts/*.py`; the cr-batch skill's `*.md` docs are contract-locked too (`TestModelDispatchDocs` reads every `*.md` under `pi/github-code-review-batch/` and fails on hardcoded model names)
 - **`tests/integration/`** — CLI command tests using Typer's `CliRunner`, subprocess integration tests
 - **`tests/conftest.py`** — Fixtures: `isolated_zima_home` (temp ZIMA_HOME), `config_manager`, `cli_runner`, `unique_code`
 - **`tests/base.py`** — `TestIsolator` base class with `setup_isolation` autouse fixture
