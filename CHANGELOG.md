@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.2] - 2026-09-04
+
+### Fixes
+- **cr**: failure-guard advisory follow-ups (#202) (#215)
+
+### Changes
+- **cr-batch**: fix model dispatch guidance for modelScope compatibility (#207) (#216)
+
+[0.8.2]: https://github.com/zhuxixi/zima-blue-cli/compare/v0.8.1...v0.8.2
+
 ## [0.8.1] - 2026-09-02
 
 ### Features
