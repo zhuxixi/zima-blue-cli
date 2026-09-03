@@ -1016,3 +1016,96 @@ class TestPinnedLabelRecheck:
                 pin_env={"pr_number": "11", "repo": "not a repo"},
             )
             assert result["repo"] == "literal/repo"
+
+
+class TestRequireReviewGate:
+    """requireReview gate on postExec actions (#201).
+
+    Actions with require_review=True are skipped when the agent stdout
+    carried no valid review signal; legacy actions (flag unset) behave
+    exactly as before.
+    """
+
+    def _actions_cfg(self, require_review: bool) -> ActionsConfig:
+        return ActionsConfig(
+            provider="github",
+            post_exec=[
+                PostExecAction(
+                    condition="failure",
+                    type="add_label",
+                    add_labels=["zima:needs-fix"],
+                    remove_labels=["zima:needs-review"],
+                    repo="a/b",
+                    issue="1",
+                    require_review=require_review,
+                )
+            ],
+        )
+
+    def test_gate_skips_without_signal(self, capsys):
+        """requireReview + no review signal → provider never called (#201)."""
+        runner = ActionsRunner()
+        provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=provider):
+            errors = runner.run(
+                self._actions_cfg(require_review=True),
+                returncode=1,
+                env={},
+                has_review_signal=False,
+            )
+        assert errors == []
+        assert not provider.add_label.called
+        assert not provider.remove_label.called
+        assert "requireReview" in capsys.readouterr().out
+
+    def test_gate_fires_with_signal(self):
+        """requireReview + valid review signal → action executes normally."""
+        runner = ActionsRunner()
+        provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=provider):
+            errors = runner.run(
+                self._actions_cfg(require_review=True),
+                returncode=1,
+                env={},
+                has_review_signal=True,
+            )
+        assert errors == []
+        provider.add_label.assert_called_once_with("a/b", "1", "zima:needs-fix")
+
+    def test_legacy_action_fires_without_signal(self):
+        """No requireReview → legacy behavior unchanged even without signal."""
+        runner = ActionsRunner()
+        provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=provider):
+            errors = runner.run(
+                self._actions_cfg(require_review=False),
+                returncode=1,
+                env={},
+                has_review_signal=False,
+            )
+        assert errors == []
+        provider.add_label.assert_called_once_with("a/b", "1", "zima:needs-fix")
+
+    def test_default_param_keeps_legacy_callers(self):
+        """run() without has_review_signal kwarg behaves as True (old callers)."""
+        runner = ActionsRunner()
+        provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=provider):
+            errors = runner.run(self._actions_cfg(require_review=True), returncode=1, env={})
+        assert errors == []
+        provider.add_label.assert_called_once()
+
+    def test_substitute_env_preserves_require_review(self):
+        """_substitute_env rebuilds the action with explicit kwargs — the flag
+        must survive substitution or the gate silently never fires (#201)."""
+        runner = ActionsRunner()
+        action = PostExecAction(
+            condition="failure",
+            type="add_label",
+            repo="{{repo}}",
+            issue="{{pr_number}}",
+            require_review=True,
+        )
+        processed = runner._substitute_env(action, {"repo": "a/b", "pr_number": "1"})
+        assert processed.require_review is True
+        assert processed.repo == "a/b"
