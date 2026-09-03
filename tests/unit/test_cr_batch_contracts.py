@@ -26,6 +26,7 @@ from __future__ import annotations
 import ast
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 from copy import deepcopy
@@ -270,6 +271,105 @@ class TestBlockingPolicyDocumentation:
         assert "multi-flow" in low_only
         assert "in-flight" in low_only
         assert "CI" in low_only
+
+
+class TestModelDispatchDocs:
+    """Issue #207: dispatch guidance must not hardcode models or cite
+    enabledModels as the subagent dispatch authority.
+
+    The Step 4 runs.all example omits ``model``; explicit per-role tiering is
+    documented as a parent-Pi responsibility requiring a full provider/id that
+    passes both the registry and the effective subagents.modelScope.
+    """
+
+    @pytest.fixture(scope="class")
+    def texts(self) -> dict[str, str]:
+        # A5 directory-wide contract: load every *.md under the skill dir so the
+        # no-hardcoded-model guard covers SKILL.md and all references/*.md files.
+        docs = {
+            "flow": (SKILL_DIR / "references" / "flow.md").read_text(encoding="utf-8"),
+            "prompts": (SKILL_DIR / "references" / "subagent-prompts.md").read_text(
+                encoding="utf-8"
+            ),
+        }
+        for md_path in sorted(SKILL_DIR.rglob("*.md")):
+            docs.setdefault(
+                str(md_path.relative_to(SKILL_DIR)),
+                md_path.read_text(encoding="utf-8"),
+            )
+        return docs
+
+    @staticmethod
+    def _step4_runs_all_example(flow_text: str) -> str:
+        """Extract the first js code block inside flow.md Step 4 (the runs.all fanout)."""
+        step4 = flow_text.split("## Step 4", 1)[1].split("## Step 5", 1)[0]
+        blocks = re.findall(r"```js\n(.*?)```", step4, re.DOTALL)
+        assert (
+            blocks and "runs.all" in blocks[0]
+        ), "Step 4 must contain a js code block with the runs.all fanout"
+        return blocks[0]
+
+    # --- A1: canonical dispatch example carries no model selection ---
+
+    def test_step4_example_has_no_model_field(self, texts):
+        block = self._step4_runs_all_example(texts["flow"])
+        assert "model:" not in block
+
+    def test_docs_no_hardcoded_deepseek_models(self, texts):
+        for name, text in texts.items():
+            for pattern in ("deepseek-v4", "zai-coding-cn"):
+                assert pattern not in text, f"hardcoded model remains in {name}"
+
+    # --- A2: explicit-model confirmation flow is documented ---
+
+    def test_flow_documents_parent_pi_confirmation_flow(self, texts):
+        flow = texts["flow"]
+        assert 'subagent({action:"models"})' in flow
+        assert "provider/id" in flow
+        # registry listing must be distinguished from modelScope policy
+        assert "不代表模型通过了 modelScope" in flow
+
+    def test_flow_documents_omit_model_when_unverified(self, texts):
+        assert "省略 `model`" in texts["flow"]
+
+    def test_flow_documents_full_provider_id_requirement(self, texts):
+        flow = texts["flow"]
+        assert "完整的 `provider/id`" in flow
+        assert "bare model ID" in flow
+
+    # --- A3: modelScope semantics ---
+
+    def test_flow_documents_model_scope_layers(self, texts):
+        flow = texts["flow"]
+        assert "subagents.modelScope" in flow
+        assert "agents.reviewer.allow" in flow
+        assert "`enforce: true`" in flow
+        assert "`strict: true`" in flow
+        assert "整体替换" in flow  # project-level modelScope replaces user-level
+        assert ":max" in flow and "剥离" in flow  # thinking suffix stripped
+
+    # --- A4: enabledModels semantics ---
+
+    def test_flow_distinguishes_enabled_models_from_model_scope(self, texts):
+        flow = texts["flow"]
+        assert "enabledModels" in flow
+        assert "不是 subagent 的 modelScope allowlist" in flow
+        # indirect parent-model inheritance influence acknowledged
+        assert "继承父 session 模型" in flow
+
+    # --- A5: prompts header has no stale guidance ---
+
+    def test_prompts_header_no_stale_inheritance_claim(self, texts):
+        prompts = texts["prompts"]
+        assert "缺省继承当前模型" not in prompts
+        assert "以 `enabledModels` 为准" not in prompts
+
+    def test_prompts_header_documents_resolution_chain(self, texts):
+        prompts = texts["prompts"]
+        assert "subagents.defaultModel" in prompts
+        assert "modelScope" in prompts
+        # model selection belongs to the parent Pi, not the child reviewer
+        assert "父 Pi" in prompts
 
 
 # ---------------------------------------------------------------------------
