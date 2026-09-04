@@ -73,7 +73,7 @@ references 共 5 个文件（非 4 个）：`edge-cases.md` 两版一致、零 p
 | A2 | pi 版既有契约不回归（改动未触碰 pi 行为） | 自动化验证（unit） | `uv run pytest tests/unit/ -q` | 既有 6 个 cr_batch 测试文件全绿 |
 | A3 | 版本号两处一致 bump | 自动化验证（static） | `grep -h '"version"' plugins/pr-automation/.claude-plugin/plugin.json .claude-plugin/marketplace.json` | 两处均为 0.6.0 |
 | A4 | scripts 无 pi 残留字面量 | 自动化验证（static） | `rg -n "pi-cr-meta\|pi-coding-agent\|PI_MARKER" plugins/pr-automation/skills/*/scripts/*.py` | 零命中 |
-| A5 | SKILL.md/references 无 pi 环境残留 | 自动化验证（static） | `rg -n "\.pi/\|pi-subagents\|modelScope\|pi-coding-agent\|workflowScript\|runs\.all\|pi-cr-meta" plugins/pr-automation/skills/*/SKILL.md plugins/pr-automation/skills/*/references/` | 零命中，**豁免**见 §2 合法豁免条（跨 bot 罗列与忽略名单提及） |
+| A5 | SKILL.md/references 无 pi 环境残留 | 自动化验证（static） | `rg -n "\.pi/\|pi-subagents\|modelScope\|pi-coding-agent\|workflowScript\|runs\.all\|pi-cr-meta" plugins/pr-automation/skills/*/SKILL.md plugins/pr-automation/skills/*/references/` | 零命中，**豁免**见 §2 合法豁免条（跨 bot 罗列、忽略名单提及、suppress 段的 `.pi/cr-suppressions.json` 兼容路径） |
 | U1 | Claude Code 真实加载 + 真实 PR 跑通一轮 cc CR | 用户实测 | 更新 plugin 后对真实 PR 打 `zima:needs-review`（cc PJob 回退路径） | PR 评论含 `cc-cr-meta` + 状态报告，stdout 含 `<zima-review>`，postExec 标签流转正常 |
 
 ## 风险与对策
