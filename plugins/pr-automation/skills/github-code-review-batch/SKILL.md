@@ -3,8 +3,9 @@ name: github-code-review-batch
 description: |
   对 GitHub Pull Request 进行批量/调度式代码审查（一次性短会话，非监听模式），
   Claude Code 端。多 Agent 并行检查 CLAUDE.md / AGENTS.md 合规性、bug 和逻辑安全问题，
-  通过 issue 验证机制过滤误报。状态通过 PR 评论的 metadata 持久化，
-  供外部调度器（如 zima daemon）交替调度 CR/fix agent。
+  通过 issue 验证机制过滤误报，blocking/advisory 分级驱动修复与收敛判定。
+  状态通过 PR 评论的 metadata 持久化，
+  供 PJob 调度器（zima daemon 或 webhook-server）触发 CR 审查流程。
 
   Use when: 用户要求对指定 PR 进行一次性批量审查或调度式审查，
   且不希望启动后台监听进程。
@@ -16,7 +17,7 @@ description: |
 
 GitHub PR 批量/调度代码审查工具，**非监听模式**。
 
-本 Skill 是**单 Agent 审查**：每次调用由 Claude Code 独立审查 PR，审查结果通过 HTML metadata（`cc-cr-meta`）持久化，供增量审查与外部调度器读取。体系沿革：曾为 cc + kimi 双 Agent 交叉验证，kimi bot 已移除（单 bot 化）——历史 `kimi-cr-meta` 评论在读取评论流时严格忽略，互不干扰。
+本 Skill 是 **Claude Code 单 Agent 审查**：每次调用独立审查 PR，结论通过 `<!-- cc-cr-meta -->` HTML metadata 持久化，供增量审查与外部调度器读取。历史 pi 版（`pi-cr-meta`）与 kimi 版（`kimi-cr-meta`）评论在增量解析时严格忽略——各 harness 的审查历史互不干扰。
 
 **与监听模式的区别**：
 - 每次调用都是独立短会话，执行完立即结束，不启动 background watcher
@@ -26,7 +27,7 @@ GitHub PR 批量/调度代码审查工具，**非监听模式**。
 
 ## 触发与 PR 编号提取
 
-> **⚠️ 触发短语是外部契约**：调度器（zima daemon）通过 skill 名 + 字面短语 `"batch review pr"` / `"review pr batch"` / `"scheduled review pr"` 调用本 skill。改动这些字面短语会破坏外部调度契约——优化 description 时务必保留这三个短语原文。
+> **⚠️ 触发短语是外部契约**：调度器（zima daemon 或 webhook-server）通过 skill 名 + 字面短语 `"batch review pr"` / `"review pr batch"` / `"scheduled review pr"` 调用本 skill。改动这些字面短语会破坏外部调度契约——优化 description 时务必保留这三个短语原文。
 
 支持的调用方式：
 
@@ -78,21 +79,24 @@ PR 编号提取规则（依次尝试）：
 - **`Agent` 启动所有审查/验证 sub-agent**：本 skill 需要的并行+独立上下文执行语义，其他工具（如内联 LLM 调用）保证不了
 - **不依赖任何 MCP 工具（如 `pull_request_read`、`add_issue_comment`）**：保持 skill 在不同环境间可移植，避免对接环境时被 MCP 配置卡住
 - **每轮发布新评论，不编辑旧评论**：metadata 是审查历史的事实记录，覆写会丢失中间状态——下游 fix agent 与人类 reviewer 都依赖完整的轮次链
-- **Acknowledged issues 不计入 open**：尊重 committer 决策，避免跨轮反复打扰；调度器只对真正 open 的 issues 调度 fix agent
+- **Acknowledged issues 不计入 active open**：尊重 committer 决策，避免跨轮反复打扰；调度器只对未 acknowledged/wontfix、`status: open` 且 effective `blocking=true` 的 findings 调度 fix agent
+- **Low 默认 advisory**：下游确定性规范化 `severity=low` → `blocking=false`，其余 severity → `blocking=true`；只有显式 JSON boolean `blocking` 可覆盖，旧 metadata 缺字段时按 severity 派生（缺失/非法 severity 按 medium，因此 blocking）
 
 ## 输出契约
 
 每次执行（除 [Step 1](references/flow.md#step-1)/[Step 7](references/flow.md#step-7) 提前终止外）必须产出三个产物：
 
 1. **终端 Markdown review 报告**（[Step 8](references/flow.md#step-8)）
-2. **PR 评论**（[Step 9](references/flow.md#step-9)）：由 `scripts/build_review_body.py` 生成，包含 `<!-- cc-cr-meta ... -->` 机器可读 header + 人类可读 Round-N 部分。完整样例见 [output-examples.md](references/output-examples.md)
-3. **终端状态报告**（[Step 10](references/flow.md#step-10)）：由 `scripts/render_status_report.py` 生成，三态：
-   - `NEEDS_FIX` — 仍有 open issues 需要修复
-   - `PASS` — 无 open issues（可能有 acknowledged）
+2. **PR 评论**（[Step 9](references/flow.md#step-9)）：由 `scripts/build_review_body.py` 生成，包含 `<!-- cc-cr-meta ... -->` 机器可读 header + 人类可读 Round-N 部分。metadata 保留所有 findings 与事实计数 `total_issues` / `new_count`，并含 `blocking_open_count` / `blocking_new_count` / `advisory_open_count` / `advisory_new_count`；每个 finding 都有规范化后的 boolean `blocking`。Part B 正常列出 blocking findings，并把 advisory findings 完整放在折叠的 `Advisory / non-blocking findings` 小节。完整样例见 [output-examples.md](references/output-examples.md)
+3. **终端状态报告**（[Step 10](references/flow.md#step-10)）：由 `scripts/render_status_report.py` 生成，`Total/New` 保持全量事实计数，新增 blocking/advisory 计数；三态名称和 `Status:` 行契约不变：
+   - `NEEDS_FIX` — 仍有 open blocking findings 需要修复
+   - `PASS` — 无 open blocking findings（可能仍有 advisory 或 acknowledged findings）
    - `NO_NEW_COMMITS` — Step 0 检测到无新 commit，本轮跳过
-   - 状态报告还含 `Critical issues:` 计数与派生的 `Verdict:`（#119：SKIP / BLOCK_MERGE / READY_TO_MERGE / MERGE_WITH_CAUTION），均追加在 `Status:` 行之后，不影响 grep
+   - 新 payload 的 Status、`Verdict:` 与 XML verdict 均由 blocking open count 驱动；完全缺少 blocking 字段的旧 caller 回退到原 `open_count` / `new_count` 语义
+   - 状态报告还含 blocking `Critical issues:` 计数与派生的 `Verdict:`（#119：SKIP / BLOCK_MERGE / READY_TO_MERGE / MERGE_WITH_CAUTION），均追加在 `Status:` 行之后，不影响 grep
+   - 分隔线之后追加 `<zima-review><verdict>...</verdict><summary>...</summary></zima-review>` XML trailer（#176）：zima executor 靠它驱动 postExec 标签流转，claude 型 agent 的退出码同样不反映 verdict，CR PJob 必需
 
-zima daemon 通过 grep `Status: <state>` 决策下一步动作（可选消费 `Verdict:` 优先处理含 critical 的 PR）。
+PJob 调度器（zima daemon 或 webhook-server）通过 grep `Status: <state>` 决策下一步动作（可选消费 `Verdict:` 优先处理含 blocking critical 的 PR）；fix agent 只消费 open blocking findings。
 
 ## SubAgent 概览
 
@@ -139,7 +143,7 @@ gh pr review <PR> --comment --body-file /tmp/cc-cr-{pr}.md      # 发布 review 
 
 1. 仅支持 GitHub 仓库（不支持 GitLab、Bitbucket）
 2. 依赖 `gh` CLI 与 Python 3
-3. 大 PR 审查可能不够全面：单 agent 的 diff 经 `compress_diff.py` 压缩到 4000 字符上限，超长会截断尾部；自 #120 起截断通过状态报告的 `Diff truncated` / `Coverage` 行显式提示（不再静默）
+3. 大 PR 审查可能不够全面：diff 经 `compress_diff.py` 按 agent 职责使用 20K（规范 checker）/12K（bug/logic scanner）预算，超长会截断尾部；自 #120 起截断通过状态报告的 `Diff truncated` / `Coverage` 行显式提示（不再静默）
 4. 不能替代完整的测试套件和人工代码审查
 5. 非代码文件变更（图片、二进制）无法有效审查
 6. 静态分析为主；#121 起 tool-layer 会运行仓库自带的 linter/typecheck（确定性、零误报、缺失降级），但仍不运行完整测试套件/build
