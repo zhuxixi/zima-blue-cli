@@ -11,6 +11,7 @@
 ### 0.1 检测 previous review metadata {#step-0-1}
 
 使用 `Bash` 执行：
+
 ```bash
 gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .submittedAt}'
 ```
@@ -18,6 +19,7 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 把 JSON 通过 stdin 传给 `scripts/parse_metadata.py`，脚本返回最新一条 Claude Code 评论的 cc-cr-meta JSON（无则返回 `{}`）。详见 [scripts/parse_metadata.py](../scripts/parse_metadata.py)。
 
 脚本内部规则：
+
 1. 评论 body 包含 `"Generated with Claude Code"`
 2. 评论 body 包含 `"<!-- cc-cr-meta"`
 3. 按 `submitted_at` 排序，取最新一条
@@ -31,14 +33,19 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 
 **执行步骤：**
 
-1. 使用 `Bash` 执行 `gh pr view <PR> --comments` 获取所有 PR 评论
-2. 过滤掉所有 AI CR 评论（Claude Code 评论 body 包含 `"Generated with Claude Code"`；历史 Kimi CLI 评论 body 包含 `"<!-- kimi-cr-meta"`——kimi bot 已移除，旧评论仍按此过滤），保留 committer / human reviewer 的评论
+1. 使用 `Bash` 执行以下命令获取结构化评论（可直接程序化解析，不要用人类可读的 `--comments` 纯文本，也不要把 `--comments` 与 `--json` 混用——后者会导致 jq 逐条输出多个 JSON 对象，`json.load` 报 "Extra data"）：
+
+```bash
+gh pr view <PR> --json comments --jq '[.comments[] | {author: .author.login, createdAt: .createdAt, body: .body}]'
+```
+
+2. 过滤掉所有 AI CR 评论（cc 版包含 `"Generated with Claude Code"`，pi 版包含 `"<!-- pi-cr-meta"`，kimi 版包含 `"<!-- kimi-cr-meta"`），保留 committer / human reviewer 的评论。各 harness 的审查结论互不参考，保证审查独立性
 3. 对每个 `status="open"` 的 previous issue，检查 committer 评论中是否提及该 issue：
    - 匹配方式：issue 描述前 10 个单词、或 `file:lines` 组合、或 `"issue-{id}"` 引用
 4. **分类 committer 回应**（关键词匹配，不区分大小写）：
 
 | 信号关键词 | 分类 (`resolution`) | 处理方式 |
-|-----------|---------------------|---------|
+| ----------- | --------------------- | --------- |
 | "wontfix", "won't fix", "by design", "intentional", "not a bug", "不需要修复", "不修复", "设计如此" | `wontfix` | 标记为 acknowledged，不列入 "Still open" |
 | "fixed", "已修复", "done", "resolved", "addressed" | `resolved` | 标记 `status="resolved"`（delta-reviewer 再验证） |
 | "clarify", "说明", "actually", "context:", "returns", "只返回", "strictly" | `clarified` | 添加 `committer_note`，传递给 delta-reviewer |
@@ -55,11 +62,12 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 ### 0.3 判断分支 {#step-0-3}
 
 **有 previous review metadata？**
+
 - 是 → 使用 `Bash` 执行 `gh pr view <PR> --json headRefOid --jq '.headRefOid'` 获取当前 head SHA
   - 当前 SHA == `previous_head_sha` → **无新 commit**
     - 输出：`"No new commits since Round-{round} review. Previous issues may still be open."`
-    - 列出仍 open 的 issues（排除已标记 `resolution="acknowledged"` / `"wontfix"` 的）
-    - 输出【状态报告】（见 [Step 10](#step-10)），Status: `NO_NEW_COMMITS`
+    - 列出仍 `status: open` 的 findings（排除已标记 `resolution="acknowledged"` / `"wontfix"` 的），并区分 blocking 与 advisory
+    - 输出【状态报告】（见 [Step 10](#step-10)），Status: `NO_NEW_COMMITS`；是否仍需 fix 由 open blocking findings 决定
     - 结束
   - 当前 SHA != `previous_head_sha` → **有新 commit**
     - 标记当前为 `Round = round + 1`
@@ -81,6 +89,7 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 使用 `Bash` 执行 `gh pr view <PR>` 和 `gh pr view <PR> --comments` 检查 PR 状态。
 
 检查以下任一条件：
+
 - PR 是否已关闭 (state: CLOSED)
 - PR 是否为草稿 (isDraft: true)
 - PR 是否是 trivial PR（如 dependabot、renovate、纯格式化、仅修改配置文件）
@@ -93,6 +102,7 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 **为什么不跳过 AI 生成的 PR**：AI 生成的 PR 也可能存在规范违规或逻辑错误，因此不跳过。
 
 如何判断 trivial PR：
+
 - 标题包含 "bump"、"update"、"dependabot"、"renovate"、"format"、"lint"
 - 只修改了配置文件（如 `.github/workflows`、`.prettierrc`、锁文件）
 - 变更行数极少且明显无意义
@@ -104,12 +114,14 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 使用 `Bash` 执行 `gh pr diff <PR> --name-only` 获取变更文件列表。
 
 根据变更文件路径，读取以下规范文件（使用 `Read` 工具）：
+
 - 根目录的 `CLAUDE.md`
 - 根目录的 `AGENTS.md`
 - 变更文件所在子目录的 `CLAUDE.md`
 - 变更文件所在子目录的 `AGENTS.md`
 
 例如，如果变更文件为 `src/utils/helpers.py`，则需要检查：
+
 - `./CLAUDE.md`
 - `./AGENTS.md`
 - `./src/CLAUDE.md`
@@ -126,10 +138,11 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 ## Step 3: 获取 PR 摘要 {#step-3}
 
 使用 `Bash` 执行：
+
 - `gh pr view <PR>` 获取 PR 标题和描述
 - `gh pr diff <PR>` 获取完整 diff
 
-使用 `Agent` 启动 summarizer subagent（详见 [subagent-prompts.md#summarizer](subagent-prompts.md#summarizer)），输入包括 PR 标题、PR 描述、PR diff 内容。summarizer 输出一段简洁的变更摘要（不超过 300 字），帮助后续审查 Agent 快速理解变更意图。
+由 parent 直接完成（300 字摘要成本低，无需派 sub-agent；如需隔离上下文，用 `Agent` 工具单发独立上下文的 sub-agent，prompt 模板见 [subagent-prompts.md#summarizer](subagent-prompts.md#summarizer)）。summarizer 输出一段简洁的变更摘要（不超过 300 字），帮助后续审查 sub-agent 快速理解变更意图。
 
 ---
 
@@ -139,23 +152,33 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 
 调用 [scripts/compress_diff.py](../scripts/compress_diff.py) 执行预处理：
 
-**按 agent 类型过滤 diff**：
-- CLAUDE.md checker ×2、AGENTS.md checker：接收**完整 diff**（规范检查需要完整上下文），仅应用长度兜底
+**源码优先重排（#169，默认开启）**：脚本默认对文件块做稳定重排（**源码 → tests → docs 殿后**，同类内保持原顺序）。字母序 diff 下文档（plan/spec 类 30KB+）曾吃光预算、核心源码完全不可见（PR #11/#166 实测）；重排后截断优先吃掉 docs，实测覆盖率 1/6 → 4/6（源码+测试全覆盖）。`--no-reorder` 可退回原序。
+
+**按 agent 类型差异化预算与过滤（#169 实测口径）**：
+
+- CLAUDE.md checker ×2、AGENTS.md checker：接收**完整 diff**（规范检查需要完整上下文），预算 20K
+
   ```bash
-  gh pr diff <PR> | python scripts/compress_diff.py --max-len 4000 \
+  gh pr diff <PR> | python scripts/compress_diff.py --max-len 20000 \
       --meta-file /tmp/cc-cr-diff-meta.json > /tmp/cc-cr-diff.txt
   ```
-- Bug scanner、Logic analyzer：接收**过滤后的 diff**，排除测试相关文件
+
+- Bug scanner、Logic analyzer：接收**过滤后的 diff**（排除测试文件），预算 12K
+
   ```bash
-  gh pr diff <PR> | python scripts/compress_diff.py --filter-tests --max-len 4000 \
+  gh pr diff <PR> | python scripts/compress_diff.py --filter-tests --max-len 12000 \
       --meta-file /tmp/cc-cr-diff-meta.json > /tmp/cc-cr-diff.txt
   ```
+
+> 预算按 agent 职责分档（20K/12K，PR #166 Round-3 实测无质量异常）；若采用补偿手段（手动提取完整文件等），**必须用重排后的输入重新生成 meta**，保证 `Coverage` 口径诚实。
 
 `--meta-file`（#120）写一份覆盖 meta（`diff_truncated`、`covered_files`/`total_files`、被丢弃文件等）到 sidecar JSON，供 [Step 10](#step-10) 在状态报告中显式提示部分覆盖；各 agent 改为读取 `/tmp/cc-cr-diff.txt` 作为 diff 输入。
 
 **脚本内部规则**：
+
 1. `--filter-tests` 排除：`tests/`、`test/` 目录下的文件；`*_test.py`、`*_spec.py`、`*_tests.py`；`.test.`、`.spec.` 等测试文件
 2. `--max-len N`：超长时先压缩为 hunk-only（保留 +/- 行及前后各 2 行上下文）；仍超长则截断至 N 字符并附 `... (diff truncated)`，并在 meta 中置 `diff_truncated: true`（#120）
+3. 默认稳定重排 source → test → docs（#169）；`--no-reorder` 保持输入顺序
 
 **效果**：过滤后 diff 长度通常减少 60-70%（测试文件往往占据大比例 diff）。
 
@@ -165,11 +188,32 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 
 **确定性 tool-layer（#121）**：启动 LLM agent 之前，先运行 [scripts/run_tool_layer.py](../scripts/run_tool_layer.py)——按仓库 manifest 自动探测并执行 `ruff` / `mypy` / `tsc` / `eslint`（缺失则静默降级，不报错）。它用零误报工具吃掉"缺失导入 / 未解析引用 / 类型错误 / 语法错误"，产出 reason 为 `lint` / `typecheck` 的 issue，与下面 agent 的结果一起进入 [Step 5](#step-5) / [Step 6](#step-6)。bug-scanner 不再重复这些类别。
 
-启动 5 个并行 `Agent`，每个接收经过 [Step 3.5](#step-3-5) 预处理的输入包：
+**变更文件交集（#174，必做）**：tool-layer 必须限定在 PR 变更文件内，两种方式任选其一：
+
+```bash
+# 方式 A：命令行传入变更文件
+gh pr diff <PR> --name-only | xargs python scripts/run_tool_layer.py --files
+# 方式 B：stdin JSON 的 changed_files 字段
+echo '{"repo_root": ".", "changed_files": ["zima/a.py", "tests/b.py"]}' | python scripts/run_tool_layer.py
+```
+
+脚本对 ruff/mypy/eslint 直接以文件为参数目标，tsc（项目级）靠输出后置交集兜底。**若不传变更文件，脚本会全仓扫描，pre-existing lint 债务会淹没审查轮**（PR #166 实测 40 个无关 findings）——LLM agent 审查遵循"只关注 PR 修改的内容"，tool-layer 输出同样必须遵守。
+
+启动 5 个并行 sub-agent（每个用 `Agent` 工具派发，独立上下文），每个接收经过 [Step 3.5](#step-3-5) 预处理的输入包。派发结构：
+
+- `claude-checker-1`（显式规则 framing）→ [claude-compliance-checker](subagent-prompts.md#claude-compliance-checker) Checker-1 prompt
+- `claude-checker-2`（隐含约定 framing）→ [claude-compliance-checker](subagent-prompts.md#claude-compliance-checker) Checker-2 prompt
+- `agents-checker` → [agents-compliance-checker](subagent-prompts.md#agents-compliance-checker) prompt
+- `bug-scanner` → [bug-scanner](subagent-prompts.md#bug-scanner) prompt
+- `logic-analyzer` → [logic-analyzer](subagent-prompts.md#logic-analyzer) prompt
+
+task 的 prompt 模板见 [subagent-prompts.md](subagent-prompts.md) 对应小节，输入包（diff 文件路径、摘要、规范文本）以模板变量方式填入。5 个 sub-agent 职责：
+
 - **CLAUDE.md checker ×2、AGENTS.md checker**：完整 diff（或截断后的）+ 变更摘要 + PR 标题和描述 + 相关规范文件内容
 - **Bug scanner、Logic analyzer**：过滤掉测试文件的 diff（或截断后的）+ 变更摘要 + PR 标题和描述
 
 5 个 agent 的具体职责、输入输出契约、prompt 模板见 [subagent-prompts.md](subagent-prompts.md)：
+
 - [claude-compliance-checker](subagent-prompts.md#claude-compliance-checker)（启动两次，独立运行，交叉验证）
 - [agents-compliance-checker](subagent-prompts.md#agents-compliance-checker)
 - [bug-scanner](subagent-prompts.md#bug-scanner)
@@ -185,7 +229,8 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
     "file": "相对仓库根目录的文件路径",
     "lines": "行号范围，格式如 '45-52'",
     "suggestion": "可选的修复建议",
-    "severity": "critical | high | medium | low（#119）"
+    "severity": "critical | high | medium | low（#119）",
+    "blocking": false
   }
 ]
 ```
@@ -195,23 +240,24 @@ gh pr view <PR> --json reviews --jq '.reviews[] | {body: .body, submitted_at: .s
 **severity 判定口径（#119）**：每个 issue 必须给出 `severity`，供状态报告计算 `Critical issues` 计数与 `Verdict`：
 
 | severity | 适用 |
-|----------|------|
+| ---------- | ------ |
 | `critical` | 数据损坏、安全漏洞、崩溃/不可恢复错误、阻塞主流程 |
 | `high` | 资源泄漏、错误处理缺失、很可能触发的边界 bug |
 | `medium` | 偶发边界、逻辑健壮性、规范硬性违规 |
 | `low` | 命名/风格类规范、轻微不一致 |
 
-issue-validator 验证时若 agent 未给 severity，按 `medium` 兜底。`build_review_body.py` 渲染时按 severity 降序排列（critical 在前），metadata `issues[]` 保留原始顺序。
+issue-validator 验证时若 agent 未给 severity，按 `medium` 兜底。Agent 通常只需提供 severity；显式 JSON boolean `blocking` 仅用于有充分理由的策略覆盖。`build_review_body.py` 渲染时按 severity 降序排列（critical 在前），metadata `issues[]` 保留原始顺序并补齐规范化后的 `blocking`。
 
-**为什么 CLAUDE.md checker 跑两次（#122：差异化而非复跑）**：两个 checker 使用**不同 framing**（Checker-1 显式规则、Checker-2 隐含约定/反模式），让召回增益来自视角互补而非采样噪声。两者的 `reason` 都为 `"CLAUDE.md"`、schema 不变，下游无需改动。这与曾经的"双 CR Agent 交叉验证体系"（Claude Code vs Kimi CLI，kimi 已移除）是两个不同层次的冗余——前者在同一 skill 内部，后者曾跨 agent。
+**为什么 CLAUDE.md checker 跑两次（#122：差异化而非复跑）**：两个 checker 使用**不同 framing**（Checker-1 显式规则、Checker-2 隐含约定/反模式），让召回增益来自视角互补而非采样噪声。两者的 `reason` 都为 `"CLAUDE.md"`、schema 不变，下游无需改动。这与跨 harness 的并行审查（cc vs pi）是两个不同层次的冗余——前者在同一 skill 内部，后者跨 harness。
 
 ---
 
 ## Step 5: Issue 验证 {#step-5}
 
-对 [Step 4](#step-4) 中发现的每一个 issue，启动一个并行 `Agent` 进行验证。详见 [subagent-prompts.md#issue-validator](subagent-prompts.md#issue-validator)。
+对 [Step 4](#step-4) 中发现的每一个 issue，启动一个并行 `Agent` sub-agent 进行验证（task 为 [subagent-prompts.md#issue-validator](subagent-prompts.md#issue-validator) 的 prompt 模板 + 单个 issue 信息）。
 
 验证 agent 输入：
+
 - 单个 issue 的完整信息
 - PR diff
 - 相关规范文件内容
@@ -234,12 +280,17 @@ issue-validator 验证时若 agent 未给 severity，按 `medium` 兜底。`buil
 
    最终渲染顺序由 `build_review_body.py` 保证（见 [output-examples.md](output-examples.md)）。
 
+**确定性 blocking 策略（#183）**：每个通过验证、去重后的 finding 都必须规范化 `blocking`。显式 JSON boolean 覆盖默认策略；否则 `severity=low` → `blocking=false`，`medium` / `high` / `critical` → `blocking=true`。非 boolean override 被忽略。旧 metadata 缺少 `blocking` 时也按 severity 派生；severity 缺失或非法沿用 `medium` fallback，因此为 blocking。
+
+`status` 仍只表示生命周期（`status: open` / `status: resolved`），不得用 `suppressed` 表示 low 策略。`metadata issues[]` 保留所有 findings 及输入顺序；`total_issues` / `new_count` 继续记录所有 finding 的事实数量（包含 advisory），而 `blocking_open_count` / `blocking_new_count` 驱动 Status、fix 和收敛，`advisory_open_count` / `advisory_new_count` 只作披露。PR 评论把 `blocking=true` findings 放在主列表，把 `blocking=false` findings 完整放入折叠的 `Advisory / non-blocking findings` 小节。
+
 去重规则：
+
 - 如果两个 issue 指向同一个文件、同一行范围、且原因相同，视为重复
 - 如果描述内容高度相似（超过 80% 相似度），也视为重复
 - 合并时保留描述更详细、建议更具体的一个
 
-**可选：跨 PR suppress（#126，默认 off）**：若仓库根存在 `.claude/cr-suppressions.json`，去重后调用 [scripts/apply_suppressions.py](../scripts/apply_suppressions.py) 把命中的 issue 降级为 `suppressed`——不计入 open、不触发 fix-agent，但仍出现在终端输出供人工核验。条目格式：
+**可选：跨 PR suppress（#126，默认 off，与 severity advisory 策略分离）**：只有仓库根显式提供 `.claude/cr-suppressions.json`（`.pi/cr-suppressions.json` 仍可读，双路径兼容）时，去重后才调用 [scripts/apply_suppressions.py](../scripts/apply_suppressions.py) 把命中的 issue 放入脚本的 `suppressed` 输出——不计入 open、不触发 fix-agent，但仍出现在终端输出供人工核验。此处 “suppressed” 仅指 #126 的 opt-in 跨 PR 匹配，不得用于描述默认 `severity=low` 的 advisory finding。条目格式：
 
 ```json
 [
@@ -264,37 +315,59 @@ issue-validator 验证时若 agent 未给 severity，按 `medium` 兜底。`buil
 
 ## Step 8: 终端输出 {#step-8}
 
-输出 Markdown 格式的审查报告到终端。完整模板与字段拼装由 [scripts/build_review_body.py](../scripts/build_review_body.py) 生成；终端输出可直接用脚本输出的 Part B（Markdown 部分）。
+输出 Markdown 格式的审查报告到终端。完整模板与字段拼装由 [scripts/build_review_body.py](../scripts/build_review_body.py) 生成；终端输出直接使用脚本输出的 Part B（Markdown 部分）。报告主列表展示 blocking findings；所有 advisory findings 在同一 Part B 的折叠 `Advisory / non-blocking findings` 小节中展示描述、severity 和文件链接，因此终端与 PR 评论都自包含，不再使用 “suppressed low-severity” 或 “see terminal report” 措辞。
 
 精简模板：
 
-发现问题时：
+存在 blocking findings 时，主列表只展示 active blocking findings，并在其后完整披露 advisory findings：
+
 ```markdown
 ### Code Review
 
-Found N issues:
+Found N blocking issues:
 
 1. {description} ({reason}, {severity})
 
 https://github.com/owner/repo/blob/{full-sha}/{file}#L{start}-L{end}
+
+<details>
+<summary>Advisory / non-blocking findings (A)</summary>
+
+1. {advisory_description} ({reason}, low)
+
+https://github.com/owner/repo/blob/{full-sha}/{file}#L{start}-L{end}
+
+</details>
 ```
 
-无问题时：
+仅有 advisory findings 时：
+
 ```markdown
 ### Code Review
 
-No issues found. Checked for bugs, CLAUDE.md and AGENTS.md compliance.
+No blocking issues found. {advisory_count} advisory findings remain.
+
+<details>
+<summary>Advisory / non-blocking findings (A)</summary>
+
+1. {advisory_description} ({reason}, low)
+
+https://github.com/owner/repo/blob/{full-sha}/{file}#L{start}-L{end}
+
+</details>
 ```
 
 完整 Round-N 多轮格式见 [output-examples.md](output-examples.md)。
 
 代码链接格式要求：
+
 - 使用 `Bash` 执行 `gh pr view <PR> --json headRefOid --jq '.headRefOid'` 获取 PR head SHA（40 字符）
 - 链接格式必须严格为：`https://github.com/owner/repo/blob/[sha]/path#L[start]-L[end]`
 - 行范围至少包含 1 行上下文（评论目标行的前后至少各 1 行）
 - 仓库 owner 和 repo 名通过 `gh pr view --json headRepositoryOwner,headRepository` 获取
 
 行号提取方法：
+
 - 在 diff 中，新增内容以 `+` 开头，对应的行号在 diff hunk 头部标明
 - 例如 `@@ -45,7 +67,9 @@` 表示旧文件从第 45 行开始，新文件从第 67 行开始
 - 计算目标代码在新文件中的实际行号
@@ -308,10 +381,12 @@ No issues found. Checked for bugs, CLAUDE.md and AGENTS.md compliance.
 ### 9.1 构建评论 Body
 
 调用 [scripts/build_review_body.py](../scripts/build_review_body.py)，输入 JSON 包括：
+
 - `round`, `pr_number`, `head_sha`, `previous_head_sha`
 - `repo_owner`, `repo_name`
-- `issues`（含 status / resolution / committer_note / severity）
-- 分类计数：`resolved_count`, `acknowledged_count`, `new_count`, `total_issues`
+- `issues`（含 status / resolution / committer_note / severity；构建器为每项写入规范化后的 boolean `blocking`）
+- 事实计数：`resolved_count`, `acknowledged_count`, `new_count`, `total_issues`
+- 工作流计数：`blocking_open_count`, `blocking_new_count`, `advisory_open_count`, `advisory_new_count`（调用方显式提供时优先，否则从 finding 列表派生）
 - `timestamp`（ISO 8601）
 
 脚本输出完整 review body，由两部分组成：
@@ -320,29 +395,38 @@ No issues found. Checked for bugs, CLAUDE.md and AGENTS.md compliance.
 
 ```markdown
 <!-- cc-cr-meta
-{"round":N,"pr_number":...,"head_sha":"...","previous_head_sha":"...","total_issues":...,"resolved_count":...,"new_count":...,"acknowledged_count":...,"issues":[...],"timestamp":"..."}
+{"round":N,"pr_number":...,"head_sha":"...","previous_head_sha":"...","total_issues":...,"resolved_count":...,"new_count":...,"acknowledged_count":...,"blocking_open_count":...,"blocking_new_count":...,"advisory_open_count":...,"advisory_new_count":...,"issues":[...],"timestamp":"..."}
 -->
 ```
 
 字段说明：
+
 - `round`: 当前轮次（首次审查为 1，增量审查为 N+1）
 - `pr_number`: PR 编号
 - `head_sha`: 当前 PR head commit 的完整 SHA（40 字符）
 - `previous_head_sha`: 上一轮 review 时的 head SHA（Round-1 为 null）
-- `total_issues`: 当前轮次统计的问题总数（不含 acknowledged）
-- `resolved_count`: 本轮标记为 resolved 的问题数（Round-1 为 0）
-- `new_count`: 本轮新发现的问题数
-- `acknowledged_count`: 本轮标记为 acknowledged / wontfix 的问题数
-- `issues`: 问题数组，每个元素含 `status`（"open"/"resolved"）、`resolution`（"acknowledged"/"wontfix"/"resolved"/null）、`committer_note`（string 或 null）、`severity`（"critical"/"high"/"medium"/"low"，#119，缺省 medium）
+- `total_issues`: 当前轮次所有 active findings 总数（不含 acknowledged / wontfix；包含 blocking 与 advisory）
+- `resolved_count`: 本轮标记为 resolved 的 finding 数（Round-1 为 0）
+- `new_count`: 本轮所有新 findings 数（包含 blocking 与 advisory）
+- `acknowledged_count`: 本轮标记为 acknowledged / wontfix 的 finding 数
+- `blocking_open_count`: 当前 active findings 中 `blocking=true` 的数量
+- `blocking_new_count`: 本轮新 findings 中 `blocking=true` 的数量
+- `advisory_open_count`: 当前 active findings 中 `blocking=false` 的数量
+- `advisory_new_count`: 本轮新 findings 中 `blocking=false` 的数量
+- `issues`: finding 数组，每个元素含 `status`（"open"/"resolved"）、`resolution`（"acknowledged"/"wontfix"/"resolved"/null）、`committer_note`（string 或 null）、`severity`（"critical"/"high"/"medium"/"low"，#119，缺省 medium）以及规范化后的 boolean `blocking`
+
+Round-1 的 open/new 口径都来自 `issues[]`。Round-N 的 metadata 和 Part B 必须使用同一个 canonical collection：非空 `issues[]` 优先作为 current collection，并以 `first_round == round` 判定 new、其余 active findings 判定 carried；旧 finding 缺 `first_round` 时，可用与 `new_issues` 相同的稳定 identity（优先 `id`，否则 description/reason/file/lines）作为兼容 fallback。仅当 `issues[]` 为空时，才以 `unresolved_issues + new_issues` 派生 current，并由两个 bucket 直接区分 carried/new；派生后的 normalized current 必须写回本轮 metadata `issues[]`，供下一轮恢复，不能只用于当轮计数/渲染。显式 count 值沿用现有规则并保持权威。
+
 - `timestamp`: ISO 8601 格式时间戳
 
 **Part B: Markdown 人类可读部分**
 
-模板分三种：Round-1、Round-N（增量）、All-resolved。三种完整模板见 [output-examples.md](output-examples.md)。
+模板分三种：Round-1、Round-N（增量）、All-resolved。Round-N 的摘要必须分别披露 `Still open: X blocking; Y advisory` 与 `New issues found: X blocking; Y advisory`；折叠 advisory 小节再按 `Carried from previous rounds` / `New this round` 分组，不能用合并计数掩盖本轮新增 low finding。三种完整模板见 [output-examples.md](output-examples.md)。
 
 ### 9.2 发布 Review 评论
 
 使用 `Bash` 执行：
+
 ```bash
 # 将 review body 写入临时文件（避免 shell 转义和长命令问题）
 python scripts/build_review_body.py < input.json > /tmp/cc-cr-{pr_number}.md
@@ -350,6 +434,7 @@ gh pr review <PR> --comment --body-file /tmp/cc-cr-{pr_number}.md
 ```
 
 注意：
+
 - 每轮审查都发布**新评论**，不编辑旧评论。原因：metadata 是审查历史的事实记录，覆写会丢失中间状态
 - 必须包含 `"🤖 Generated with Claude Code"` 标识，用于后续识别（脚本已固化）
 - 必须包含 `"### Code Review | Round-{N}"` 标题（脚本已固化）
@@ -360,16 +445,17 @@ gh pr review <PR> --comment --body-file /tmp/cc-cr-{pr_number}.md
 
 ## Step 10: 状态报告输出 {#step-10}
 
-每次审查结束时，无论发现问题与否，都必须输出状态报告到终端。状态报告是供外部调度器（如 zima daemon）和 fix agent 消费的机器可读摘要。
+每次审查结束时，无论发现问题与否，都必须输出状态报告到终端。状态报告是供 PJob 调度器（zima daemon 或 webhook-server）和 fix agent 消费的机器可读摘要。
 
 调用 [scripts/render_status_report.py](../scripts/render_status_report.py) 生成。
 
 ### 输出时机
 
 以下情况均须输出状态报告：
-- [Step 0](#step-0-3) 检测到无新 commit → 输出当前 open issues 状态，Status: `NO_NEW_COMMITS`
-- [Step 6](#step-6) 过滤后存在 open issues → 输出问题统计，Status: `NEEDS_FIX`
-- [Step 6](#step-6) 过滤后无 open issues → 输出 "All issues resolved"，Status: `PASS`
+
+- [Step 0](#step-0-3) 检测到无新 commit → 输出当前 open findings 状态，Status: `NO_NEW_COMMITS`
+- [Step 6](#step-6) 过滤后存在 open blocking findings → 输出问题统计，Status: `NEEDS_FIX`
+- [Step 6](#step-6) 过滤后无 open blocking findings → Status: `PASS`；若仍有 advisory findings，表述为 “no blocking issues”，不得声称所有 findings 已解决
 - PR 在 [Step 7](#step-7) 被判定为已关闭/已合并 → 已停止，**不输出**状态报告
 
 ### 状态报告格式
@@ -383,6 +469,10 @@ Total open issues: {open_count}
 - Still open from previous: {unresolved_count}
 - Resolved this round: {resolved_count}
 - Acknowledged / Won't Fix: {acknowledged_count}
+Blocking open issues: {blocking_open_count}
+- New blocking this round: {blocking_new_count}
+Advisory open issues: {advisory_open_count}
+- New advisory this round: {advisory_new_count}
 Status: {status}
 Critical issues: {critical_count}
 Verdict: {verdict}
@@ -390,19 +480,22 @@ Verdict: {verdict}
 ```
 
 字段说明：
-- `Total open issues`：当前仍 open 的问题总数（不含 acknowledged）
-- `Critical issues`：当前 open issues 中 `severity=critical` 的数量（#119，向后兼容：未提供视为 0）
-- `Status` 枚举三态（不变，zima daemon 仍 grep 此行）：
-  - `NEEDS_FIX` — 仍有 open issues 需要修复
-  - `PASS` — 无 open issues（可能仍有 acknowledged）
-  - `NO_NEW_COMMITS` — Step 0 检测到无新 commit
-- `Verdict`（#119 新增，由 `Status` + `critical_count` + `open_count` 派生，不替换三态）：
-  - `SKIP` — NO_NEW_COMMITS
-  - `BLOCK_MERGE` — critical_count > 0
-  - `READY_TO_MERGE` — open_count == 0
-  - `MERGE_WITH_CAUTION` — 其余（有 open 但无 critical）
 
-`critical_count` 由 Step 6 汇总后的 open issues 中 severity=critical 的个数得出，作为 `critical_count` 字段传入 `render_status_report.py`。
+- `Total open issues` / `New this round`：事实计数，包含 blocking 与 advisory（不含 acknowledged / wontfix）
+- `Blocking open issues` / `New blocking this round`：工作流计数，分别对应 `blocking_open_count` / `blocking_new_count`
+- `Advisory open issues` / `New advisory this round`：披露计数，分别对应 `advisory_open_count` / `advisory_new_count`
+- `Critical issues`：当前 open 且 blocking 的 findings 中 `severity=critical` 的数量（#119，向后兼容：未提供视为 0）
+- `Status` 枚举三态（不变，PJob 调度器仍 grep 此行）：
+  - `NEEDS_FIX` — `blocking_open_count > 0`
+  - `PASS` — `blocking_open_count == 0`（可能仍有 open advisory 或 acknowledged findings）
+  - `NO_NEW_COMMITS` — Step 0 检测到无新 commit
+- `Verdict`（#119，不替换三态；由 `Status` + `critical_count` + `blocking_open_count` 派生）：
+  - `SKIP` — NO_NEW_COMMITS
+  - `BLOCK_MERGE` — blocking critical count > 0
+  - `READY_TO_MERGE` — `blocking_open_count == 0`
+  - `MERGE_WITH_CAUTION` — 其余（有 open blocking findings 但无 blocking critical）
+
+`critical_count` 由 Step 6 汇总后的 open blocking findings 中 severity=critical 的个数得出。调用 `render_status_report.py` 时继续传 `open_count` / `new_count` 作为全量事实计数，并传入四个 blocking/advisory count。新字段存在时，renderer 防御性地从 `blocking_open_count` 派生 NEEDS_FIX/PASS（保留 NO_NEW_COMMITS）；旧 caller 完全缺少 blocking 字段时，回退到旧语义，把 `open_count` / `new_count` 当作 blocking counts 并保留其 Status。
 
 **部分覆盖提示（#120）**：若 [Step 3.5](#step-3-5) 的 `--meta-file` 指示 `diff_truncated: true`，把 `diff_truncated` / `covered_files` / `total_files` 传入 `render_status_report.py`，报告会在 `Verdict:` 之后追加：
 
@@ -411,14 +504,16 @@ Diff truncated: yes
 Coverage: 7/10 files
 ```
 
-调度器据此识别"本轮 0 issue 但 diff 被截断、覆盖不全"，不会把截断导致的空结果误读为"全量审查通过"。未提供这些字段时省略（向后兼容）。
+调度器据此识别"本轮 0 finding 但 diff 被截断、覆盖不全"，不会把截断导致的空结果误读为"全量审查通过"。未提供这些字段时省略（向后兼容）。
+
+**机器可读 trailer（#176）**：`render_status_report.py` 会在分隔线 `====` 之后追加 `<zima-review><verdict>approved|needs_fix</verdict><summary>...</summary></zima-review>` XML——zima executor 靠它驱动 postExec 标签流转（claude 型 agent 的退出码同样不反映 verdict，CR PJob 必需）；`Status:` 行与报告块形状不变，PJob 调度器的 grep 契约不受影响。
 
 ### 用途
 
-- **zima 调度器**：根据 `Status` 决策是否调度 fix agent
-  - `NEEDS_FIX` → 调度 fix agent 修复 open issues
-  - `PASS` → 当前 PR 无需进一步 action
+- **zima 调度器**：根据 blocking-aware `Status` 决策是否调度 fix agent
+  - `NEEDS_FIX` → 调度 fix agent，只修复 `status: open` 且 effective `blocking=true` 的 findings
+  - `PASS` → 当前 PR 无 blocking work；advisory findings 可继续保留
   - `NO_NEW_COMMITS` → 本轮跳过，等待下次调度
-  - 可选：消费 `Verdict` 行优先处理 `BLOCK_MERGE`（有 critical）的 PR
-- **fix agent**：快速获取当前 open issues 列表，无需重新解析 metadata
+  - 可选：消费 `Verdict` 行优先处理 `BLOCK_MERGE`（有 blocking critical）的 PR
+- **fix agent**：只消费当前 open blocking findings，不把未 override 的 low advisory 当作必修项
 - **人工查看**：一目了然了解当前审查状态
