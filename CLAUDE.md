@@ -101,6 +101,7 @@ zima pjob run <code>
   → Renders Workflow template with Variables
   → Builds CLI command from Agent parameters
   → Runs preExec actions (e.g., scan_prs); SkipAction → ExecutionResult(status=SKIPPED)
+  → Scan-discovered pr_* free text (pr_title/pr_url/pr_diff) is capped at 100_000 UTF-8 BYTES before subprocess env injection — kernel MAX_ARG_STRLEN bounds envp strings in bytes, so a char cap can't bound CJK text (E2BIG); cap hit = loud truncation (#201)
   → Dedup guard: same-(repo, pr_number, head_sha) review already running/succeeded recently → SkipAction (SKIPPED, no postExec); `--dedup-off` bypasses
   → Executes subprocess (kimi/claude/pi)
   → Runs postExec actions (e.g. GitHub label transition) in finally block
@@ -112,6 +113,7 @@ zima pjob run <code>
 - On success (returncode=0): `condition: success` actions fire
 - On failure/timeout/cancel: `condition: failure` actions fire, `action_errors` recorded
 - Reviewer PJobs: `<zima-review>` XML in stdout is parsed, verdict maps to effective returncode
+- `requireReview: true` on an action skips it unless stdout carried a valid review signal (closed `<zima-review>` XML or full `Status: PASS|NEEDS_FIX|NO_NEW_COMMITS` line — `has_valid_review_signal`); prevents needs-fix mislabeling when no review ever ran, e.g. E2BIG startup failure (#201)
 
 ### Data Layout
 
