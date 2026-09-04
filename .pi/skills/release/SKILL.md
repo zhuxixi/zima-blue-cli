@@ -1,11 +1,11 @@
 ---
 name: release
-description: Release a new version of zima-blue-cli. Bumps version, generates CHANGELOG, creates PR and GitHub Release, and verifies the PyPI publish. Triggers on "发版", "release", "bump version", "发布版本".
+description: Release a new version of zima-blue-cli. Bumps version, generates CHANGELOG, creates PR and GitHub Release, verifies the PyPI publish, and upgrades and restarts the local service. Triggers on "发版", "release", "bump version", "发布版本".
 ---
 
 # Release Skill (Pi)
 
-将 zima-blue-cli 发版流程从多步手动操作简化为一条命令。覆盖版本 bump → CHANGELOG → PR → GitHub Release → PyPI 验证。复用 `.claude/skills/release/release_helper.py`（agent-agnostic 脚本，不重写）。
+将 zima-blue-cli 发版流程从多步手动操作简化为一条命令。覆盖版本 bump → CHANGELOG → PR → GitHub Release → PyPI 验证 → 本机服务升级重启。复用 `.claude/skills/release/release_helper.py`（agent-agnostic 脚本，不重写）。
 
 ## 用法
 
@@ -162,7 +162,7 @@ systemd restart 默认 KillMode=control-group，会连坐 cgroup 内正在执行
 CR PJob（单轮约 8-10 分钟）。重启前必须等运行中的 CR job 结束：
 
 ```bash
-pgrep -f "zima.execution.background_runner" || echo "no inflight"
+pgrep -f "[z]ima.execution.background_runner" || echo "no inflight"
 ```
 
 有输出（存在 in-flight）则每 30s 轮询一次直至进程消失；超时上限 15 分钟。
@@ -192,6 +192,8 @@ journalctl --user -u zima-webhook --since "<重启时刻>" --no-pager | tail -8
 zima daemon stop && zima daemon start --schedule <schedule>
 ```
 
+验证：`zima daemon status` 显示 running。
+
 - 显示 not running 但 `ps` 里存在进程（游离态，daemon.pid 丢失）：
   先 `kill <PID>` 再用上面同款 `zima daemon start --schedule <schedule>` 正规拉起。
 - 本机未跑 daemon：跳过。
@@ -219,7 +221,8 @@ zima --version   # 期望 == {new_version}
 - Step 11 排空超时 → 询问用户继续（中断 in-flight）或放弃本轮
 - Step 11 任一步失败 → 展示错误并停止，不自动回滚；人工回滚路径：
   `uv tool install zima-blue-cli==<old> && systemctl --user restart zima-webhook`，
-  daemon 同步 stop/start
+  daemon 同步 stop/start；注意 `==<old>` 会钉住版本，恢复自动升级需
+  `uv tool install --upgrade zima-blue-cli==<new>`
 
 ## 注意事项
 
