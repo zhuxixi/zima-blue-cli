@@ -51,7 +51,7 @@ systemd restart 默认 KillMode=control-group，会连坐 cgroup 内正在执行
 CR PJob（单轮约 8-10 分钟）。重启前必须等运行中的 CR job 结束：
 
 ```bash
-pgrep -f "zima.execution.background_runner" || echo "no inflight"
+pgrep -f "[z]ima.execution.background_runner" || echo "no inflight"
 ```
 
 有输出（存在 in-flight）则每 30s 轮询一次直至进程消失；超时上限 15 分钟。
@@ -122,9 +122,9 @@ Run:
 SKILL=.pi/skills/release/SKILL.md
 grep -q "Step 11: 本机服务升级与重启" "$SKILL" &&
 grep -q "uv tool update zima-blue-cli" "$SKILL" &&
-grep -q "zima.execution.background_runner" "$SKILL" &&
+grep -q "\[z\]ima\.execution\.background_runner" "$SKILL" &&
 grep -q "systemctl --user restart zima-webhook" "$SKILL" &&
-grep -q "zima daemon stop && zima daemon start --schedule" "$SKILL" &&
+grep -q "~/.local/bin/zima daemon stop && ~/.local/bin/zima daemon start --schedule" "$SKILL" &&
 grep -q "zima --version" "$SKILL" &&
 grep -q "超时仍忙" "$SKILL" &&
 grep -q "uv tool install zima-blue-cli==" "$SKILL" &&

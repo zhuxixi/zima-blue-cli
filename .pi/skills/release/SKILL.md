@@ -180,6 +180,9 @@ journalctl --user -u zima-webhook --since "<重启时刻>" --no-pager | tail -8
 注：smee DNS 抖动为已知自愈项（重启后 ~10 分钟内自动恢复），此时缺
 `Connected to smee.io` 仅作 warning，不算失败。
 
+restart 前复查一次 `pgrep -f "[z]ima.execution.background_runner"`——排空后到
+重启前的小窗口内新触发的事件（若 spawn 了新 CR job）等它跑完再 restart。
+
 **(d) 重启 daemon（如本机在跑）**
 
 ```bash
@@ -189,10 +192,10 @@ journalctl --user -u zima-webhook --since "<重启时刻>" --no-pager | tail -8
 - 显示 running：从输出/`ps` 记录当前 schedule 名，然后
 
 ```bash
-zima daemon stop && zima daemon start --schedule <schedule>
+~/.local/bin/zima daemon stop && ~/.local/bin/zima daemon start --schedule <schedule>
 ```
 
-验证：`zima daemon status` 显示 running。
+验证：`~/.local/bin/zima daemon status` 显示 running。
 
 - 显示 not running 但 `ps` 里存在进程（游离态，daemon.pid 丢失）：
   先 `kill <PID>` 再用上面同款 `zima daemon start --schedule <schedule>` 正规拉起。

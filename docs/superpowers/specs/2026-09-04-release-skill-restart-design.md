@@ -28,7 +28,7 @@ PyPI 验证通过后，更新本机安装并重启常驻服务，让新版本立
     uv tool update zima-blue-cli
 
 (b) 排空 in-flight PJob（必须）
-    pgrep -f "zima.execution.background_runner" || echo "no inflight"
+    pgrep -f "[z]ima.execution.background_runner" || echo "no inflight"
     有运行中的 CR job 时必须等它结束——systemctl restart 默认 KillMode=control-group，
     会连坐 cgroup 内正在执行的 CR PJob（单轮约 8-10 分钟）。
     轮询直至进程消失（每 30s 一次，超时上限 15 分钟；超时询问用户是否继续）。
