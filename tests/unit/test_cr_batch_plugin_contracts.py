@@ -154,11 +154,16 @@ class TestCcPluginContracts:
         )
         kimi_body = "<!-- kimi-cr-meta\n{}\n-->\nGenerated with Kimi\n"
         cc_body = _run_json(_script("build_review_body.py"), ROUND1_INPUT)
+        # Foreign comments are NEWEST on purpose: parse_metadata sorts candidates
+        # latest-first, so a filter regression (accepting pi/kimi history) must
+        # surface as round 9 — with older foreign timestamps the cc comment would
+        # win on ordering alone and the test could not fail. Mirrors the pi-side
+        # precedent in tests/unit/test_cr_batch_parse_metadata.py.
         reviews = {
             "reviews": [
-                {"body": pi_body, "submittedAt": "2026-09-04T08:00:00Z"},
-                {"body": kimi_body, "submittedAt": "2026-09-04T08:00:30Z"},
-                {"body": cc_body, "submittedAt": "2026-09-04T08:01:00Z"},
+                {"body": cc_body, "submittedAt": "2026-09-04T08:00:00Z"},
+                {"body": kimi_body, "submittedAt": "2026-09-04T08:01:00Z"},
+                {"body": pi_body, "submittedAt": "2026-09-04T08:02:00Z"},
             ]
         }
         parsed = json.loads(_run_json(_script("parse_metadata.py"), reviews))
