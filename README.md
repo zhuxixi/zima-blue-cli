@@ -20,6 +20,7 @@ Define Prompt Template → Configure Parameters → Execute → Get Results
 
 - [Features](#features)
 - [Architecture](#architecture)
+- [Configuration](#configuration)
 - [Quick Start](#quick-start)
 - [CLI Commands](#cli-commands)
 - [Documentation](#documentation)
@@ -89,6 +90,49 @@ zima pjob run my-task    # Combines Agent + Workflow + Variable + Env
 
 ---
 
+## Configuration
+
+Zima reads configuration from **one place only** — the config root:
+
+```text
+${ZIMA_HOME:-~/.zima}/configs/
+```
+
+Configs are one YAML file per entity, named after its `code`:
+
+| Subdirectory | Entity |
+|---|---|
+| `agents/` | AI executor (kimi / claude / pi) |
+| `workflows/` | Prompt template (Jinja2) |
+| `variables/` | Template variable values |
+| `envs/` | Environment variables and secret references |
+| `pmgs/` | Dynamic CLI parameter groups |
+| `pjobs/` | Executable task (composes the above) |
+| `schedules/` | Daemon 32-cycle scheduling |
+
+YAML written anywhere else — for example a project directory — is **not** auto-discovered.
+
+### Two Ways to Configure
+
+- **YAML path** — copy a working pack from `examples/webhook/` or `examples/sdd/` into the config root, edit, validate, run. Best for agents, bulk setup, and version control:
+
+  ```bash
+  ZIMA_HOME="${ZIMA_HOME:-$HOME/.zima}"
+  mkdir -p "$ZIMA_HOME/configs/"
+  cp -r examples/webhook/{agents,workflows,variables,envs,pjobs} "$ZIMA_HOME/configs/"
+  # edit the copied YAML files to taste, then:
+  zima pjob validate claude-cr --check-render
+  zima pjob run claude-cr
+  ```
+
+- **CLI path** — `zima quickstart` bootstraps a complete task interactively; `zima <kind> create --example` prints a starter YAML; fine-grained commands handle small edits. `validate` is the shared quality gate for both paths.
+
+Run-time overrides (`zima pjob run <code> --set-var/--set-env/--set-param`) apply to that execution only — they never write back to any YAML file.
+
+Full entity reference, secret handling, and the validation workflow: [Configuration Guide](docs/guides/configuration.md).
+
+---
+
 ## Quick Start
 
 ### Installation
@@ -132,7 +176,11 @@ zima pjob run <generated-code> --dry-run  # preview
 zima pjob run <generated-code>            # execute
 ```
 
-### Advanced Usage: Composed Configuration
+### Or Start from an Example Pack
+
+Prefer editing YAML directly? Copy a complete, working setup and make it yours — [`examples/webhook/README.md`](examples/webhook/README.md) walks through installing a full webhook-triggered code review pack (agents, workflows, variables, envs, pjobs) with a single `cp -r`. The [Configuration Guide](docs/guides/configuration.md) explains every file.
+
+### Manual Configuration (Power Users)
 
 > **Tip:** `zima quickstart` is the recommended entry point. The steps below are the manual config-by-config approach for power users.
 
@@ -159,6 +207,8 @@ zima pjob run review-task
 # 6. View execution history
 zima pjob history review-task
 ```
+
+> The CLI commands above write the same YAML files you would edit by hand — both paths land in the config root. See the [Configuration Guide](docs/guides/configuration.md) to manage them as plain YAML instead.
 
 ### Cleanup
 
@@ -191,40 +241,28 @@ See [`examples/webhook/README.md`](examples/webhook/README.md) for sample config
 
 ## CLI Commands
 
-### Command Groups
-
 ```bash
-# Agent management (supports kimi/claude)
-zima agent create --name "My Agent" --code my-agent --type kimi
-zima agent list --type kimi
-zima agent show my-agent
-zima agent test my-agent      # Preview generated CLI command
-zima agent validate my-agent
+# Run & manage tasks
+zima pjob run <code>            # execute (runs in background by default)
+zima pjob run <code> --dry-run  # preview prompt, command, env — no execution
+zima pjob status <code>         # status + recent history for one task
+zima pjob ps                    # all currently running tasks
+zima pjob cancel <code>         # cancel running execution(s)
+zima pjob history <code>        # execution history and stats
 
-# Workflow template management
-zima workflow create --name "Review" --code review --template "# {{ title }}"
-zima workflow render review --var my-vars
+# Validate configuration — the shared quality gate
+zima agent validate <code>                # per entity: agent | workflow | variable | env | pmg | pjob | schedule
+zima pjob validate <code> --check-render  # cross-entity refs + template render
 
-# Variable management
-zima variable create --name "My Vars" --code my-vars
-zima variable set my-vars key value
+# Runtime services
+zima daemon start|stop|status|logs
+zima webhook-server --pjob <code> [--smee-url <url>]
 
-# Environment configuration
-zima env create --name "Prod" --code prod-env
-zima env set-secret prod-env API_KEY --source env
-
-# PMG parameter group management
-zima pmg create --name "Build Params" --code build-params
-
-# PJob execution (composes Agent + Workflow + Variable + Env)
-zima pjob create --name "Daily Task" --code daily \
-  --agent my-agent --workflow review --variable my-vars
-zima pjob run daily           # Execute task
-zima pjob render daily        # Preview rendered output
-zima pjob history daily       # View history
+# Bootstrap
+zima quickstart                 # interactive wizard: a complete task from scratch
 ```
 
-See [`docs/API-INTERFACE.md`](docs/API-INTERFACE.md) for the complete interface documentation.
+**Full CLI reference**: `docs/cli-reference.md` (generated) — being automated; run `zima --help` or `zima <command> --help` in the meantime.
 
 ---
 
@@ -234,12 +272,13 @@ See [`docs/API-INTERFACE.md`](docs/API-INTERFACE.md) for the complete interface 
 docs/
 ├── vision/           # Project vision and story
 ├── architecture/     # Latest architecture design ⭐ authoritative
-├── design/           # Feature design documents (PJob, API interface, etc.)
+│   └── data-and-runtime-reference.md  # Data models, runtime interfaces, execution flow
+├── design/           # Feature design documents (historical, written pre-implementation)
 ├── guides/           # User-facing guides
+│   └── configuration.md               # ⭐ YAML configuration guide
 ├── history/          # Historical designs (reference only)
 ├── decisions/        # Architecture Decision Records (ADR; 004-single-execution ⭐ current)
-├── reports/          # Generated reports
-└── API-INTERFACE.md  # Complete CLI interface reference
+└── reports/          # Generated reports
 ```
 
 ### Use Cases
