@@ -35,6 +35,11 @@ TEST_PATH_RE = re.compile(
 FILE_HEADER_RE = re.compile(r"^diff --git a/(.+?) b/(.+?)$")
 HUNK_HEADER_RE = re.compile(r"^@@ ")
 
+# #169: docs are down-weighted in reorder priority — they burn review budget
+# without helping code review (PR #11/#166 evidence: plan+spec docs ate 31.6KB
+# of a 4K budget and the core source file was never seen).
+DOC_PATH_RE = re.compile(r"(^|/)docs?/|\.(md|mdx|rst|txt)$", re.IGNORECASE)
+
 
 def is_test_path(path: str) -> bool:
     return bool(TEST_PATH_RE.search(path))
@@ -96,7 +101,35 @@ def truncate(diff: str, max_len: int) -> str:
     return diff[:max_len] + "\n... (diff truncated due to length)"
 
 
-def compress(diff: str, *, filter_tests: bool, max_len: int) -> tuple[str, dict]:
+def _block_rank(block: list[str]) -> int:
+    """Reorder priority for a file-block (#169): source(0) < test(1) < doc(2)."""
+    path = _block_path(block)
+    if path is None:
+        return 1  # stray preamble stays in the middle
+    if DOC_PATH_RE.search(path):
+        return 2
+    if is_test_path(path):
+        return 1
+    return 0
+
+
+def reorder_blocks(blocks: list[list[str]]) -> list[list[str]]:
+    """Stable source → test → docs reorder (#169).
+
+    Python's sort is stable, so blocks keep their relative input order within
+    each class. This makes alphabetical diffs stop starving core code when the
+    budget cuts the tail — docs get eaten first now.
+    """
+    return sorted(blocks, key=_block_rank)
+
+
+def compress(
+    diff: str,
+    *,
+    filter_tests: bool,
+    max_len: int,
+    reorder: bool = True,
+) -> tuple[str, dict]:
     """Compress the diff and report coverage meta (#120).
 
     Returns (compressed_diff, meta). `meta["diff_truncated"]` is True iff the
@@ -105,6 +138,8 @@ def compress(diff: str, *, filter_tests: bool, max_len: int) -> tuple[str, dict]
     """
     blocks = split_files(diff)
     total_files = sum(1 for b in blocks if _block_path(b))
+    if reorder:
+        blocks = reorder_blocks(blocks)
 
     if filter_tests:
         kept = [b for b in blocks if not _block_is_test(b)]
@@ -132,6 +167,7 @@ def compress(diff: str, *, filter_tests: bool, max_len: int) -> tuple[str, dict]
 
     meta = {
         "filter_tests": filter_tests,
+        "reordered": bool(reorder),
         "diff_truncated": diff_truncated,
         "total_files": total_files,
         "kept_files": len(kept_paths),
@@ -158,6 +194,11 @@ def main() -> int:
         help="Hard length ceiling in characters (default: 4000)",
     )
     ap.add_argument(
+        "--no-reorder",
+        action="store_true",
+        help="Preserve input file order (default: stable source → test → docs reorder, #169)",
+    )
+    ap.add_argument(
         "--meta-file",
         metavar="PATH",
         default=None,
@@ -165,7 +206,12 @@ def main() -> int:
     )
     args = ap.parse_args()
     diff = sys.stdin.read()
-    out, meta = compress(diff, filter_tests=args.filter_tests, max_len=args.max_len)
+    out, meta = compress(
+        diff,
+        filter_tests=args.filter_tests,
+        max_len=args.max_len,
+        reorder=not args.no_reorder,
+    )
     sys.stdout.write(out)
     if not out.endswith("\n"):
         sys.stdout.write("\n")

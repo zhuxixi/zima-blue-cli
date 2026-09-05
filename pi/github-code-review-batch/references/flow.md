@@ -206,12 +206,21 @@ await runs.all([
   { key: "claude-checker-1", agent: "reviewer", context: "fresh", task: "<claude-compliance-checker prompt，显式规则 framing>" },
   { key: "claude-checker-2", agent: "reviewer", context: "fresh", task: "<claude-compliance-checker prompt，隐含约定 framing>" },
   { key: "agents-checker",    agent: "reviewer", context: "fresh", task: "<agents-compliance-checker prompt>" },
-  { key: "bug-scanner",       agent: "reviewer", context: "fresh", model: "<便宜快模型，如 deepseek-v4-flash>", task: "<bug-scanner prompt>" },
-  { key: "logic-analyzer",    agent: "reviewer", context: "fresh", model: "<强模型，如 deepseek-v4-pro>", task: "<logic-analyzer prompt>" },
+  { key: "bug-scanner",       agent: "reviewer", context: "fresh", task: "<bug-scanner prompt>" },
+  { key: "logic-analyzer",    agent: "reviewer", context: "fresh", task: "<logic-analyzer prompt>" },
 ])
 ```
 
-**按 agent 职责差异化指定模型（#170，可选）**：subagent 工具的派发项支持 `model` 字段（缺省继承当前模型）。建议分档：机械性扫描（bug-scanner 配合确定性 tool-layer）用便宜快模型（如 `deepseek-v4-flash`），跨文件逻辑/安全推理（logic-analyzer、delta-reviewer）用强模型（如 `deepseek-v4-pro`），规范 checker 按预算取中档。模型名以 `~/.pi/agent/settings.json` 的 `enabledModels` 为准。
+**按 agent 职责差异化指定模型（#170，可选）**：subagent 工具的派发项支持 `model` 字段，但上面的主派发示例默认不指定它。若确实需要按职责分档（机械扫描用便宜快模型、跨文件逻辑/安全推理用强模型），模型由执行本 skill 的父 Pi agent 选择，child reviewer 自身不参与选型：
+
+1. 用 `subagent({action:"models"})` 查询当前 registry 中准确的 `provider/id`——该列表只用于确认 canonical ID，不代表模型通过了 modelScope 政策。
+2. 读取当前实际生效的 settings，检查 `subagents.modelScope.allow`；本流程所有 child 都用 `agent: "reviewer"`，若存在 `subagents.modelScope.agents.reviewer.allow`，还必须同时通过该角色级 allowlist。
+3. 项目级 `.pi/settings.json` 只有在当前非交互 Pi 进程信任并加载时才生效；生效时项目级 `subagents.modelScope` 整体替换用户级同名配置。
+4. 显式传入时使用完整的 `provider/id`，不要使用可能跨 provider 歧义的 bare model ID（多 provider 注册同名 ID 时无法消歧，会在 modelScope 检查前解析失败）。无法确认有效 modelScope 时，省略 `model` 字段，不要按 registry 列表猜测。
+
+`subagents.modelScope` 是模型范围政策，不负责选择便宜模型：`enforce: true` 时显式传入的越界模型在 child 启动前报错；`strict: true` 进一步拒绝从 agent frontmatter、`subagents.defaultModel`、父 session 或 fallback 链解析出的越界模型。`allow` 按 resolved `provider/id` 做 glob 匹配，已知 thinking 后缀（如 `:max`）匹配时被剥离，无需为后缀单独加条目。
+
+注意：`enabledModels`（settings 顶层）是主会话模型循环候选范围，不是 subagent 的 modelScope allowlist；它可能间接影响继承父 session 模型的 child，但不能用来判断 child 是否获准派发。
 
 task 的 prompt 模板见 [subagent-prompts.md](subagent-prompts.md) 对应小节，输入包（diff 文件路径、摘要、规范文本）以模板变量方式填入。5 个 subagent 职责：
 

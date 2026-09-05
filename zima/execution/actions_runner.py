@@ -100,6 +100,7 @@ class ActionsRunner:
         actions: ActionsConfig,
         returncode: int,
         env: dict[str, str],
+        has_review_signal: bool = True,
     ) -> list[str]:
         """Execute all matching postExec actions.
 
@@ -107,6 +108,10 @@ class ActionsRunner:
             actions: Actions configuration from PJob.
             returncode: Agent process exit code.
             env: Environment variables for {{VAR}} substitution.
+            has_review_signal: Whether agent stdout carried a valid review
+                signal (Status line / zima-review XML). Actions with
+                require_review=True are skipped when this is False (#201).
+                Defaults True so legacy callers are unaffected.
 
         Returns:
             List of error messages from failed actions.
@@ -120,6 +125,15 @@ class ActionsRunner:
         errors: list[str] = []
         for action in actions.post_exec:
             if not _matches_condition(action.condition, returncode):
+                continue
+            # Gate on the PRE-substitution action; _substitute_env rebuilds
+            # the dataclass with explicit kwargs (#201).
+            if action.require_review and not has_review_signal:
+                print(
+                    f"Warning: postExec action skipped — requireReview set but "
+                    f"no valid review signal in agent stdout (type={action.type}, "
+                    f"condition={action.condition})"
+                )
                 continue
 
             processed = self._substitute_env(action, env)
@@ -143,6 +157,7 @@ class ActionsRunner:
             repo=sub(action.repo),
             issue=sub(action.issue),
             body=sub(action.body),
+            require_review=action.require_review,
         )
 
     def _execute_action(self, action: PostExecAction, provider: ActionProvider) -> list[str]:

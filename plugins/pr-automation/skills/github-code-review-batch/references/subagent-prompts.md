@@ -1,8 +1,10 @@
 # SubAgent Definitions and Prompt Templates
 
+> **cc 派发方式**：本文件的 prompt 模板在 Claude Code 下由父 agent 通过 `Agent`（Task）工具并行派发为独立上下文的 sub-agent，task/prompt 字段填下方模板并代入输入变量。并行 fanout 结构见 [flow.md Step 4](flow.md#step-4)。
+
 本文件定义 7 个 sub-agent 的输入契约、输出 schema、任务要求和推荐 prompt 模板。
 
-> **severity（#119）**：所有产出 issue 的 agent（claude-compliance-checker / agents-compliance-checker / bug-scanner / logic-analyzer，以及 delta-reviewer 的 `new_issues`）必须为每个 issue 给出 `severity: critical | high | medium | low`，判定口径见 [flow.md Step 4](flow.md#step-4)。下游 `build_review_body.py` 按 severity 排序，状态报告据此计算 `Critical issues` 与 `Verdict`。
+> **severity 与 blocking（#119 / #183）**：所有产出 issue 的 agent（claude-compliance-checker / agents-compliance-checker / bug-scanner / logic-analyzer，以及 delta-reviewer 的 `new_issues`）必须给出 `severity: critical | high | medium | low`，判定口径见 [flow.md Step 4](flow.md#step-4)。Agent 可在有充分理由覆盖默认策略时额外给出 JSON boolean `blocking`；普通输出不要重复默认值。下游确定性规范化负责 low → `blocking=false`、其余 severity → `blocking=true`，显式 boolean override 优先；missing/invalid severity 按 medium fallback。下游按 severity 排序，并仅用 open blocking findings 驱动状态与 verdict。
 
 ---
 
@@ -260,6 +262,7 @@
 ### 任务
 
 1. **优先处理带 committer 回应的 previous issues**：
+   - `resolution="resolved"` → 视为未验证的声明而非事实：核对 diff 确认修复真实落实 → 加入 `resolved_issues`；声明与代码不符 → 加入 `unresolved_issues`（引用声明与实际差异）
    - `resolution="acknowledged"` / `"wontfix"` → 加入 `acknowledged_issues`，不再视为 open
    - `resolution="clarified"`（有 `committer_note`）→ 结合澄清内容判断 issue 是否仍有效。如果澄清使 issue 失效，标记为 resolved 并引用澄清；否则加入 `unresolved_issues`
    - `resolution=null` → 进入下一步 diff 对比
@@ -325,9 +328,11 @@
 - 只关注被修改的代码，不评论原有代码
 - 对于已修复的问题，必须简要说明修复方式（`resolution_note`）
 - 对于 acknowledged 的问题，保留 `committer_note`
-- 对于未修复的问题，保持原描述不变
+- 对于未修复的问题，保持原描述不变，并保留原 `severity` 与显式 boolean `blocking`；旧 finding 缺少 `blocking` 时由下游按 severity 派生
+- resolved / acknowledged / unresolved buckets 都必须携带原 finding 的 `severity` 和已有 `blocking`，不得因 bucket 转移丢失策略字段
 - 新问题使用新的 `id`，不影响原有 issue 编号
-- 新发现的 issue（`new_issues`）必须含 `severity`（critical/high/medium/low，#119）
+- 新发现的 issue（`new_issues`）必须含 `severity`（critical/high/medium/low，#119）；仅在有充分理由覆盖默认时可含 boolean `blocking`
+- `pass` 只检查未 acknowledged/wontfix、`status=open` 且 effective `blocking=true` 的 findings；open advisory 不阻塞 pass
 
 ### 推荐 prompt
 
@@ -342,8 +347,8 @@
 - 相关规范文件：{guidelines}
 
 要求：
-1. 优先处理带 committer 回应的 issues：
-   - resolution="acknowledged" / "wontfix" → 加入 acknowledged_issues，不再视为 open
+1. 优先处理带 committer 回应的 issues，并在所有输出 bucket 保留原 severity 与已有 boolean blocking：
+   - resolution="acknowledged" / "wontfix" → 加入 acknowledged_issues，不再视为 actionable open
    - resolution="clarified"（有 committer_note）→ 结合澄清内容判断。如果澄清使 issue 失效，标记 resolved 并引用澄清；否则加入 unresolved_issues
 2. 遍历其余 previous issue（resolution 为 null），检查其 file + lines 范围是否在 diff 中被修改：
    - 被修改 → 仔细阅读对应代码，判断是否已修复 → 加入 resolved_issues，附 resolution_note
@@ -351,9 +356,11 @@
 3. 审查 diff 中其他新增/修改的代码，发现新问题 → 加入 new_issues
    - **特别注意**：修复 commit 可能引入新的问题，不要只关注原有问题的修复状态
    - 仔细审查修复代码本身的正确性
+   - new issue 必须给 severity；仅在有充分理由覆盖默认策略时可给 JSON boolean blocking
 4. 忽略已确认 resolved 的旧问题
 5. 对于规范类问题，确认规则是否仍适用于当前变更
-6. 输出 JSON：{"resolved_issues": [...], "acknowledged_issues": [...], "new_issues": [...], "unresolved_issues": [...], "pass": boolean}
+6. pass 只由 effective blocking 的 actionable open findings 决定；下游会为缺少 blocking 的 finding 按 severity 规范化
+7. 输出 JSON：{"resolved_issues": [...], "acknowledged_issues": [...], "new_issues": [...], "unresolved_issues": [...], "pass": boolean}
 ```
 
 ---

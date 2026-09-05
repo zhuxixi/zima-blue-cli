@@ -48,6 +48,7 @@ BUILTIN_SCENES: dict[str, Scene] = {
                     remove_labels=["zima:needs-review"],
                     repo="{{repo}}",
                     issue="{{pr_number}}",
+                    require_review=True,
                 ),
                 PostExecAction(
                     condition="failure",
@@ -56,6 +57,7 @@ BUILTIN_SCENES: dict[str, Scene] = {
                     remove_labels=["zima:needs-review"],
                     repo="{{repo}}",
                     issue="{{pr_number}}",
+                    require_review=True,
                 ),
             ],
         ),

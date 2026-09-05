@@ -24,11 +24,13 @@ class PostExecAction(YamlSerializable):
         repo: Repository slug in "owner/repo" format.
         issue: Issue or PR number as string.
         body: Comment body (for add_comment type).
+        require_review: Skip unless a valid review signal was produced (default False).
     """
 
     FIELD_ALIASES = {
         "add_labels": "addLabels",
         "remove_labels": "removeLabels",
+        "require_review": "requireReview",
     }
 
     condition: str = "always"
@@ -38,6 +40,10 @@ class PostExecAction(YamlSerializable):
     repo: str = ""
     issue: str = ""
     body: str = ""
+    # Skip this action when the agent produced no valid review signal
+    # (Status line / zima-review XML). Prevents "needs-fix" mislabeling on
+    # startup failures like E2BIG where no review ever happened (#201).
+    require_review: bool = False
 
     def __post_init__(self):
         if self.issue is None:
@@ -51,7 +57,10 @@ class PostExecAction(YamlSerializable):
                 )
 
     def to_dict(self) -> dict:
-        return omit_empty(super().to_dict())
+        d = omit_empty(super().to_dict())
+        if not self.require_review:
+            d.pop("requireReview", None)
+        return d
 
     @classmethod
     def from_dict(cls, data: dict) -> PostExecAction:

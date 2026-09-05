@@ -22,6 +22,13 @@ from zima.execution.actions_runner import (
     pr_number_ok,
     repo_ok,
 )
+from zima.execution.failure_guard import (
+    FailureGuard,
+    GuardStateError,
+    classify_execution_result,
+    has_valid_review_signal,
+    normalize_target,
+)
 from zima.execution.history import ExecutionHistory
 from zima.models.config_bundle import ConfigBundle
 from zima.models.pjob import Overrides, PJobConfig
@@ -32,10 +39,24 @@ from zima.utils import generate_timestamp, get_zima_home
 # repo allow-list). Scan-provided repo values must match before they may
 # drive rendering or postExec gh targets (#158).
 
-# Free-text scan values (pr_title/pr_url/pr_diff) entering the agent env /
-# templates are capped to keep E2BIG and render blowups off the table
-# (#158 R21). Diff text is the largest legitimate payload — 1 MiB headroom.
-_DISCOVERED_TEXT_MAX = 1_048_576
+# Byte-based cap for free-text scan values (pr_title/pr_url/pr_diff).
+# The kernel limits a single argv/envp string to MAX_ARG_STRLEN = 131072
+# BYTES (incl. the "KEY=" prefix and trailing NUL), so a char-based cap
+# cannot bound byte length for CJK text (1 char = 3 bytes UTF-8) — #158's
+# 1 MiB char cap never actually prevented E2BIG (#201).
+_DISCOVERED_TEXT_MAX_BYTES = 100_000
+
+
+def truncate_utf8_bytes(text: str, limit: int) -> str:
+    """Truncate text to at most ``limit`` UTF-8 bytes without splitting a
+    codepoint; the partial tail is dropped via errors="ignore" (#201).
+
+    The kernel counts envp strings in bytes, so env-injected free text must
+    be capped in bytes, not characters.
+    """
+    if limit < 0:
+        raise ValueError(f"limit must be >= 0, got {limit}")
+    return text.encode("utf-8")[:limit].decode("utf-8", errors="ignore")
 
 
 class ExecutionStatus(Enum):
@@ -457,18 +478,19 @@ class PJobExecutor:
 
                     # Remaining scan-discovered values (pr_title / pr_url /
                     # pr_diff) are provider/author-controlled free text: cap
-                    # them before they enter the agent subprocess env (E2BIG)
+                    # them BYTES-wise before they enter the agent subprocess
+                    # env (E2BIG / MAX_ARG_STRLEN is a per-string byte limit)
                     # and Jinja2 rendering. A cap hit means a pathological
-                    # payload, so the value is truncated loudly (#158 R21).
+                    # payload, so the value is truncated loudly (#201).
                     for _dk in [k for k in dynamic_vars if k.startswith("pr_")]:
                         _dv = str(dynamic_vars[_dk])
-                        if len(_dv) > _DISCOVERED_TEXT_MAX:
+                        if len(_dv.encode("utf-8")) > _DISCOVERED_TEXT_MAX_BYTES:
                             print(
                                 f"Warning: discovered {_dk} exceeds "
-                                f"{_DISCOVERED_TEXT_MAX} chars (len={len(_dv)}); "
-                                f"truncating (#158)"
+                                f"{_DISCOVERED_TEXT_MAX_BYTES} bytes "
+                                f"(len={len(_dv)} chars); truncating (#201)"
                             )
-                            dynamic_vars[_dk] = _dv[:_DISCOVERED_TEXT_MAX]
+                            dynamic_vars[_dk] = truncate_utf8_bytes(_dv, _DISCOVERED_TEXT_MAX_BYTES)
 
                     # Merge discovered vars into env (for postExec substitution)
                     # Skip keys that already exist in runtime overrides (higher priority)
@@ -551,6 +573,47 @@ class PJobExecutor:
                                     f"#{_dup_spr.get('pr_number')}); re-run with "
                                     "--dedup-off to force"
                                 )
+                        # Failure guard (#202): stop burning paid calls on a
+                        # target whose recent executions produced no valid
+                        # review. Independent of the dedup guard above:
+                        # --dedup-off bypasses dedup ONLY; only the explicit
+                        # failure-guard override bypasses this check.
+                        # Same predicate as the finally-block recording below
+                        # (repo AND pr_number): a repo-only scan would probe a
+                        # bucket that is never written.
+                        _fg_spr = result.scan_pr_result or {}
+                        if (
+                            not dry_run
+                            and _fg_spr.get("repo")
+                            and _fg_spr.get("pr_number")
+                            and not (runtime_overrides and runtime_overrides.failure_guard_off)
+                        ):
+                            _fg_target = normalize_target(
+                                pjob_code=pjob_code,
+                                repo=_fg_spr.get("repo", ""),
+                                pr_number=_fg_spr.get("pr_number", ""),
+                                head_sha=_fg_spr.get("head_sha", ""),
+                            )
+                            try:
+                                _fg_reason = FailureGuard().check(_fg_target)
+                                _fg_status = "cooldown_skip"
+                            except GuardStateError as _fg_exc:
+                                _fg_reason = (
+                                    "failure-guard: state unreadable — refusing to "
+                                    f"start a paid execution (fail closed): {_fg_exc}"
+                                )
+                                _fg_status = "guard_error"
+                            if _fg_reason:
+                                self._history.update_runtime_state(
+                                    pjob_code,
+                                    execution_id,
+                                    failure_guard={
+                                        "status": _fg_status,
+                                        "target": _fg_target.to_dict(),
+                                        "reason": _fg_reason,
+                                    },
+                                )
+                                raise SkipAction(_fg_reason)
                 except SkipAction as e:
                     result.status = ExecutionStatus.SKIPPED
                     result.returncode = 0
@@ -713,6 +776,66 @@ class PJobExecutor:
             if result.status == ExecutionStatus.SUCCESS and result.action_errors:
                 result.status = ExecutionStatus.FAILED
                 result.returncode = 1
+
+            # Failure-guard accounting (#202): once the terminal status is
+            # final, record whether this execution produced a valid review.
+            # Skipped / dry-run executions never touch the guard; the operator
+            # override bypasses the check but still records outcomes so the
+            # streak stays truthful. Recording failures must not fail the run.
+            _fg_spr = getattr(result, "scan_pr_result", None) or {}
+            if (
+                not dry_run
+                and result.status != ExecutionStatus.SKIPPED
+                and _fg_spr.get("repo")
+                and _fg_spr.get("pr_number")
+            ):
+                try:
+                    _fg_outcome = classify_execution_result(
+                        status=result.status.value,
+                        returncode=result.returncode,
+                        stdout=result.stdout,
+                        expect_review_verdict=True,
+                    )
+                    _fg_target = normalize_target(
+                        pjob_code=pjob_code,
+                        repo=_fg_spr.get("repo", ""),
+                        pr_number=_fg_spr.get("pr_number", ""),
+                        head_sha=_fg_spr.get("head_sha", ""),
+                    )
+                    FailureGuard().record(_fg_target, _fg_outcome, execution_id=execution_id)
+                    if _fg_outcome.countable_failure:
+                        self._history.update_runtime_state(
+                            pjob_code,
+                            execution_id,
+                            failure_guard={
+                                "status": "recorded_failure",
+                                "kind": _fg_outcome.kind,
+                            },
+                        )
+                    elif _fg_outcome.clears_streak:
+                        self._history.update_runtime_state(
+                            pjob_code,
+                            execution_id,
+                            failure_guard={"status": "cleared"},
+                        )
+                except Exception as _fg_exc:  # noqa: BLE001 - observability must not fail the run
+                    print(f"Warning: failure-guard record failed: {_fg_exc}")
+                    # Spec §6.1-3: guard errors must leave a runtime-state
+                    # trace. A corrupt state file first surfacing at record
+                    # time would otherwise leave this execution unmarked
+                    # until the next run's check (#202 advisory 5).
+                    try:
+                        self._history.update_runtime_state(
+                            pjob_code,
+                            execution_id,
+                            failure_guard={
+                                "status": "guard_error",
+                                "phase": "record",
+                                "reason": str(_fg_exc),
+                            },
+                        )
+                    except Exception:  # noqa: BLE001 - observability must not fail the run
+                        pass
 
             # Cleanup temp directory
             _pjob_cleanup = locals().get("pjob")
@@ -937,6 +1060,11 @@ class PJobExecutor:
                 actions=pjob.spec.actions,
                 returncode=effective_returncode,
                 env=env_vars,
+                # requireReview gate (#201): pass whether agent stdout carried
+                # a valid review signal (Status line / zima-review XML); actions
+                # with require_review=True are skipped when no review happened
+                # (e.g. E2BIG startup failure must not label needs-fix).
+                has_review_signal=has_valid_review_signal(result.stdout or ""),
             )
             result.action_errors.extend(action_errors)
         except Exception as e:

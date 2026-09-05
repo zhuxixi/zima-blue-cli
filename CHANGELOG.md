@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.8.2] - 2026-09-04
+
+### Fixes
+- **cr**: failure-guard advisory follow-ups (#202) (#215)
+- **executor**: byte-cap pr_diff env injection + requireReview postExec gate (#201) (#218)
+
+### Changes
+- **cr-batch**: fix model dispatch guidance for modelScope compatibility (#207) (#216)
+
+[0.8.2]: https://github.com/zhuxixi/zima-blue-cli/compare/v0.8.1...v0.8.2
+
+## [0.8.1] - 2026-09-02
+
+### Features
+- **cr**: failure guard — cooldown after repeated invalid CR executions (#202) (#209)
+
+[0.8.1]: https://github.com/zhuxixi/zima-blue-cli/compare/v0.8.0...v0.8.1
+
+## [0.8.0] - 2026-09-02
+
+### Features
+- **auto-merge**: auto approve + squash merge after CR convergence (#204) (#205)
+- **skill**: zima-pr-monitor 监听机制升级——前台阻塞等待 CR job 完成（wait-cr helper） (#190)
+
+### Fixes
+- **cr**: 执行层同 PR 同 head 去重——防双执行流重复审查（#181） (#193)
+- **cr**: make low severity findings non-blocking (#188)
+
+### Changes
+- **skill**: add acceptance layering to issue-driven workflow (#157) (#203)
+- test: fix flaky uuid collision in stale-override assertions (#192 #177) (#200) (#200)
+- **claude.md**: execution dedup guard, runtime state files, --dedup-off (497892b) (#194)
+- **skill**: step 5 default execution model B — same-session absolute paths (#199)
+- **skill**: issue-153 hardening — execution-model tradeoff, subagent cwd, push gate, cleanup list (#197)
+- **claude.md**: pi skill script contract tests + wait-cr state-file dependency (#191)
+- **skill**: pi skill 触发叙事从 daemon 45min 轮询改为 webhook 驱动（#186） (#187)
+- **skill**: github-issue-driven 双 Bot 表述改为单 Bot（#184） (#185)
+- **skill**: zima-pr-monitor 补多执行流判定纪律与合并前 in-flight 检查（#181） (#182)
+- **claude.md**: pinned-PR fast path, gh pr diff gotcha, smee watchdog (#180)
+
+[0.8.0]: https://github.com/zhuxixi/zima-blue-cli/compare/v0.7.3...v0.8.0
+
 ## [0.7.3] - 2026-08-20
 
 ### Fixes

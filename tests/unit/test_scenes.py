@@ -125,6 +125,7 @@ class TestBuiltinScenes:
         assert success_action.add_labels == []
         assert success_action.repo == "{{repo}}"
         assert success_action.issue == "{{pr_number}}"
+        assert success_action.require_review is True
 
         failure_action = scene.default_actions.post_exec[1]
         assert failure_action.condition == "failure"
@@ -133,6 +134,7 @@ class TestBuiltinScenes:
         assert failure_action.remove_labels == ["zima:needs-review"]
         assert failure_action.repo == "{{repo}}"
         assert failure_action.issue == "{{pr_number}}"
+        assert failure_action.require_review is True
 
     def test_code_review_scene_pre_exec_scan_pr(self):
         """Test code-review preExec scan_pr has correct repo and label."""

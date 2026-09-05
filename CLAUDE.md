@@ -78,6 +78,7 @@ The core design is composability through seven YAML-based configuration types:
 - **`zima/execution/background_runner.py`** — Background PJob execution in detached process.
 - **`zima/execution/history.py`** — Execution history tracking with PID recording.
 - **`zima/execution/actions_runner.py`** — `ActionsRunner`: executes postExec actions (GitHub label/comment) after agent exit.
+- **`zima/execution/failure_guard.py`** — Failure guard (#202): skips agent launch during a cooldown after N consecutive executions with no valid `<zima-review>` verdict (details in Gotchas).
 - **`zima/actions/base.py`** — `ActionProvider` ABC: interface providers implement (add_label, remove_label, post_comment, fetch_diff, scan_prs, verify_pr_label — fail-closed by default).
 - **`zima/actions/registry.py`** — `ProviderRegistry`: discovers providers (built-in github + external) via the `zima.action_providers` entry-point group (`importlib.metadata.entry_points`).
 - **`zima/models/defaults.py`** — Default action-provider name resolution (`ZIMA_GIT_REPO_PROVIDER` env var).
@@ -103,6 +104,7 @@ zima pjob run <code>
   → Renders Workflow template with Variables
   → Builds CLI command from Agent parameters
   → Runs preExec actions (e.g., scan_prs); SkipAction → ExecutionResult(status=SKIPPED)
+  → Scan-discovered pr_* free text (pr_title/pr_url/pr_diff) is capped at 100_000 UTF-8 BYTES before subprocess env injection — kernel MAX_ARG_STRLEN bounds envp strings in bytes, so a char cap can't bound CJK text (E2BIG); cap hit = loud truncation (#201)
   → Dedup guard: same-(repo, pr_number, head_sha) review already running/succeeded recently → SkipAction (SKIPPED, no postExec); `--dedup-off` bypasses
   → Executes subprocess (kimi/claude/pi)
   → Runs postExec actions (e.g. GitHub label transition) in finally block
@@ -114,6 +116,7 @@ zima pjob run <code>
 - On success (returncode=0): `condition: success` actions fire
 - On failure/timeout/cancel: `condition: failure` actions fire, `action_errors` recorded
 - Reviewer PJobs: `<zima-review>` XML in stdout is parsed, verdict maps to effective returncode
+- `requireReview: true` on an action skips it unless stdout carried a valid review signal (closed `<zima-review>` XML or full `Status: PASS|NEEDS_FIX|NO_NEW_COMMITS` line — `has_valid_review_signal`); prevents needs-fix mislabeling when no review ever ran, e.g. E2BIG startup failure (#201)
 
 ### Data Layout
 
@@ -127,6 +130,8 @@ zima pjob run <code>
 │   └── history/*.jsonl
 ├── temp/                      # Temporary execution artifacts
 │   └── pjobs/                # PJob execution working directories (auto-cleaned)
+├── state/
+│   └── failure-guard/       # Failure-guard streak/cooldown state per (pjob, repo, pr, head) target (#202)
 └── history/
     ├── pjobs.json           # Execution history (per-PJob records, max 100 each)
     └── pjobs/<code>/<execution_id>.json   # Runtime state files (per-execution, written at start + updated on completion)
@@ -157,7 +162,7 @@ Customizable via `ZIMA_HOME` env var.
 ## Testing
 
 - **`tests/unit/`** — Pure unit tests for models and config manager
-- **pi skill scripts** have contract tests under `tests/unit/` (`test_wait_cr.py`, `test_cr_batch_*.py`) run by the main pytest suite/CI — run them when editing `pi/*/scripts/*.py`
+- **pi skill scripts** have contract tests under `tests/unit/` (`test_wait_cr.py`, `test_cr_batch_*.py`) run by the main pytest suite/CI — run them when editing `pi/*/scripts/*.py`; the cr-batch skill's `*.md` docs are contract-locked too (`TestModelDispatchDocs` reads every `*.md` under `pi/github-code-review-batch/` and fails on hardcoded model names)
 - **`examples/auto-merge/auto-merge-guarded.py`** (standalone example, see Project Overview) has tests under `tests/unit/` (`test_auto_merge_guarded.py`, loads the hyphen-named script via importlib) run by the main pytest suite/CI — run them when editing the script
 - **`tests/integration/`** — CLI command tests using Typer's `CliRunner`, subprocess integration tests
 - **`tests/conftest.py`** — Fixtures: `isolated_zima_home` (temp ZIMA_HOME), `config_manager`, `cli_runner`, `unique_code`
@@ -220,6 +225,12 @@ PR 评论有三个独立 API，不同 CR 工具用不同 API 提交，获取完�
 - 同 PJob 同 (repo, pr_number, head_sha) 已有执行 running、或 30min 内 success → SkipAction（SKIPPED，无 postExec、无 label 变更）；`zima pjob run --dedup-off` 强制重跑
 - 两侧 head_sha 都已知且不同 = 新 commit 新 review round，不去重；任一侧缺 head 保守视为同 head；failed/timeout/skipped 记录永不阻塞重跑；running 超 90min 视为崩溃死记录放行（PJob timeout 仅 30min）
 
+### Failure guard (#202)
+
+Repeated invalid CR executions on the same `(pjob, repo, pr_number, head_sha)` target trip a cooldown: after `ZIMA_FAILURE_GUARD_THRESHOLD` (default 2) consecutive executions with no valid `<zima-review>` verdict, the executor skips agent launch for `ZIMA_FAILURE_GUARD_COOLDOWN_MINUTES` (default 60). The skip happens before launch (status `skipped`, no postExec, no label churn). State lives in `<ZIMA_HOME>/state/failure-guard/*.json`; a corrupt state file fails closed (skip, not run). `NEEDS_FIX` is a valid review and clears the streak. `--dedup-off` does NOT bypass this guard — use `zima pjob run --failure-guard-off` for a deliberate operator retry (outcomes are still recorded).
+
+Polling-path executions (daemon, no `head_sha` pin) collapse into a `--nohead` bucket — a new push does NOT reset that budget; `--failure-guard-off` is the operator escape. The override is runtime-only (`zima pjob run --failure-guard-off`); `spec.overrides.failureGuardOff` in PJob YAML has no effect.
+
 ### Agent CLIs
 
 - Kimi agent 调用 `kimi`（Kimi Code CLI）二进制（旧名 `kimi-cli` 已废弃，0.5.5 迁移），运行 Kimi PJob 前需确保 `kimi` 在 PATH 中
@@ -244,3 +255,4 @@ PR 评论有三个独立 API，不同 CR 工具用不同 API 提交，获取完�
 - `docs/history/` — Deprecated designs (reference only)
 - `docs/decisions/` — ADRs; ADR-004 (single execution) is the current model, ADR-005 (architecture governance) defines the dependency-direction contract
 - `docs/design/` — Feature design documents (PJob design, API interface, etc.)
+- `docs/superpowers/` — Feature-dev working artifacts (plans/specs, e.g. failure-guard design) referenced from code docstrings; not architecture docs
