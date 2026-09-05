@@ -11,7 +11,7 @@
 本文档体系在 #228 立项前存在三处已证实的漂移：
 
 - **README 讲的是单路径故事**：快速上手整章只教 `zima agent create ...` 系列 CLI 命令，与实际已形成的双路径现实（agent 直接写/复制 YAML 到 `$ZIMA_HOME/configs/`，CLI 受约束写入作为人类补充）矛盾，把读者引向「zima = 命令行配置工具」的错误心智（#196 的核心发现）。
-- **`docs/API-INTERFACE.md` 是手工维护的命令快照**：标注的最后更新为 2026-03-28，实际命令面早已演进——`pjob actions` 子命令组（provider/list/add/remove，#73）整组缺失、`pjob run --failure-guard-off`（#201）等运行时 override 未覆盖。这类快照每次 CLI 演进都要人工同步，漏了没有任何机制发现。
+- **`docs/API-INTERFACE.md` 是手工维护的命令快照**：标注的最后更新为 2026-03-28，实际命令面早已演进——`pjob actions` 子命令组（provider/list/add/remove，#73）整组缺失、`pjob run --failure-guard-off`（#202）等运行时 override 未覆盖。这类快照每次 CLI 演进都要人工同步，漏了没有任何机制发现。
 - **`docs/design/CLI-INTERFACE.md` 自述「实现前文档，可能与代码不一致」**，却仍被当作用户接口参考引用。
 
 ## 决策驱动因素
@@ -39,7 +39,7 @@
 ## 替代方案（否掉的）
 
 - **README 也自动生成** —— 否。README 承载产品叙事（为什么有两条路径、何时用哪个），叙事无法从命令树可靠推导；生成的 README 必然退化为命令列表堆砌。
-- **继续手工维护命令快照** —— 否。API-INTERFACE.md 的现状（缺失整组子命令、缺失新 flag、更新日期过期三个月）就是该方案失效的实证。
+- **继续手工维护命令快照** —— 否。API-INTERFACE.md 的现状（缺失整组子命令、缺失新 flag、更新日期过期五个月）就是该方案失效的实证。
 - **bot / AI 辅助先行** —— 否。违反 docs-as-code 分层顺序：确定性生成与 CI 门禁未稳定前上智能层，会把「防漂移」变成「带幻觉的文档生成」。
 - **第一轮就上 docs-sync bot** —— 否。gate 先行收益最大、风险最低；自动开 PR 的 bot（jfox Phase 4）留待门禁验证后评估。
 
@@ -52,6 +52,6 @@
 ## 依据来源
 
 - issue #196（双路径决策与 CLI 价值重估）、issue #228（本 ADR 的立项与 spec）
-- jfox #456（五阶段路线图）、#474（CLI Reference 双源生成）、#477（Phase 3 CI 漂移门禁）、#488（untracked 检查补丁）
+- jfox #456（五阶段路线图）、PR #474（CLI Reference 双源生成）、#477（Phase 3 CI 漂移门禁）、#488（untracked 检查补丁）
 - spec：`docs/superpowers/specs/2026-09-05-docs-automation-design.md` §3（英文范围表）、§4（API-INTERFACE 拆分映射）
 - 本仓库实证：API-INTERFACE.md 漂移盘点（#228 调研）、PR 1 各 task 的 review 记录
