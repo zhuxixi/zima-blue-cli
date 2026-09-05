@@ -76,6 +76,7 @@ The core design is composability through seven YAML-based configuration types:
 - **`zima/execution/background_runner.py`** — Background PJob execution in detached process.
 - **`zima/execution/history.py`** — Execution history tracking with PID recording.
 - **`zima/execution/actions_runner.py`** — `ActionsRunner`: executes postExec actions (GitHub label/comment) after agent exit.
+- **`zima/execution/failure_guard.py`** — Failure guard (#202): skips agent launch during a cooldown after N consecutive executions with no valid `<zima-review>` verdict (details in Gotchas).
 - **`zima/actions/base.py`** — `ActionProvider` ABC: interface providers implement (add_label, remove_label, post_comment, fetch_diff, scan_prs, verify_pr_label — fail-closed by default).
 - **`zima/actions/registry.py`** — `ProviderRegistry`: discovers providers (built-in github + external) via the `zima.action_providers` entry-point group (`importlib.metadata.entry_points`).
 - **`zima/models/defaults.py`** — Default action-provider name resolution (`ZIMA_GIT_REPO_PROVIDER` env var).
@@ -249,3 +250,4 @@ Polling-path executions (daemon, no `head_sha` pin) collapse into a `--nohead` b
 - `docs/history/` — Deprecated designs (reference only)
 - `docs/decisions/` — ADRs; ADR-004 (single execution) is the current model, ADR-005 (architecture governance) defines the dependency-direction contract
 - `docs/design/` — Feature design documents (PJob design, API interface, etc.)
+- `docs/superpowers/` — Feature-dev working artifacts (plans/specs, e.g. failure-guard design) referenced from code docstrings; not architecture docs
