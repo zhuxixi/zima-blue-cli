@@ -34,7 +34,7 @@ class AgentConfig(BaseConfig):
 | `claude` | maxTurns, permissionMode, outputFormat, allowedTools, workDir, addDirs |
 | `pi` | provider, model, thinking, noSession, outputFormat, tools |
 
-`[2026-09 漂移修正: 原表中的 kimi maxStepsPerTurn/maxRalphIterations/maxRetriesPerStep/yolo 与 gemini approvalMode/checkpointing 行已与当前模板不符，按代码更新；原 v1 运行时属性（max_execution_time/cycle_interval/max_steps_per_turn）已随 v2 单次执行模型移除，不再列出]`
+`[2026-09 漂移修正: 原表中的 kimi maxStepsPerTurn/maxRalphIterations/maxRetriesPerStep/yolo 与 gemini approvalMode/checkpointing 行已与当前模板不符，按代码更新；v1 运行时属性（max_execution_time/cycle_interval/max_steps_per_turn）仍作为 AgentConfig 的 property 保留（zima/models/agent.py，供 legacy kimi_runner 周期路径使用），故未列入 v2 参数模板表——v2 参数模板面才是当前默认路径。]`
 
 ### 2.2 WorkflowConfig
 
