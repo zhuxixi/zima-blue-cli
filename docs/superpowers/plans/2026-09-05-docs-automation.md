@@ -184,11 +184,6 @@ def test_extract_no_side_effects():
     def cli2():
         """Root.""
 
-    @_c.cli2.command() if hasattr(_c, "cli2") else None
-    def boom():
-        raise RuntimeError("callback must not run")
-
-    # simpler direct proof: register command whose callback raises
     @cli2.command()
     def boom2():
         raise RuntimeError("callback must not run")
