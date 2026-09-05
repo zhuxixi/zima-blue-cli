@@ -98,14 +98,22 @@ def parse_diagnostics(tool: str, text: str) -> list[dict]:
     return out
 
 
-def run_tool(tool: str, repo_root) -> list[dict]:
-    """Run one tool if its runner is installed; return parsed issues. Degrade to []."""
+def run_tool(tool: str, repo_root, files=None) -> list[dict]:
+    """Run one tool if its runner is installed; return parsed issues. Degrade to [].
+
+    #174: when ``files`` is given, scope the tool to those paths — ruff/mypy/
+    eslint take file arguments directly; tsc stays project-wide (file args
+    would bypass tsconfig include semantics) and relies on the caller-side
+    intersection instead.
+    """
     runner = "npx" if tool in ("tsc", "eslint") else tool
     if not shutil.which(runner):
         return []
     cmd = _TOOL_CMD.get(tool)
     if not cmd:
         return []
+    if files and tool != "tsc":
+        cmd = list(cmd[:-1]) + list(files)
     try:
         proc = subprocess.run(
             cmd, cwd=str(repo_root), capture_output=True, text=True, timeout=180, check=False
@@ -115,16 +123,38 @@ def run_tool(tool: str, repo_root) -> list[dict]:
     return parse_diagnostics(tool, (proc.stdout or "") + (proc.stderr or ""))
 
 
+def filter_to_files(issues: list[dict], files) -> list[dict]:
+    """Intersect parsed issues with the changed-file set (#174).
+
+    Normalizes leading ``./`` on both sides so ruff/mypy output paths match
+    ``gh pr diff --name-only`` output. Pre-existing findings in untouched
+    files must not flood the review round.
+    """
+    if not files:
+        return issues
+    wanted = {str(f).lstrip("./") for f in files}
+    return [i for i in issues if str(i.get("file", "")).lstrip("./") in wanted]
+
+
 def run_tool_layer(repo_root, changed_files=None) -> list[dict]:
     issues: list[dict] = []
     for tc in detect_toolchains(repo_root):
-        issues.extend(run_tool(tc["tool"], repo_root))
-    return issues
+        issues.extend(run_tool(tc["tool"], repo_root, files=changed_files))
+    # Double safety (#174): even tools scoped by file args can emit stray
+    # paths (tsc always runs project-wide); intersect as the final gate.
+    return filter_to_files(issues, changed_files)
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--detect-only", action="store_true", help="print detected tool names and exit")
+    ap.add_argument(
+        "--files",
+        nargs="+",
+        default=None,
+        help="scope tools to these changed files (e.g. `gh pr diff <PR> --name-only`); "
+        "falls back to the stdin changed_files field; omit for full-repo scan",
+    )
     args = ap.parse_args()
     raw = sys.stdin.read()
     try:
@@ -139,7 +169,8 @@ def main() -> int:
         )
         sys.stdout.write("\n")
         return 0
-    out = run_tool_layer(repo_root, d.get("changed_files", []))
+    files = args.files if args.files else d.get("changed_files") or None
+    out = run_tool_layer(repo_root, files)
     json.dump(out, sys.stdout, ensure_ascii=False)
     sys.stdout.write("\n")
     return 0
