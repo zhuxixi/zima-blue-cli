@@ -52,7 +52,6 @@ spec:
   type: kimi              # kimi | claude | pi
   parameters:
     model: moonshot-v1-8k
-    yolo: true
   defaults:               # fallback refs when a PJob omits them
     workflow: my-workflow
     env: my-env
