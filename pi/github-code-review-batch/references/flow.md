@@ -74,17 +74,47 @@ gh pr view <PR> --json comments --jq '[.comments[] | {author: .author.login, cre
     - 提取 `previous_issues = issues`
     - 执行 [Step 0.2a](#step-0-2a)：读取并解析 committer 对上一轮 issues 的回应，更新 `previous_issues` 的 `resolution` 和 `committer_note` 字段
     - 进入【增量审查流程】（见 [delta-review.md](delta-review.md)），跳过 Step 1 之后的 Step 3-5
-- 否 → 首次审查 → 走完整流程（Round = 1）
+- 否 → 首次审查 → 走完整流程（Round = 1）；metadata_state=empty，Step 1 允许运行 trivial precheck
 
 ### 0.4 异常情况 {#step-0-4}
 
 - **Metadata 字段部分损坏但能拿到 round**：以读到的 round 为底线，本轮取 `round + 1`，其余字段按 fallback 默认（如 `previous_head_sha=null`，`previous_issues=[]`），输出警告
 - **Metadata 完全无法解析（连 round 都拿不到）**：报错并停止执行。**不再静默 fallback 到 Round-1**，因为对已存在 Round-N 历史的 PR 重置 round 会破坏外部调度器的状态机
-- `gh pr view --json reviews` 失败 → 视为无 previous review，继续正常 Round-1 流程
+- `gh pr view --json reviews` 失败 → 视为无 previous review，继续正常 Round-1 流程；但此时 metadata 状态未知（unavailable），Step 1 不得运行 trivial precheck，不得走 approved 快速路径
 
 ---
 
 ## Step 1: PR 资格审查 {#step-1}
+
+### 1.0 确定性 trivial precheck（仅首轮，metadata_state=empty）
+
+只有 Step 0 确认无 previous pi-cr metadata（metadata_state=empty）的首轮才运行本小节；NO_NEW_COMMITS、delta-review、metadata 状态未知（unavailable）分支不运行。
+
+使用 `bash` 执行（PR 引用必须带引号，`owner/repo#N` 未引用时 `#` 会被 shell 当作注释起点）：
+
+```bash
+set +e
+python3 scripts/trivial_check.py "<PR>" --report
+rc=$?
+set -e
+if [ "$rc" -eq 0 ]; then
+    # stdout 已是完整状态报告（Status: PASS + approved verdict + Note）
+    # 原样保留 stdout 并结束，不走 Step 2-9，不发 PR 评论
+    exit 0
+elif [ "$rc" -eq 1 ]; then
+    # 数据有效但非 trivial（含 closed/draft/rename/非 .md），继续下方检查
+    :
+else
+    # 脚本/API 异常（exit 2），记录 stderr 后继续下方检查（fail-open）
+    :
+fi
+```
+
+trivial 判定权完全属于 `scripts/trivial_check.py`（v1 规则：OPEN + 非 draft + 完整文件列表 + 无 rename/copy + 全部变更文件以 `.md` 结尾）。LLM 不得自行宣布 trivial。
+
+**架构边界**：本 precheck 是 skill 内部短路——parent Pi 仍会启动并执行少量流程指令，但不读取完整 diff、不执行 LLM 推理、不派发 Step 2-9 的审查 agent。若要在 parent Pi 启动前由 zima executor/preExec 短路，属于另一个 issue 的范围。
+
+### 1.1 其余资格检查
 
 使用 `bash` 执行 `gh pr view <PR>` 和 `gh pr view <PR> --comments` 检查 PR 状态。
 
@@ -92,7 +122,6 @@ gh pr view <PR> --json comments --jq '[.comments[] | {author: .author.login, cre
 
 - PR 是否已关闭 (state: CLOSED)
 - PR 是否为草稿 (isDraft: true)
-- PR 是否是 trivial PR（如 dependabot、renovate、纯格式化、仅修改配置文件）
 - PR 是否是自动化 PR（PR 标题或描述包含 "automated"、"bot" 等标识）
 
 如果上述任一条件为真，立即停止执行，向用户说明原因，不继续审查。
@@ -100,12 +129,6 @@ gh pr view <PR> --json comments --jq '[.comments[] | {author: .author.login, cre
 **为什么不检查"是否已有 bot 评论"**：与监听模式不同，非监听模式下同一 PR 会被外部调度器多次审查（首次 → 增量 → 增量...），这是预期行为。Step 0 会通过 metadata 和 SHA 对比自动判断是首次审查还是增量审查。
 
 **为什么不跳过 AI 生成的 PR**：AI 生成的 PR 也可能存在规范违规或逻辑错误，因此不跳过。
-
-如何判断 trivial PR：
-
-- 标题包含 "bump"、"update"、"dependabot"、"renovate"、"format"、"lint"
-- 只修改了配置文件（如 `.github/workflows`、`.prettierrc`、锁文件）
-- 变更行数极少且明显无意义
 
 ---
 

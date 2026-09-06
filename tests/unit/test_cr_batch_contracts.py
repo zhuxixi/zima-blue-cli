@@ -1073,6 +1073,7 @@ class TestPortability:
         "compress_diff.py",
         "parse_metadata.py",
         "render_status_report.py",
+        "trivial_check.py",
     ]
 
     def test_scripts_are_stdlib_only(self):
@@ -1087,7 +1088,12 @@ class TestPortability:
                 elif isinstance(node, ast.ImportFrom) and node.module:
                     imports.append(node.module.split(".")[0])
             non_stdlib = sorted(
-                {m for m in imports if m not in sys.stdlib_module_names and m != "issue_policy"}
+                {
+                    m
+                    for m in imports
+                    if m not in sys.stdlib_module_names
+                    and m not in ("issue_policy", "render_status_report")
+                }
             )
             if non_stdlib:
                 offenders[name] = non_stdlib
@@ -1388,3 +1394,25 @@ class TestDiffReorder:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         assert meta.get("reordered") is False
         assert proc.stdout.index("docs/plan.md") < proc.stdout.index("src/core.ts")
+
+
+# ---------------------------------------------------------------------------
+# Trivial precheck flow contract (#223)
+# ---------------------------------------------------------------------------
+
+
+class TestTrivialPrecheckFlow:
+    @pytest.fixture(scope="class")
+    def texts(self) -> dict[str, str]:
+        return {
+            "flow": (SKILL_DIR / "references" / "flow.md").read_text(encoding="utf-8"),
+        }
+
+    def test_flow_documents_metadata_state_gate(self, texts):
+        flow = texts["flow"]
+        assert "metadata_state=empty" in flow
+        assert "unavailable" in flow
+        assert "trivial_check.py" in flow
+        assert "set +e" in flow
+        assert "如何判断 trivial PR" not in flow
+        assert "LLM 不得自行宣布 trivial" in flow
