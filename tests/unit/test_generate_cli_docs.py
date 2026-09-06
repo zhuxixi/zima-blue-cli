@@ -127,7 +127,7 @@ class TestLoadDescriptions:
 
     def test_duplicate_keys_rejected(self, tmp_path):
         text = (
-            'commands:\n'
+            "commands:\n"
             '  "zima":\n'
             '    description: "First."\n'
             '  "zima":\n'
@@ -163,12 +163,7 @@ class TestLoadDescriptions:
             load_descriptions(path)
 
     def test_unsupported_entry_field_rejected(self, tmp_path):
-        text = (
-            'commands:\n'
-            '  "zima":\n'
-            '    description: "ok"\n'
-            '    summary: "nope"\n'
-        )
+        text = "commands:\n" '  "zima":\n' '    description: "ok"\n' '    summary: "nope"\n'
         path = _write_catalog(tmp_path, text)
         with pytest.raises(ValueError, match="unsupported fields"):
             load_descriptions(path)

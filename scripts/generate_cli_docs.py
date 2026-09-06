@@ -203,9 +203,7 @@ def load_descriptions(path: Path) -> dict[str, str]:
     return descriptions
 
 
-def validate_descriptions(
-    command_paths: Collection[str], descriptions: Mapping[str, str]
-) -> None:
+def validate_descriptions(command_paths: Collection[str], descriptions: Mapping[str, str]) -> None:
     """Ensure the catalog exactly covers the extracted command paths."""
     expected = set(command_paths)
     actual = set(descriptions)
