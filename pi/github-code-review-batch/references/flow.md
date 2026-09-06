@@ -112,6 +112,8 @@ fi
 
 trivial 判定权完全属于 `scripts/trivial_check.py`（v1 规则：OPEN + 非 draft + 完整文件列表 + 无 rename/copy + 全部变更文件以 `.md` 结尾）。LLM 不得自行宣布 trivial。
 
+**架构边界**：本 precheck 是 skill 内部短路——parent Pi 仍会启动并执行少量流程指令，但不读取完整 diff、不执行 LLM 推理、不派发 Step 2-9 的审查 agent。若要在 parent Pi 启动前由 zima executor/preExec 短路，属于另一个 issue 的范围。
+
 ### 1.1 其余资格检查
 
 使用 `bash` 执行 `gh pr view <PR>` 和 `gh pr view <PR> --comments` 检查 PR 状态。
