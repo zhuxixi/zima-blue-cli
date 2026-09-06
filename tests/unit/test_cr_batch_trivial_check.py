@@ -6,7 +6,6 @@ trivial_check pure-function, fetch and main-level tests.
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -17,6 +16,7 @@ _SCRIPT_DIR = _REPO_ROOT / "pi" / "github-code-review-batch" / "scripts"
 
 sys.path.insert(0, str(_SCRIPT_DIR))
 import render_status_report  # type: ignore[import-not-found]  # noqa: E402
+import trivial_check  # type: ignore[import-not-found]  # noqa: E402
 
 PASS_PAYLOAD = {
     "pr_number": 123,
@@ -101,3 +101,263 @@ def test_render_note_xml_escaped_and_parses():
     assert parsed.verdict == "approved"
     assert "docs &amp; &lt;generated&gt;.md" in out
     assert "docs & <generated>.md" in parsed.summary
+
+
+# ---------------------------------------------------------------------------
+# Task 2: trivial_check pure functions
+# ---------------------------------------------------------------------------
+
+
+def _pr_view(**overrides) -> dict:
+    base = {
+        "number": 123,
+        "state": "OPEN",
+        "isDraft": False,
+        "changedFiles": 2,
+        "headRefOid": "a" * 40,
+        "reviews": [],
+    }
+    base.update(overrides)
+    return base
+
+
+def _file(path: str, status: str = "modified", previous: str | None = None) -> dict:
+    rec = {"filename": path, "status": status}
+    if previous is not None:
+        rec["previous_filename"] = previous
+    return rec
+
+
+def _pr_data(files=None, **overrides) -> dict:
+    base = {
+        "number": 123,
+        "state": "OPEN",
+        "is_draft": False,
+        "head_sha": "a" * 40,
+        "changed_files": 2,
+        "metadata_state": "empty",
+        "files": files
+        or [
+            trivial_check.normalize_file(_file("README.md")),
+            trivial_check.normalize_file(_file("docs/guide.md")),
+        ],
+    }
+    base.update(overrides)
+    return base
+
+
+class TestNormalizePrRef:
+    def test_number(self):
+        assert trivial_check.normalize_pr_ref("205", None) == ("", 205)
+
+    def test_number_with_repo(self):
+        assert trivial_check.normalize_pr_ref("205", "o/r") == ("o/r", 205)
+
+    def test_url(self):
+        assert trivial_check.normalize_pr_ref("https://github.com/o/r/pull/205", None) == (
+            "o/r",
+            205,
+        )
+
+    def test_url_trailing_slash(self):
+        assert trivial_check.normalize_pr_ref("https://github.com/o/r/pull/205/", None) == (
+            "o/r",
+            205,
+        )
+
+    def test_owner_repo_n(self):
+        assert trivial_check.normalize_pr_ref("o/r#205", None) == ("o/r", 205)
+
+    def test_url_repo_conflict(self):
+        with pytest.raises(ValueError):
+            trivial_check.normalize_pr_ref("https://github.com/o/r/pull/205", "x/y")
+
+    def test_owner_repo_n_conflict(self):
+        with pytest.raises(ValueError):
+            trivial_check.normalize_pr_ref("o/r#205", "x/y")
+
+    @pytest.mark.parametrize(
+        "ref",
+        ["", "abc", "https://gitlab.com/o/r/pull/1", "o/r#0", "0"],
+    )
+    def test_unsupported(self, ref):
+        with pytest.raises(ValueError):
+            trivial_check.normalize_pr_ref(ref, None)
+
+
+class TestParsePrView:
+    def test_ok(self):
+        pr = trivial_check.parse_pr_view(_pr_view())
+        assert pr["number"] == 123
+        assert pr["state"] == "OPEN"
+        assert pr["is_draft"] is False
+        assert pr["changed_files"] == 2
+        assert pr["head_sha"] == "a" * 40
+        assert pr["reviews"] == []
+
+    def test_rejects_bool_changed_files(self):
+        with pytest.raises(ValueError):
+            trivial_check.parse_pr_view(_pr_view(changedFiles=True))
+
+    def test_rejects_bad_sha(self):
+        with pytest.raises(ValueError):
+            trivial_check.parse_pr_view(_pr_view(headRefOid="zzz"))
+
+    def test_rejects_missing_reviews(self):
+        view = _pr_view()
+        del view["reviews"]
+        with pytest.raises(ValueError):
+            trivial_check.parse_pr_view(view)
+
+    def test_rejects_non_dict(self):
+        with pytest.raises(ValueError):
+            trivial_check.parse_pr_view([])
+
+
+class TestInspectMetadata:
+    def test_empty_no_reviews(self):
+        assert trivial_check.inspect_metadata([]) == "empty"
+
+    def test_empty_other_comments(self):
+        assert trivial_check.inspect_metadata([{"body": "human comment"}]) == "empty"
+
+    def test_present(self):
+        body = "Generated with pi-coding-agent\n<!-- pi-cr-meta\n" '{"round": 1}\n-->\n'
+        assert trivial_check.inspect_metadata([{"body": body}]) == "present"
+
+    def test_unavailable_broken_json(self):
+        body = "Generated with pi-coding-agent\n<!-- pi-cr-meta\n{broken\n-->\n"
+        assert trivial_check.inspect_metadata([{"body": body}]) == "unavailable"
+
+    def test_unavailable_non_dict_review(self):
+        assert trivial_check.inspect_metadata(["not a dict"]) == "unavailable"
+
+    def test_unavailable_non_str_body(self):
+        assert trivial_check.inspect_metadata([{"body": 42}]) == "unavailable"
+
+
+class TestFlattenFilePages:
+    def test_two_pages(self):
+        raw = [[_file("a.md")], [_file("b.md")]]
+        assert len(trivial_check.flatten_file_pages(raw)) == 2
+
+    def test_rejects_non_list(self):
+        with pytest.raises(ValueError):
+            trivial_check.flatten_file_pages({})
+
+    def test_rejects_non_list_page(self):
+        with pytest.raises(ValueError):
+            trivial_check.flatten_file_pages([[_file("a.md")], {}])
+
+
+class TestNormalizeFile:
+    def test_ok(self):
+        assert trivial_check.normalize_file(_file("README.md")) == {
+            "path": "README.md",
+            "status": "modified",
+            "previous_path": None,
+        }
+
+    def test_previous_filename(self):
+        out = trivial_check.normalize_file(_file("b.md", "renamed", "a.py"))
+        assert out["previous_path"] == "a.py"
+
+    def test_rejects_missing_filename(self):
+        with pytest.raises(ValueError):
+            trivial_check.normalize_file({"status": "modified"})
+
+    def test_rejects_unknown_status(self):
+        with pytest.raises(ValueError):
+            trivial_check.normalize_file(_file("a.md", "mystery"))
+
+    def test_rejects_non_str_previous(self):
+        with pytest.raises(ValueError):
+            trivial_check.normalize_file(_file("a.md", "renamed", 42))
+
+
+class TestClassifyFiles:
+    def test_all_markdown(self):
+        stats = trivial_check.classify_files(
+            [
+                trivial_check.normalize_file(_file("a.md")),
+                trivial_check.normalize_file(_file("docs/b.md")),
+            ]
+        )
+        assert stats == {
+            "files_total": 2,
+            "markdown_files": 2,
+            "non_markdown_files": 0,
+            "rename_copy_files": 0,
+        }
+
+    def test_mixed(self):
+        stats = trivial_check.classify_files(
+            [
+                trivial_check.normalize_file(_file("a.md")),
+                trivial_check.normalize_file(_file("b.py")),
+            ]
+        )
+        assert stats["non_markdown_files"] == 1
+
+    def test_rename_copy(self):
+        stats = trivial_check.classify_files(
+            [
+                trivial_check.normalize_file(_file("b.md", "renamed", "a.py")),
+                trivial_check.normalize_file(_file("c.md", "copied", "d.md")),
+            ]
+        )
+        assert stats["rename_copy_files"] == 2
+
+    def test_duplicate_raises(self):
+        with pytest.raises(ValueError):
+            trivial_check.classify_files(
+                [
+                    trivial_check.normalize_file(_file("a.md")),
+                    trivial_check.normalize_file(_file("a.md")),
+                ]
+            )
+
+
+class TestEvaluate:
+    def test_trivial_hit(self):
+        result = trivial_check.evaluate(_pr_data())
+        assert result["trivial"] is True
+        assert result["matched_rules"] == ["markdown-only"]
+
+    def test_closed_not_trivial(self):
+        assert trivial_check.evaluate(_pr_data(state="CLOSED"))["trivial"] is False
+
+    def test_draft_not_trivial(self):
+        assert trivial_check.evaluate(_pr_data(is_draft=True))["trivial"] is False
+
+    def test_empty_files_not_trivial(self):
+        assert trivial_check.evaluate(_pr_data(files=[], changed_files=0))["trivial"] is False
+
+    def test_rename_not_trivial(self):
+        data = _pr_data(files=[trivial_check.normalize_file(_file("b.md", "renamed", "a.py"))])
+        assert trivial_check.evaluate(data)["trivial"] is False
+
+    def test_mixed_not_trivial(self):
+        data = _pr_data(
+            files=[
+                trivial_check.normalize_file(_file("a.md")),
+                trivial_check.normalize_file(_file("b.py")),
+            ]
+        )
+        assert trivial_check.evaluate(data)["trivial"] is False
+
+    def test_metadata_present_not_trivial(self):
+        data = _pr_data(metadata_state="present")
+        assert trivial_check.evaluate(data)["trivial"] is False
+
+
+class TestBuildReportPayload:
+    def test_fixed_fields(self):
+        result = trivial_check.evaluate(_pr_data())
+        payload = trivial_check.build_report_payload(_pr_data(), result)
+        assert payload["pr_number"] == 123
+        assert payload["round"] == 1
+        assert payload["previous_head_sha"] is None
+        assert payload["status"] == "PASS"
+        assert payload["blocking_open_count"] == 0
+        assert payload["note"].startswith("trivial precheck skip: ")
