@@ -8,6 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The repo also ships a pi-coding-agent skills package (GitHub issue-driven dev loop): root `package.json` is its pi package manifest (not npm), skills live under `pi/` (`github-issue-driven` / `issue-research` / `zima-pr-monitor` / `github-code-review-batch`), installed locally via `pi install <repo path>`; pi worktrees use `.pi/worktrees/` (gitignored). `pi/zima-pr-monitor/scripts/wait-cr.py` block-waits read-only on `~/.zima/history/pjobs/<code>/<execution_id>.json` until every running execution reaches terminal state (written only after postExec) — changing that history layout or invariant breaks the skill.
 
+`pi/github-code-review-batch` Step 1.0 runs a deterministic trivial precheck (`scripts/trivial_check.py`, #232): first-round-only (no prior pi-cr metadata), docs-only PRs (open, non-draft, every changed file ends `.md`, no rename/copy) short-circuit with a script-emitted `Status: PASS` report — Steps 2-9 and the PR comment are skipped, and trivial judgment belongs to the script alone (the LLM must never self-declare a PR trivial).
+
 `examples/auto-merge/auto-merge-guarded.py` is a standalone stdlib-only script (not part of the `zima` package; deployed to `~/.zima/scripts/` and cron-scheduled on the owner machine) that auto-approves + squash-merges whitelisted PRs after CI green and Zima CR convergence — it parses `pi-cr-meta` in PR review bodies and reads the same `~/.zima/history/pjobs/<code>/` runtime state files as wait-cr.py, so that history layout now has a second out-of-package consumer.
 
 ## Development Commands
@@ -251,8 +253,9 @@ Polling-path executions (daemon, no `head_sha` pin) collapse into a `--nohead` b
 ## Documentation
 
 - `AGENTS.md` — Agent context file for Kimi Code agents
-- `docs/architecture/` — **Current architecture** (authoritative)
+- `docs/architecture/` — **Current architecture** (authoritative); `data-and-runtime-reference.md` holds the data-model/runtime reference migrated out of the removed `docs/API-INTERFACE.md` (#231)
+- `docs/guides/` — Hand-written English user guides (`configuration.md` absorbed API-INTERFACE's config spec); user-facing docs (README, `guides/**`, examples READMEs) are English-only per ADR-006
 - `docs/history/` — Deprecated designs (reference only)
-- `docs/decisions/` — ADRs; ADR-004 (single execution) is the current model, ADR-005 (architecture governance) defines the dependency-direction contract
-- `docs/design/` — Feature design documents (PJob design, API interface, etc.)
+- `docs/decisions/` — ADRs; ADR-004 (single execution) is the current model, ADR-005 (architecture governance) defines the dependency-direction contract, ADR-006 (docs architecture)
+- `docs/design/` — Feature design documents (PJob design, etc.; CLI-INTERFACE is marked historical, not a live interface reference)
 - `docs/superpowers/` — Feature-dev working artifacts (plans/specs, e.g. failure-guard design) referenced from code docstrings; not architecture docs
