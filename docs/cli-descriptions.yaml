@@ -1,0 +1,177 @@
+# English descriptions for the generated CLI reference (docs/cli-reference.md).
+# Keys are full command paths extracted from the live Typer command tree.
+# The generator validates that this catalog exactly matches the extracted
+# command set (missing/unknown entries fail the run).
+commands:
+  "zima":
+    description: "Zima Blue CLI - personal agent orchestration platform runner."
+  "zima agent":
+    description: "Agent management commands"
+  "zima agent create":
+    description: "Create a new agent"
+  "zima agent delete":
+    description: "Delete an agent"
+  "zima agent list":
+    description: "List all agents"
+  "zima agent show":
+    description: "Show agent details"
+  "zima agent test":
+    description: "Preview the CLI command an agent would run, without executing it"
+  "zima agent types":
+    description: "List all supported agent types"
+  "zima agent update":
+    description: "Update agent configuration"
+  "zima agent validate":
+    description: "Validate agent configuration"
+  "zima daemon":
+    description: "Daemon management commands"
+  "zima daemon logs":
+    description: "Show daemon logs"
+  "zima daemon start":
+    description: "Start the global daemon"
+  "zima daemon status":
+    description: "Show daemon status"
+  "zima daemon stop":
+    description: "Stop the global daemon"
+  "zima env":
+    description: "Environment configuration management commands"
+  "zima env create":
+    description: "Create a new environment configuration"
+  "zima env delete":
+    description: "Delete an environment configuration"
+  "zima env export":
+    description: "Export environment configuration as dotenv, shell, or JSON"
+  "zima env get":
+    description: "Get an environment variable value"
+  "zima env list":
+    description: "List all environment configurations"
+  "zima env set":
+    description: "Set an environment variable or secret reference"
+  "zima env show":
+    description: "Show environment configuration details"
+  "zima env unset":
+    description: "Remove an environment variable"
+  "zima env update":
+    description: "Update environment configuration"
+  "zima env validate":
+    description: "Validate environment configuration"
+  "zima pjob":
+    description: "PJob management - execute Agent tasks"
+  "zima pjob actions":
+    description: "Manage PJob postExec actions and provider"
+  "zima pjob actions add":
+    description: "Add a postExec action to a PJob"
+  "zima pjob actions list":
+    description: "List all postExec actions for a PJob"
+  "zima pjob actions provider":
+    description: "Get or set the action provider for a PJob"
+  "zima pjob actions remove":
+    description: "Remove a postExec action by index"
+  "zima pjob cancel":
+    description: "Cancel running PJob(s)"
+  "zima pjob copy":
+    description: "Copy a PJob"
+  "zima pjob create":
+    description: "Create a new PJob"
+  "zima pjob delete":
+    description: "Delete a PJob"
+  "zima pjob history":
+    description: "Show or clear execution history"
+  "zima pjob list":
+    description: "List all PJobs"
+  "zima pjob ps":
+    description: "List all currently running PJobs"
+  "zima pjob render":
+    description: "Render the workflow template without executing"
+  "zima pjob run":
+    description: "Execute a PJob (runs in background by default)"
+  "zima pjob show":
+    description: "Show PJob details"
+  "zima pjob status":
+    description: "Show execution status for a PJob (running and recent history)"
+  "zima pjob update":
+    description: "Update PJob configuration"
+  "zima pjob validate":
+    description: "Validate PJob configuration"
+  "zima pmg":
+    description: "PMG (Parameters Group) management commands"
+  "zima pmg add-param":
+    description: "Add a parameter to PMG"
+  "zima pmg build":
+    description: "Build command-line arguments from PMG"
+  "zima pmg create":
+    description: "Create a new parameters group"
+  "zima pmg delete":
+    description: "Delete a parameters group"
+  "zima pmg list":
+    description: "List all parameters groups"
+  "zima pmg remove-param":
+    description: "Remove a parameter from PMG"
+  "zima pmg show":
+    description: "Show PMG details"
+  "zima pmg update":
+    description: "Update PMG configuration"
+  "zima pmg validate":
+    description: "Validate PMG configuration"
+  "zima quickstart":
+    description: "Interactive wizard to create a complete PJob from scratch"
+  "zima schedule":
+    description: "Schedule management - daemon cycle configuration"
+  "zima schedule create":
+    description: "Create a new Schedule"
+  "zima schedule delete":
+    description: "Delete a Schedule"
+  "zima schedule list":
+    description: "List all Schedules"
+  "zima schedule set-mapping":
+    description: "Set the cycle type at a specific cycle-mapping index (0-31)"
+  "zima schedule set-type":
+    description: "Set PJobs for a cycle type and stage"
+  "zima schedule show":
+    description: "Show Schedule details"
+  "zima schedule update":
+    description: "Update Schedule metadata"
+  "zima schedule validate":
+    description: "Validate a Schedule"
+  "zima variable":
+    description: "Variable management commands"
+  "zima variable create":
+    description: "Create a new variable configuration"
+  "zima variable delete":
+    description: "Delete a variable configuration"
+  "zima variable get":
+    description: "Get a variable value"
+  "zima variable list":
+    description: "List all variable configurations"
+  "zima variable merge":
+    description: "Merge values from another variable configuration"
+  "zima variable set":
+    description: "Set a variable value"
+  "zima variable show":
+    description: "Show variable configuration details"
+  "zima variable update":
+    description: "Update variable configuration"
+  "zima variable validate":
+    description: "Validate variable configuration"
+  "zima webhook-server":
+    description: "Run the GitHub webhook receiver that triggers PJobs"
+  "zima workflow":
+    description: "Workflow management commands"
+  "zima workflow add-var":
+    description: "Add a variable definition to workflow"
+  "zima workflow check-structure":
+    description: "Check workflow template structure against the 5-module framework"
+  "zima workflow create":
+    description: "Create a new workflow"
+  "zima workflow delete":
+    description: "Delete a workflow"
+  "zima workflow list":
+    description: "List all workflows"
+  "zima workflow render":
+    description: "Render workflow template with variables"
+  "zima workflow show":
+    description: "Show workflow details"
+  "zima workflow update":
+    description: "Update workflow configuration"
+  "zima workflow validate":
+    description: "Validate workflow config, Jinja2 syntax, and 5-module structure"

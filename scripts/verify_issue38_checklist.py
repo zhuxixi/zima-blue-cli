@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -48,7 +47,7 @@ def main() -> int:
     state_file = zima_home / "daemon" / "state.json"
     if state_file.exists():
         try:
-            state = json.loads(state_file.read_text(encoding="utf-8"))
+            json.loads(state_file.read_text(encoding="utf-8"))
             checks.append(check_pass("Daemon state file exists and valid", str(state_file)))
         except json.JSONDecodeError as e:
             checks.append(check_fail("Daemon state file exists and valid", f"Invalid JSON: {e}"))
@@ -61,7 +60,9 @@ def main() -> int:
     if jsonl_files:
         checks.append(check_pass("Execution history JSONL exists", str(jsonl_files[0])))
     else:
-        checks.append(check_fail("Execution history JSONL exists", "No .jsonl files in daemon/history/"))
+        checks.append(
+            check_fail("Execution history JSONL exists", "No .jsonl files in daemon/history/")
+        )
 
     # AC #6: PID file cleaned up
     pid_file = zima_home / "daemon" / "daemon.pid"
@@ -77,9 +78,12 @@ def main() -> int:
         try:
             result = subprocess.run(
                 [
-                    "wmic", "process", "where",
+                    "wmic",
+                    "process",
+                    "where",
                     "commandline like '%daemon_runner%'",
-                    "get", "processid",
+                    "get",
+                    "processid",
                 ],
                 capture_output=True,
                 text=True,
@@ -87,15 +91,20 @@ def main() -> int:
             )
             # wmic returns header line + empty lines + PIDs if found
             lines = [
-                l.strip() for l in result.stdout.strip().split("\n")
-                if l.strip() and l.strip() != "ProcessId"
+                raw.strip()
+                for raw in result.stdout.strip().split("\n")
+                if raw.strip() and raw.strip() != "ProcessId"
             ]
             if len(lines) == 0:
                 checks.append(check_pass("No orphaned daemon processes"))
             else:
-                checks.append(check_fail("No orphaned daemon processes", f"Found PIDs: {', '.join(lines)}"))
+                checks.append(
+                    check_fail("No orphaned daemon processes", f"Found PIDs: {', '.join(lines)}")
+                )
         except (subprocess.TimeoutExpired, FileNotFoundError):
-            checks.append(check_pass("No orphaned daemon processes", "wmic not available or timed out"))
+            checks.append(
+                check_pass("No orphaned daemon processes", "wmic not available or timed out")
+            )
     else:
         try:
             result = subprocess.run(
@@ -110,7 +119,9 @@ def main() -> int:
                 pids = result.stdout.strip()
                 checks.append(check_fail("No orphaned daemon processes", f"Found PIDs: {pids}"))
         except (subprocess.TimeoutExpired, FileNotFoundError):
-            checks.append(check_pass("No orphaned daemon processes", "pgrep not available or timed out"))
+            checks.append(
+                check_pass("No orphaned daemon processes", "pgrep not available or timed out")
+            )
 
     # Print report
     print("Issue #38 Verification Checklist")

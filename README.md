@@ -262,7 +262,7 @@ zima webhook-server --pjob <code> [--smee-url <url>]
 zima quickstart                 # interactive wizard: a complete task from scratch
 ```
 
-**Full CLI reference**: `docs/cli-reference.md` (generated) — being automated; run `zima --help` or `zima <command> --help` in the meantime.
+**Full CLI reference**: [`docs/cli-reference.md`](docs/cli-reference.md) (generated from the live command tree — regenerate with `uv run python scripts/generate_cli_docs.py` after changing commands).
 
 ---
 

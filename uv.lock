@@ -1051,6 +1051,7 @@ name = "zima-blue-cli"
 version = "0.8.2"
 source = { editable = "." }
 dependencies = [
+    { name = "click" },
     { name = "jinja2" },
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -1070,6 +1071,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "click", specifier = ">=8.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pyyaml", specifier = ">=6.0" },
