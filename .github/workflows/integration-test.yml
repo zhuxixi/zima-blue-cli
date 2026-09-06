@@ -51,10 +51,10 @@ jobs:
         run: uv sync
 
       - name: Run ruff check
-        run: uv run ruff check zima/ tests/
+        run: uv run ruff check zima/ tests/ scripts/
 
       - name: Run black check
-        run: uv run black --check zima/ tests/ --line-length 100
+        run: uv run black --check zima/ tests/ scripts/ --line-length 100
 
       - name: Run import-linter (architecture contracts)
         run: uv run lint-imports
