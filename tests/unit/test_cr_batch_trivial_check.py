@@ -428,9 +428,7 @@ class TestFetchPrData:
         assert len(data["files"]) == 2
 
     def test_view_failure_raises(self, monkeypatch):
-        monkeypatch.setattr(
-            trivial_check.subprocess, "run", lambda argv, **kw: _gh_fail(argv)
-        )
+        monkeypatch.setattr(trivial_check.subprocess, "run", lambda argv, **kw: _gh_fail(argv))
         with pytest.raises(RuntimeError):
             trivial_check.fetch_pr_data("123", "o/r")
 
