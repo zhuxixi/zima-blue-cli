@@ -298,15 +298,41 @@ def write_reference(path: Path, content: str) -> None:
         ) from exc
 
 
+def generate_all(cli_output: Path, descriptions: Path) -> None:
+    """Validate every source, then render and write the CLI reference."""
+    from typer.main import get_command
+
+    from zima.cli import app
+
+    commands = extract_commands(get_command(app), root_name="zima")
+    catalog = load_descriptions(descriptions)
+    validate_descriptions((command.path for command in commands), catalog)
+    write_reference(cli_output, render_reference(commands, catalog))
+
+
+def _repository_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+
 def main() -> int:
-    """CLI entry point (extended by later tasks with catalog validation)."""
+    """CLI entry point: extract the live command tree and write the reference."""
     parser = argparse.ArgumentParser(description="Generate the Zima Blue CLI reference")
     parser.add_argument("--output", type=Path, default=Path("docs/cli-reference.md"))
     parser.add_argument("--descriptions", type=Path, default=Path("docs/cli-descriptions.yaml"))
-    parser.parse_args()
-    raise SystemExit(
-        "generate_cli_docs: rendering not implemented yet (catalog + renderer land in later tasks)"
-    )
+    args = parser.parse_args()
+    root = _repository_root()
+
+    def resolve(value: Path) -> Path:
+        return value if value.is_absolute() else root / value
+
+    try:
+        generate_all(resolve(args.output), resolve(args.descriptions))
+    except ValueError as exc:
+        parser.error(f"{exc}; update docs/cli-descriptions.yaml and rerun the generator")
+    except OSError as exc:
+        parser.error(str(exc))
+    print(f"Generated {resolve(args.output)}")
+    return 0
 
 
 if __name__ == "__main__":
