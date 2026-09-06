@@ -17,6 +17,7 @@ Input (stdin): JSON object with the following fields:
   blocking_new_count int  — new blocking issues (optional)
   advisory_open_count int — open advisory issues (optional)
   advisory_new_count int  — new advisory issues (optional)
+  note               str  — optional one-line note (optional; normalized + escaped)
 
 Output (stdout): the multi-line status report block. After `Status:` the report
 also emits `Critical issues:` and a derived `Verdict:` line (#119). The 3-state
@@ -26,9 +27,27 @@ also emits `Critical issues:` and a derived `Verdict:` line (#119). The 3-state
 from __future__ import annotations
 
 import json
+import re
 import sys
+from xml.sax.saxutils import escape
 
 VALID_STATUSES = {"NEEDS_FIX", "PASS", "NO_NEW_COMMITS"}
+
+_NOTE_MAX_LEN = 240
+_NOTE_CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def format_note(note: str) -> str:
+    """Normalize a free-text note for the human block and XML summary.
+
+    Strips XML-illegal control characters, collapses all whitespace runs
+    (including CR/LF) to single spaces, and caps the length at 240 chars.
+    """
+    if not note:
+        return ""
+    text = _NOTE_CTRL_RE.sub("", note)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:_NOTE_MAX_LEN]
 
 TEMPLATE = """\
 === CR Batch Status Report ===
@@ -122,6 +141,11 @@ def render(d: dict) -> str:
         critical_count=critical_count,
         verdict=_verdict(effective_status, critical_count, blocking_open_count),
     )
+    # Optional one-line note — only when the caller provides a non-empty one.
+    # Inserted after `Verdict:` and before the #120 coverage lines.
+    note = format_note(d.get("note") or "")
+    if note:
+        block += f"Note: {note}\n"
     # Optional partial-coverage lines (#120) — only when the caller provides
     # them. Keeps the report backward-compatible when compress_diff meta is absent.
     total_files = d.get("total_files")
@@ -135,7 +159,9 @@ def render(d: dict) -> str:
     # ruler so the human-readable block keeps its exact shape; verdict-only XML
     # (issues element optional) per ReviewParser's contract.
     verdict = _xml_verdict(effective_status, blocking_open_count)
-    if not has_blocking_policy:
+    if note:
+        summary = f"CR batch {effective_status}: {note}"
+    elif not has_blocking_policy:
         summary = (
             f"CR batch {effective_status}: {open_count} open issue(s)"
             if verdict == "needs_fix"
@@ -153,7 +179,7 @@ def render(d: dict) -> str:
     block += (
         "<zima-review>\n"
         f"<verdict>{verdict}</verdict>\n"
-        f"<summary>{summary}</summary>\n"
+        f"<summary>{escape(summary)}</summary>\n"
         "</zima-review>\n"
     )
     return block
