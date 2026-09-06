@@ -575,6 +575,8 @@ def normalize_pr_ref(ref: str, explicit_repo: str | None) -> tuple[str, int]:
     if match:
         repo = f"{match.group(1)}/{match.group(2)}"
         number = int(match.group(3))
+        if number <= 0:
+            raise ValueError(f"invalid PR number: {ref}")
         if explicit_repo and explicit_repo.lower() != repo.lower():
             raise ValueError(f"repo conflict: URL says {repo}, --repo says {explicit_repo}")
         return repo, number
@@ -582,6 +584,8 @@ def normalize_pr_ref(ref: str, explicit_repo: str | None) -> tuple[str, int]:
     if match:
         repo = f"{match.group(1)}/{match.group(2)}"
         number = int(match.group(3))
+        if number <= 0:
+            raise ValueError(f"invalid PR number: {ref}")
         if explicit_repo and explicit_repo.lower() != repo.lower():
             raise ValueError(f"repo conflict: ref says {repo}, --repo says {explicit_repo}")
         return repo, number
@@ -1253,10 +1257,16 @@ git -C $WT commit -m "docs(cr-batch): wire trivial precheck into Step 0/1 contra
             )
 ```
 
-在文件末尾追加 flow 契约测试类：
+在文件末尾追加 flow 契约测试类（`texts` fixture 是 class-scoped，新类必须自带）：
 
 ```python
 class TestTrivialPrecheckFlow:
+    @pytest.fixture(scope="class")
+    def texts(self) -> dict[str, str]:
+        return {
+            "flow": (SKILL_DIR / "references" / "flow.md").read_text(encoding="utf-8"),
+        }
+
     def test_flow_documents_metadata_state_gate(self, texts):
         flow = texts["flow"]
         assert "metadata_state=empty" in flow
@@ -1266,8 +1276,6 @@ class TestTrivialPrecheckFlow:
         assert "如何判断 trivial PR" not in flow
         assert "LLM 不得自行宣布 trivial" in flow
 ```
-
-（`texts` fixture 的 key 以文件内现有 fixture 为准：`texts["flow"]` 对应 flow.md 全文。）
 
 - [ ] **Step 2: 运行测试确认失败**
 
