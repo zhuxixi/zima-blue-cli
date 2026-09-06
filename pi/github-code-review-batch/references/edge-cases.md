@@ -8,7 +8,8 @@
 |------|----------|
 | PR 已关闭/已合并 | [Step 1](flow.md#step-1) 或 [Step 7](flow.md#step-7) 捕获，停止执行并向用户说明 |
 | PR 是草稿 | [Step 1](flow.md#step-1) 捕获，停止执行并向用户说明 |
-| PR 是 trivial/自动化 | [Step 1](flow.md#step-1) 捕获，停止执行并向用户说明 |
+| PR 是 trivial（首轮、纯 .md） | Step 1 的 `trivial_check.py --report` 确定性判定，输出 PASS + approved 状态报告后结束，不发 PR 评论 |
+| PR 是自动化 | [Step 1](flow.md#step-1) 现有检查捕获，停止执行并向用户说明 |
 | 已有 bot 评论 | 正常审查，不跳过（非监听模式下多轮审查是预期行为） |
 | PR 由 AI 生成 | 正常审查，不跳过 |
 | 无 CLAUDE.md / AGENTS.md | 仅执行 bug scanner 和 logic analyzer |

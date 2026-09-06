@@ -83,7 +83,7 @@ PR 编号提取规则（依次尝试）：
 
 ## 输出契约
 
-每次执行（除 [Step 1](references/flow.md#step-1)/[Step 7](references/flow.md#step-7) 提前终止外）必须产出三个产物：
+每次执行（除 [Step 7](references/flow.md#step-7) 提前终止外）必须产出三个产物；[Step 1](references/flow.md#step-1) 的 trivial 快速路径豁免终端 review 报告和 PR 评论，但必须产出终端状态报告（产物 3）：
 
 1. **终端 Markdown review 报告**（[Step 8](references/flow.md#step-8)）
 2. **PR 评论**（[Step 9](references/flow.md#step-9)）：由 `scripts/build_review_body.py` 生成，包含 `<!-- pi-cr-meta ... -->` 机器可读 header + 人类可读 Round-N 部分。metadata 保留所有 findings 与事实计数 `total_issues` / `new_count`，并含 `blocking_open_count` / `blocking_new_count` / `advisory_open_count` / `advisory_new_count`；每个 finding 都有规范化后的 boolean `blocking`。Part B 正常列出 blocking findings，并把 advisory findings 完整放在折叠的 `Advisory / non-blocking findings` 小节。完整样例见 [output-examples.md](references/output-examples.md)
