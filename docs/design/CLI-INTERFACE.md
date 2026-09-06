@@ -1,3 +1,5 @@
+> ⚠️ Historical design document, written pre-implementation. NOT a user-facing CLI reference — see README and docs/guides/configuration.md.
+
 # Zima CLI 接口设计文档
 > ⚠️ 本文档写于实现前，部分内容可能已与代码不一致。最新状态请参考代码和 `docs/API-INTERFACE.md`。
 
