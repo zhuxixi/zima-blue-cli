@@ -4,10 +4,14 @@ import click
 import pytest
 
 from scripts.generate_cli_docs import (
+    NormalizedCommand,
+    NormalizedParameter,
     extract_commands,
     load_descriptions,
     normalize_parameter,
+    render_reference,
     validate_descriptions,
+    write_reference,
 )
 
 VALID_CATALOG = """\
@@ -206,3 +210,126 @@ class TestValidateDescriptions:
         message = str(excinfo.value)
         assert "Missing English CLI descriptions: zima b, zima c" in message
         assert "Unknown CLI description entries: zima d, zima e" in message
+
+
+class TestRenderReference:
+    """Deterministic Markdown renderer (A3)."""
+
+    def _sample(self):
+        """Three commands in NON-sorted order, one with a parameter."""
+        leaf = NormalizedCommand(
+            path="zima pjob run",
+            is_group=False,
+            usage="zima pjob run [OPTIONS] CODE",
+            description_key="zima pjob run",
+            parameters=(
+                NormalizedParameter(
+                    name="model",
+                    kind="option",
+                    syntax="--model, -m",
+                    type_name="TEXT",
+                    required=False,
+                    default="kimi",
+                    choices=(),
+                    multiple=False,
+                    is_flag=False,
+                ),
+            ),
+        )
+        group = NormalizedCommand(
+            path="zima",
+            is_group=True,
+            usage="zima COMMAND [ARGS]...",
+            description_key="zima",
+            parameters=(),
+        )
+        bare = NormalizedCommand(
+            path="zima agent list",
+            is_group=False,
+            usage="zima agent list [OPTIONS]",
+            description_key="zima agent list",
+            parameters=(),
+        )
+        descriptions = {
+            "zima": "Zima Blue CLI.",
+            "zima pjob run": "Execute a PJob.",
+            "zima agent list": "List all agents.",
+        }
+        return [leaf, group, bare], descriptions
+
+    def test_render_twice_is_byte_identical(self):
+        commands, descriptions = self._sample()
+        first = render_reference(commands, descriptions)
+        second = render_reference(commands, descriptions)
+        assert first == second
+        assert first.endswith("\n")
+
+    def test_header_contains_zima_title_and_regenerate_command(self):
+        commands, descriptions = self._sample()
+        out = render_reference(commands, descriptions)
+        assert out.startswith("<!--")
+        assert "# Zima Blue CLI Reference" in out
+        assert "uv run python scripts/generate_cli_docs.py" in out
+        assert "Do not edit manually" in out
+        assert "Use `zima --help`" in out
+
+    def test_cells_escape_pipe_and_newline(self):
+        nasty = NormalizedCommand(
+            path="zima escape",
+            is_group=False,
+            usage="zima escape",
+            description_key="zima escape",
+            parameters=(
+                NormalizedParameter(
+                    name="weird",
+                    kind="option",
+                    syntax="--weird",
+                    type_name="TEXT",
+                    required=False,
+                    default="a|b\nnewline",
+                    choices=(),
+                    multiple=False,
+                    is_flag=False,
+                ),
+            ),
+        )
+        out = render_reference([nasty], {"zima escape": "Escapes cells."})
+        row = [ln for ln in out.splitlines() if ln.startswith("| `weird`")][0]
+        assert "a\\|b newline" in row  # pipe escaped, newline became a space
+        assert "a|b" not in row  # raw form never appears unescaped
+
+    def test_command_without_parameters_has_no_table(self):
+        commands, descriptions = self._sample()
+        out = render_reference(commands, descriptions)
+        section = out.split("## `zima agent list`")[1].split("## ")[0]
+        assert "**Usage**:" in section
+        assert "```text" in section
+        assert "| Parameter |" not in section
+
+    def test_commands_sorted_by_split_path(self):
+        # input order is pjob-run, root, agent-list; output must be root, agent-list, pjob-run
+        commands, descriptions = self._sample()
+        out = render_reference(commands, descriptions)
+        idx_root = out.index("## `zima`\n")
+        idx_agent = out.index("## `zima agent list`")
+        idx_pjob = out.index("## `zima pjob run`")
+        assert idx_root < idx_agent < idx_pjob
+
+
+class TestWriteReference:
+    """LF-stable writer (A3)."""
+
+    def test_writes_lf_only_with_trailing_newline(self, tmp_path):
+        target = tmp_path / "nested" / "cli-reference.md"
+        # renderer output always ends with a single \n; CRLF input must translate
+        write_reference(target, "line1\r\nline2\nlast\n")
+        raw = target.read_bytes()
+        assert b"\r" not in raw
+        assert raw.endswith(b"\n")
+        assert raw == b"line1\nline2\nlast\n"
+
+    def test_write_error_wrapped_with_context(self, tmp_path):
+        target = tmp_path / "adir"  # a directory where the file should be
+        target.mkdir()
+        with pytest.raises(OSError, match="could not write generated reference"):
+            write_reference(target, "x")
