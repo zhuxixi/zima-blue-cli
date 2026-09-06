@@ -6,6 +6,8 @@ trivial_check pure-function, fetch and main-level tests.
 
 from __future__ import annotations
 
+import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -361,3 +363,154 @@ class TestBuildReportPayload:
         assert payload["status"] == "PASS"
         assert payload["blocking_open_count"] == 0
         assert payload["note"].startswith("trivial precheck skip: ")
+
+
+# ---------------------------------------------------------------------------
+# Task 3: fetch layer and main
+# ---------------------------------------------------------------------------
+
+VIEW_JSON = json.dumps(
+    {
+        "number": 123,
+        "state": "OPEN",
+        "isDraft": False,
+        "changedFiles": 2,
+        "headRefOid": "a" * 40,
+        "reviews": [],
+    }
+)
+FILES_JSON = json.dumps(
+    [
+        [
+            {"filename": "README.md", "status": "modified"},
+            {"filename": "docs/guide.md", "status": "added"},
+        ]
+    ]
+)
+
+
+def _gh_ok(argv: list[str], stdout: str) -> subprocess.CompletedProcess:
+    return subprocess.CompletedProcess(argv, 0, stdout, "")
+
+
+def _gh_fail(argv: list[str], stderr: str = "boom") -> subprocess.CompletedProcess:
+    return subprocess.CompletedProcess(argv, 1, "", stderr)
+
+
+class TestFetchPrData:
+    def test_commands_use_paginate_slurp(self, monkeypatch):
+        calls: list[list[str]] = []
+
+        def fake_run(argv, **kwargs):
+            calls.append(list(argv))
+            if argv[1] == "pr":
+                return _gh_ok(argv, VIEW_JSON)
+            return _gh_ok(argv, FILES_JSON)
+
+        monkeypatch.setattr(trivial_check.subprocess, "run", fake_run)
+        trivial_check.fetch_pr_data("o/r#123", None)
+        api_call = next(c for c in calls if c[1] == "api")
+        assert api_call[2] == "--paginate"
+        assert api_call[3] == "--slurp"
+        assert api_call[4] == "repos/o/r/pulls/123/files?per_page=100"
+        assert "-f" not in api_call and "--field" not in api_call
+
+    def test_ok(self, monkeypatch):
+        def fake_run(argv, **kwargs):
+            if argv[1] == "pr":
+                return _gh_ok(argv, VIEW_JSON)
+            return _gh_ok(argv, FILES_JSON)
+
+        monkeypatch.setattr(trivial_check.subprocess, "run", fake_run)
+        data = trivial_check.fetch_pr_data("123", "o/r")
+        assert data["number"] == 123
+        assert data["metadata_state"] == "empty"
+        assert len(data["files"]) == 2
+
+    def test_view_failure_raises(self, monkeypatch):
+        monkeypatch.setattr(
+            trivial_check.subprocess, "run", lambda argv, **kw: _gh_fail(argv)
+        )
+        with pytest.raises(RuntimeError):
+            trivial_check.fetch_pr_data("123", "o/r")
+
+    def test_count_mismatch_raises(self, monkeypatch):
+        view = json.loads(VIEW_JSON)
+        view["changedFiles"] = 3
+
+        def fake_run(argv, **kwargs):
+            if argv[1] == "pr":
+                return _gh_ok(argv, json.dumps(view))
+            return _gh_ok(argv, FILES_JSON)
+
+        monkeypatch.setattr(trivial_check.subprocess, "run", fake_run)
+        with pytest.raises(RuntimeError, match="incomplete"):
+            trivial_check.fetch_pr_data("123", "o/r")
+
+    def test_101_files_hidden_source_fails_open(self, monkeypatch):
+        view = json.loads(VIEW_JSON)
+        view["changedFiles"] = 101
+        files = [[{"filename": f"doc{i}.md", "status": "modified"} for i in range(100)]]
+
+        def fake_run(argv, **kwargs):
+            if argv[1] == "pr":
+                return _gh_ok(argv, json.dumps(view))
+            return _gh_ok(argv, json.dumps(files))
+
+        monkeypatch.setattr(trivial_check.subprocess, "run", fake_run)
+        with pytest.raises(RuntimeError, match="incomplete"):
+            trivial_check.fetch_pr_data("123", "o/r")
+
+    def test_timeout_raises(self, monkeypatch):
+        def fake_run(argv, **kwargs):
+            raise subprocess.TimeoutExpired(argv, 30)
+
+        monkeypatch.setattr(trivial_check.subprocess, "run", fake_run)
+        with pytest.raises(subprocess.TimeoutExpired):
+            trivial_check.fetch_pr_data("123", "o/r")
+
+    def test_gh_missing_raises(self, monkeypatch):
+        def fake_run(argv, **kwargs):
+            raise FileNotFoundError("gh")
+
+        monkeypatch.setattr(trivial_check.subprocess, "run", fake_run)
+        with pytest.raises(OSError):
+            trivial_check.fetch_pr_data("123", "o/r")
+
+
+class TestMain:
+    def _patch_fetch(self, monkeypatch, pr_data):
+        monkeypatch.setattr(trivial_check, "fetch_pr_data", lambda ref, repo: pr_data)
+
+    def test_report_trivial_exit0(self, monkeypatch, capsys):
+        self._patch_fetch(monkeypatch, _pr_data())
+        assert trivial_check.main(["123", "--report"]) == 0
+        out = capsys.readouterr().out
+        assert "Status: PASS" in out
+        assert "<verdict>approved</verdict>" in out
+        assert "Note: trivial precheck skip:" in out
+
+    def test_report_not_trivial_exit1(self, monkeypatch, capsys):
+        self._patch_fetch(monkeypatch, _pr_data(state="CLOSED"))
+        assert trivial_check.main(["123", "--report"]) == 1
+        assert capsys.readouterr().out == ""
+
+    def test_report_unavailable_exit2(self, monkeypatch, capsys):
+        self._patch_fetch(monkeypatch, _pr_data(metadata_state="unavailable"))
+        assert trivial_check.main(["123", "--report"]) == 2
+        assert capsys.readouterr().out == ""
+
+    def test_fetch_error_exit2(self, monkeypatch, capsys):
+        def boom(ref, repo):
+            raise RuntimeError("gh pr view failed")
+
+        monkeypatch.setattr(trivial_check, "fetch_pr_data", boom)
+        assert trivial_check.main(["123", "--report"]) == 2
+        assert capsys.readouterr().out == ""
+
+    def test_default_mode_json(self, monkeypatch, capsys):
+        self._patch_fetch(monkeypatch, _pr_data())
+        assert trivial_check.main(["123"]) == 0
+        out = json.loads(capsys.readouterr().out)
+        assert out["trivial"] is True
+        assert out["metadata_state"] == "empty"

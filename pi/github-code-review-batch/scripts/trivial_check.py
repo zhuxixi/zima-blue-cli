@@ -235,3 +235,131 @@ def build_report_payload(pr_data: dict, result: dict) -> dict:
         "status": "PASS",
         "note": f"trivial precheck skip: {result['reason']}",
     }
+
+
+def _run_gh(args: list[str]) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["gh", *args],
+        capture_output=True,
+        text=True,
+        timeout=GH_TIMEOUT,
+        check=False,
+        stdin=subprocess.DEVNULL,
+    )
+
+
+def _resolve_repo() -> str:
+    proc = _run_gh(["repo", "view", "--json", "nameWithOwner"])
+    if proc.returncode != 0:
+        raise RuntimeError(f"gh repo view failed: {proc.stderr.strip()}")
+    try:
+        name = json.loads(proc.stdout).get("nameWithOwner")
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"gh repo view payload invalid: {exc}") from exc
+    if not isinstance(name, str) or not name:
+        raise RuntimeError("gh repo view: nameWithOwner missing")
+    return name
+
+
+def fetch_pr_data(ref: str, repo: str | None) -> dict:
+    """Fetch PR base fields and the complete paginated file list via gh."""
+    resolved_repo, number = normalize_pr_ref(ref, repo)
+    if not resolved_repo:
+        resolved_repo = _resolve_repo()
+    view = _run_gh(
+        [
+            "pr",
+            "view",
+            str(number),
+            "--repo",
+            resolved_repo,
+            "--json",
+            "number,state,isDraft,changedFiles,headRefOid,reviews",
+        ]
+    )
+    if view.returncode != 0:
+        raise RuntimeError(f"gh pr view failed: {view.stderr.strip()}")
+    try:
+        pr = parse_pr_view(json.loads(view.stdout))
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise RuntimeError(f"gh pr view payload invalid: {exc}") from exc
+    files_proc = _run_gh(
+        ["api", "--paginate", "--slurp", f"repos/{resolved_repo}/pulls/{number}/files?per_page=100"]
+    )
+    if files_proc.returncode != 0:
+        raise RuntimeError(f"gh api files failed: {files_proc.stderr.strip()}")
+    try:
+        records = flatten_file_pages(json.loads(files_proc.stdout))
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise RuntimeError(f"gh api files payload invalid: {exc}") from exc
+    files = [normalize_file(record) for record in records]
+    if len(files) != pr["changed_files"]:
+        raise RuntimeError(
+            f"file list incomplete: changedFiles={pr['changed_files']}, got {len(files)}"
+        )
+    return {
+        "number": pr["number"],
+        "state": pr["state"],
+        "is_draft": pr["is_draft"],
+        "head_sha": pr["head_sha"],
+        "changed_files": pr["changed_files"],
+        "metadata_state": inspect_metadata(pr["reviews"]),
+        "files": files,
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("pr", help="PR number, github.com PR URL, or owner/repo#N")
+    parser.add_argument("--repo", default=None, help="owner/repo override")
+    parser.add_argument(
+        "--report",
+        action="store_true",
+        help="emit the full status report on trivial hit (Step 1 mode)",
+    )
+    args = parser.parse_args(argv)
+
+    try:
+        pr_data = fetch_pr_data(args.pr, args.repo)
+    except (ValueError, RuntimeError, subprocess.TimeoutExpired, OSError) as exc:
+        print(f"trivial_check: {exc}", file=sys.stderr)
+        return 2
+
+    if pr_data["metadata_state"] == "unavailable":
+        print("trivial_check: pi-cr metadata state unavailable", file=sys.stderr)
+        return 2
+
+    result = evaluate(pr_data)
+
+    if args.report:
+        if not result["trivial"]:
+            print(f"trivial_check: not trivial: {result['reason']}", file=sys.stderr)
+            return 1
+        try:
+            payload = build_report_payload(pr_data, result)
+            sys.stdout.write(render_status_report.render(payload))
+        except Exception as exc:  # noqa: BLE001 - renderer must never emit a partial report
+            print(f"trivial_check: render failed: {exc}", file=sys.stderr)
+            return 2
+        return 0
+
+    out = {
+        "trivial": result["trivial"],
+        "matched_rules": result["matched_rules"],
+        "reason": result["reason"],
+        "stats": result["stats"],
+        "pr": {
+            "number": pr_data["number"],
+            "state": pr_data["state"],
+            "is_draft": pr_data["is_draft"],
+            "head_sha": pr_data["head_sha"],
+        },
+        "metadata_state": pr_data["metadata_state"],
+    }
+    json.dump(out, sys.stdout, ensure_ascii=False)
+    sys.stdout.write("\n")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
