@@ -6,8 +6,10 @@ import argparse
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Collection, Mapping
 
 import click
+import yaml
 
 # Enable direct execution (`python scripts/generate_cli_docs.py`, as the CI
 # gate and subprocess tests do): make the repo root importable so the
@@ -148,6 +150,74 @@ def extract_commands(
 ) -> tuple[NormalizedCommand, ...]:
     """Extract the root and every nested command without invoking callbacks."""
     return tuple(_walk_commands(root_command, root_name))
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """Safe YAML loader that rejects duplicate mapping keys."""
+
+
+def _construct_unique_mapping(loader: _UniqueKeyLoader, node: yaml.MappingNode):
+    mapping = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node)
+        if key in mapping:
+            raise ValueError(f"duplicate YAML key: {key}")
+        mapping[key] = loader.construct_object(value_node)
+    return mapping
+
+
+_UniqueKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_unique_mapping
+)
+
+
+def load_descriptions(path: Path) -> dict[str, str]:
+    """Load and validate the English command catalog."""
+    try:
+        with path.open(encoding="utf-8") as stream:
+            data = yaml.load(stream, Loader=_UniqueKeyLoader)
+    except ValueError:
+        raise
+    except (OSError, yaml.YAMLError) as exc:
+        raise ValueError(f"failed to parse descriptions file {path}: {exc}") from exc
+
+    if not isinstance(data, dict) or not isinstance(data.get("commands"), dict):
+        raise ValueError("descriptions file must contain a top-level 'commands' mapping")
+    unsupported_top_level = sorted(set(data) - {"commands"})
+    if unsupported_top_level:
+        raise ValueError("unsupported top-level fields: " + ", ".join(unsupported_top_level))
+
+    descriptions: dict[str, str] = {}
+    for command_path, entry in data["commands"].items():
+        if not isinstance(command_path, str):
+            raise ValueError("command description keys must be strings")
+        if not isinstance(entry, dict):
+            raise ValueError(f"description entry must be a mapping: {command_path}")
+        unsupported = sorted(set(entry) - {"description"})
+        if unsupported:
+            raise ValueError(f"unsupported fields for {command_path}: {', '.join(unsupported)}")
+        description = entry.get("description")
+        if not isinstance(description, str) or not description.strip():
+            raise ValueError(f"description must be a non-empty string: {command_path}")
+        descriptions[command_path] = description.strip()
+    return descriptions
+
+
+def validate_descriptions(
+    command_paths: Collection[str], descriptions: Mapping[str, str]
+) -> None:
+    """Ensure the catalog exactly covers the extracted command paths."""
+    expected = set(command_paths)
+    actual = set(descriptions)
+    missing = sorted(expected - actual)
+    unknown = sorted(actual - expected)
+    errors = []
+    if missing:
+        errors.append(f"Missing English CLI descriptions: {', '.join(missing)}")
+    if unknown:
+        errors.append(f"Unknown CLI description entries: {', '.join(unknown)}")
+    if errors:
+        raise ValueError("\n".join(errors))
 
 
 def main() -> int:
