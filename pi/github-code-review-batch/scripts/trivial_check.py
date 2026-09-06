@@ -198,15 +198,35 @@ def evaluate(pr_data: dict) -> dict:
     """
     stats = classify_files(pr_data["files"])
     if pr_data["metadata_state"] != "empty":
-        return {"trivial": False, "matched_rules": [], "reason": "metadata not empty", "stats": stats}
+        return {
+            "trivial": False,
+            "matched_rules": [],
+            "reason": "metadata not empty",
+            "stats": stats,
+        }
     if pr_data["state"] != "OPEN" or pr_data["is_draft"]:
-        return {"trivial": False, "matched_rules": [], "reason": "not open or draft", "stats": stats}
+        return {
+            "trivial": False,
+            "matched_rules": [],
+            "reason": "not open or draft",
+            "stats": stats,
+        }
     if pr_data["changed_files"] <= 0:
         return {"trivial": False, "matched_rules": [], "reason": "no changed files", "stats": stats}
     if stats["rename_copy_files"] > 0:
-        return {"trivial": False, "matched_rules": [], "reason": "rename/copy present", "stats": stats}
+        return {
+            "trivial": False,
+            "matched_rules": [],
+            "reason": "rename/copy present",
+            "stats": stats,
+        }
     if stats["non_markdown_files"] > 0:
-        return {"trivial": False, "matched_rules": [], "reason": "non-markdown files present", "stats": stats}
+        return {
+            "trivial": False,
+            "matched_rules": [],
+            "reason": "non-markdown files present",
+            "stats": stats,
+        }
     return {
         "trivial": True,
         "matched_rules": ["markdown-only"],
@@ -253,9 +273,12 @@ def _resolve_repo() -> str:
     if proc.returncode != 0:
         raise RuntimeError(f"gh repo view failed: {proc.stderr.strip()}")
     try:
-        name = json.loads(proc.stdout).get("nameWithOwner")
+        payload = json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"gh repo view payload invalid: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError("gh repo view payload is not an object")
+    name = payload.get("nameWithOwner")
     if not isinstance(name, str) or not name:
         raise RuntimeError("gh repo view: nameWithOwner missing")
     return name

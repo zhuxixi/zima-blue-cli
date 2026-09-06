@@ -40,14 +40,19 @@ _NOTE_CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 def format_note(note: str) -> str:
     """Normalize a free-text note for the human block and XML summary.
 
-    Strips XML-illegal control characters, collapses all whitespace runs
-    (including CR/LF) to single spaces, and caps the length at 240 chars.
+    Strips XML-illegal control characters and angle brackets (the Note line
+    precedes the XML trailer, so raw < > could forge a <zima-review> block
+    that ReviewParser — which takes the FIRST match — would trust), collapses
+    all whitespace runs (including CR/LF) to single spaces, and caps the
+    length at 240 chars.
     """
     if not note:
         return ""
     text = _NOTE_CTRL_RE.sub("", note)
+    text = text.replace("<", "").replace(">", "")
     text = re.sub(r"\s+", " ", text).strip()
     return text[:_NOTE_MAX_LEN]
+
 
 TEMPLATE = """\
 === CR Batch Status Report ===
