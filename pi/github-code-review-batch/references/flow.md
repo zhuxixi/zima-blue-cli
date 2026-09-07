@@ -234,12 +234,23 @@ await runs.all([
 ])
 ```
 
-**按 agent 职责差异化指定模型（#170，可选）**：subagent 工具的派发项支持 `model` 字段，但上面的主派发示例默认不指定它。若确实需要按职责分档（机械扫描用便宜快模型、跨文件逻辑/安全推理用强模型），模型由执行本 skill 的父 Pi agent 选择，child reviewer 自身不参与选型：
+**模型分档 preflight（#224，每轮一次，必做）**：subagent 工具的派发项支持 `model` 字段。本流程的模型分档由环境变量驱动（部署策略），父 Pi agent 只做解析与守门，不自选、不猜模型名；child reviewer 自身不参与选型。首轮在 Step 4 派发前、增量轮在进入 delta-review 前各执行一次 preflight，该轮内 Step 4 / Step 5 / Round-2 的所有派发项复用同一结果。
 
-1. 用 `subagent({action:"models"})` 查询当前 registry 中准确的 `provider/id`——该列表只用于确认 canonical ID，不代表模型通过了 modelScope 政策。
-2. 读取当前实际生效的 settings，检查 `subagents.modelScope.allow`；本流程所有 child 都用 `agent: "reviewer"`，若存在 `subagents.modelScope.agents.reviewer.allow`，还必须同时通过该角色级 allowlist。
-3. 项目级 `.pi/settings.json` 只有在当前非交互 Pi 进程信任并加载时才生效；生效时项目级 `subagents.modelScope` 整体替换用户级同名配置。
-4. 显式传入时使用完整的 `provider/id`，不要使用可能跨 provider 歧义的 bare model ID（多 provider 注册同名 ID 时无法消歧，会在 modelScope 检查前解析失败）。无法确认有效 modelScope 时，省略 `model` 字段，不要按 registry 列表猜测。
+对 `PI_CR_FAST_MODEL` 与 `PI_CR_STRONG_MODEL` 各自独立执行（两档独立解析、独立 fallback，只配一档不影响另一档）：
+
+1. **读取并 trim 环境变量**：空值或仅空白视为该档未启用（disabled），不记 fallback。
+2. **格式校验**：值必须是完整 `provider/id` 形态；先 trim，包含换行、控制字符或未闭合引号的值视为格式非法（invalid）。可选保留 Pi 已知 thinking 后缀（off/minimal/low/medium/high/xhigh/max）。失败 → 该档省略 `model`，reason 记 `invalid`。
+3. **registry 可用性确认**：`provider/id` 外形不等于 registry 可用性。父 agent 调用 `subagent({action:"models"})` 获取当前 registry——该列表用于确认候选值存在，不代表模型通过了 modelScope 政策。剥离已知 thinking 后缀后，候选 base selector 必须能在当前 registry 中确认；显式传入时使用 registry 确认过的 canonical 完整的 `provider/id`，不要使用可能跨 provider 歧义的 bare model ID（多 provider 注册同名 ID 时无法消歧，会在 modelScope 检查前解析失败）。查询失败、候选不存在或无法唯一确认 → 该档省略 `model`，reason 记 `registry-unavailable`。
+4. **有效 modelScope 确认**：读取当前 Pi 进程实际生效的 settings，检查 `subagents.modelScope.allow`；本流程所有 child 都用 `agent: "reviewer"`，若存在 `subagents.modelScope.agents.reviewer.allow`，还必须同时通过该角色级 allowlist。项目级 `.pi/settings.json` 只有在当前非交互 Pi 进程信任并加载时才生效；生效时项目级 `subagents.modelScope` 整体替换用户级同名配置。**没有有效 modelScope 或限制未启用（如 `enforce: false`）时视为无范围限制**，registry 确认仍然必需；**modelScope 存在但无法可靠判断有效配置时按 scope-unverified 处理，不得当作无限制**。已启用限制且候选不匹配 → 该档省略 `model`，reason 记 `scope-rejected`。
+5. **条件注入或省略**：通过全部确认的档，把 registry 确认过的 canonical selector 以安全 JS 字符串字面量写入派发项 `model`（禁止把未经确认的环境变量原文直接拼接进 workflowScript）；任何一步无法确认的档，**省略整个 `model` 属性**（不写空字符串、不写 null），由 Pi 沿用正常 subagent model resolution chain 解析——这不保证最终模型等于父 session 模型，也不修复既有 strict modelScope 越界（后者是既有部署配置问题，不由本流程处理）。
+
+档位映射（详见下方派发示例与 [Step 5](#step-5) / [delta-review.md](delta-review.md)）：
+
+| 职责 | profile |
+|---|---|
+| CLAUDE.md checker ×2、AGENTS.md checker、bug-scanner | fast（`PI_CR_FAST_MODEL`） |
+| issue-validator ×N | fast（`PI_CR_FAST_MODEL`） |
+| logic-analyzer、delta-reviewer | strong（`PI_CR_STRONG_MODEL`） |
 
 `subagents.modelScope` 是模型范围政策，不负责选择便宜模型：`enforce: true` 时显式传入的越界模型在 child 启动前报错；`strict: true` 进一步拒绝从 agent frontmatter、`subagents.defaultModel`、父 session 或 fallback 链解析出的越界模型。`allow` 按 resolved `provider/id` 做 glob 匹配，已知 thinking 后缀（如 `:max`）匹配时被剥离，无需为后缀单独加条目。
 

@@ -372,6 +372,103 @@ class TestModelDispatchDocs:
         assert "父 Pi" in prompts
 
 
+class TestModelTieringDocs:
+    """Issue #224: env-driven model tiering preflight contracts.
+
+    flow.md Step 4 must document the parent-side per-round preflight
+    (env read -> format check -> registry confirmation -> effective
+    modelScope check -> conditional inject/omit), per-tier independence,
+    selector safety, and the conservative default (omit the whole model
+    property whenever anything cannot be confirmed).
+    """
+
+    @pytest.fixture(scope="class")
+    def texts(self) -> dict[str, str]:
+        docs = {
+            "flow": (SKILL_DIR / "references" / "flow.md").read_text(encoding="utf-8"),
+            "delta": (SKILL_DIR / "references" / "delta-review.md").read_text(
+                encoding="utf-8"
+            ),
+            "prompts": (SKILL_DIR / "references" / "subagent-prompts.md").read_text(
+                encoding="utf-8"
+            ),
+            "edge": (SKILL_DIR / "references" / "edge-cases.md").read_text(
+                encoding="utf-8"
+            ),
+        }
+        for md_path in sorted(SKILL_DIR.rglob("*.md")):
+            docs.setdefault(
+                str(md_path.relative_to(SKILL_DIR)),
+                md_path.read_text(encoding="utf-8"),
+            )
+        return docs
+
+    @staticmethod
+    def _section(text: str, start: str, end: str) -> str:
+        """Slice the text between two literal markers (exclusive of both)."""
+        return text.split(start, 1)[1].split(end, 1)[0]
+
+    def _step4_model_section(self, flow_text: str) -> str:
+        # Marker matches the rewritten section title added by this issue;
+        # before the rewrite this split raises IndexError => test fails (red).
+        return self._section(
+            flow_text, "模型分档 preflight", "task 的 prompt 模板见"
+        )
+
+    # --- A1: preflight variables and order ---
+
+    def test_env_tier_variables_documented(self, texts):
+        section = self._step4_model_section(texts["flow"])
+        assert "PI_CR_FAST_MODEL" in section
+        assert "PI_CR_STRONG_MODEL" in section
+        # per-tier independence is stated
+        assert "独立" in section
+
+    def test_preflight_order_documented(self, texts):
+        section = self._step4_model_section(texts["flow"])
+        fmt = section.find("格式校验")
+        reg = section.find("registry")
+        scope = section.find("modelScope")
+        assert 0 <= fmt < reg < scope, (
+            "preflight must be documented in order: format -> registry -> modelScope"
+        )
+
+    # --- A1: registry guard ---
+
+    def test_registry_guard_documented(self, texts):
+        section = self._step4_model_section(texts["flow"])
+        assert 'subagent({action:"models"})' in section
+        assert "外形不等于" in section and "可用性" in section
+        assert "canonical" in section
+
+    # --- A1: modelScope semantics incl. absent-scope case ---
+
+    def test_no_modelscope_means_no_restriction(self, texts):
+        section = self._step4_model_section(texts["flow"])
+        assert "没有有效 modelScope" in section
+        assert "无范围限制" in section
+        assert "scope-unverified" in section
+
+    # --- A1: conservative omission + resolution chain boundary ---
+
+    def test_conservative_omission_documented(self, texts):
+        section = self._step4_model_section(texts["flow"])
+        assert "无法确认" in section
+        assert "省略整个 `model` 属性" in section
+        assert "resolution chain" in section
+        # must NOT promise fallback equals parent session model
+        assert "继承父模型" not in section
+        assert "继承当前模型" not in section
+
+    # --- A1: selector safety ---
+
+    def test_selector_safety_documented(self, texts):
+        section = self._step4_model_section(texts["flow"])
+        assert "trim" in section
+        assert "控制字符" in section
+        assert "字面量" in section
+
+
 # ---------------------------------------------------------------------------
 # Contract 2: status report block + 3-state Status enum
 # ---------------------------------------------------------------------------
