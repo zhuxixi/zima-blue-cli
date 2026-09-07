@@ -309,11 +309,18 @@ class TestModelDispatchDocs:
         ), "Step 4 must contain a js code block with the runs.all fanout"
         return blocks[0]
 
-    # --- A1: canonical dispatch example carries no model selection ---
+    # --- A1: canonical dispatch example uses conditional spread ---
 
-    def test_step4_example_has_no_model_field(self, texts):
+    def test_step4_example_conditional_model_spread(self, texts):
+        """#224: the example shows conditional injection via spread objects;
+        fallback omits the whole property (no null / empty-string model)."""
         block = self._step4_runs_all_example(texts["flow"])
-        assert "model:" not in block
+        assert "FAST_OVERRIDE" in block
+        assert "STRONG_OVERRIDE" in block
+        assert 'model: "' not in block  # no literal model id anywhere
+        assert "model:" not in block  # property only appears via spread
+        assert "model: null" not in block
+        assert 'model: ""' not in block
 
     def test_docs_no_hardcoded_deepseek_models(self, texts):
         for name, text in texts.items():
@@ -410,9 +417,11 @@ class TestModelTieringDocs:
 
     def _step4_model_section(self, flow_text: str) -> str:
         # Marker matches the rewritten section title added by this issue;
-        # before the rewrite this split raises IndexError => test fails (red).
+        # the "（#224" suffix keeps the slice from starting at the earlier
+        # dispatch-example comment that merely references this section.
+        # Before the rewrite this split raises IndexError => test fails (red).
         return self._section(
-            flow_text, "模型分档 preflight", "task 的 prompt 模板见"
+            flow_text, "模型分档 preflight（#224", "task 的 prompt 模板见"
         )
 
     # --- A1: preflight variables and order ---
@@ -467,6 +476,13 @@ class TestModelTieringDocs:
         assert "trim" in section
         assert "控制字符" in section
         assert "字面量" in section
+
+    def test_dispatch_example_spread_documented(self, texts):
+        step4 = self._section(texts["flow"], "## Step 4", "## Step 5")
+        assert "FAST_OVERRIDE" in step4 and "STRONG_OVERRIDE" in step4
+        # spread-object comment must explain fallback = property omitted
+        assert "...FAST_OVERRIDE" in step4 or "...STRONG_OVERRIDE" in step4
+        assert "or omit" in step4 or "省略" in step4
 
 
 # ---------------------------------------------------------------------------

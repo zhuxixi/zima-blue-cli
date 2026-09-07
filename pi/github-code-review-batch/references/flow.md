@@ -225,14 +225,21 @@ echo '{"repo_root": ".", "changed_files": ["zima/a.py", "tests/b.py"]}' | python
 启动 5 个并行 `subagent`（subagent 工具 `workflowScript` + `runs.all`，每个 `agent: "reviewer"`、`context: "fresh"`），每个接收经过 [Step 3.5](#step-3-5) 预处理的输入包。派发结构：
 
 ```js
+// Parent resolves each profile once per round (see "模型分档 preflight").
+// FAST_OVERRIDE / STRONG_OVERRIDE hold the registry-confirmed canonical
+// provider/id selector for their tier when preflight enabled it; a fallback
+// tier uses {} so the dispatch item omits that property entirely
+// (Pi resolution chain applies).
 await runs.all([
-  { key: "claude-checker-1", agent: "reviewer", context: "fresh", task: "<claude-compliance-checker prompt，显式规则 framing>" },
-  { key: "claude-checker-2", agent: "reviewer", context: "fresh", task: "<claude-compliance-checker prompt，隐含约定 framing>" },
-  { key: "agents-checker",    agent: "reviewer", context: "fresh", task: "<agents-compliance-checker prompt>" },
-  { key: "bug-scanner",       agent: "reviewer", context: "fresh", task: "<bug-scanner prompt>" },
-  { key: "logic-analyzer",    agent: "reviewer", context: "fresh", task: "<logic-analyzer prompt>" },
+  { key: "claude-checker-1", agent: "reviewer", context: "fresh", ...FAST_OVERRIDE, task: "<claude-compliance-checker prompt，显式规则 framing>" },
+  { key: "claude-checker-2", agent: "reviewer", context: "fresh", ...FAST_OVERRIDE, task: "<claude-compliance-checker prompt，隐含约定 framing>" },
+  { key: "agents-checker",   agent: "reviewer", context: "fresh", ...FAST_OVERRIDE, task: "<agents-compliance-checker prompt>" },
+  { key: "bug-scanner",      agent: "reviewer", context: "fresh", ...FAST_OVERRIDE, task: "<bug-scanner prompt>" },
+  { key: "logic-analyzer",   agent: "reviewer", context: "fresh", ...STRONG_OVERRIDE, task: "<logic-analyzer prompt>" },
 ])
 ```
+
+spread 对象在 preflight 通过时持有 registry 确认过的 canonical `provider/id`；fallback 时为空对象，对应派发项的 `model` 属性整个省略（禁止 `model: ""` / `model: null` 伪装省略），由 Pi 正常 resolution chain 解析。示例按当前双 checker 形态书写，#225（checker 合并）落地后按实际 agent 数量更新，档位归属不变。
 
 **模型分档 preflight（#224，每轮一次，必做）**：subagent 工具的派发项支持 `model` 字段。本流程的模型分档由环境变量驱动（部署策略），父 Pi agent 只做解析与守门，不自选、不猜模型名；child reviewer 自身不参与选型。首轮在 Step 4 派发前、增量轮在进入 delta-review 前各执行一次 preflight，该轮内 Step 4 / Step 5 / Round-2 的所有派发项复用同一结果。
 
