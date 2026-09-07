@@ -29,6 +29,21 @@
 | committer 回应与代码实际不符 | delta-reviewer 结合 diff 判断，**以代码为准** |
 | 所有 open issues 被标记 acknowledged | 输出状态报告，Status: `PASS`（无真正 open issues） |
 | `.claude/cr-suppressions.json` 缺失或损坏 | 视为无抑制，正常审查（#126，默认 off） |
+| 两个模型档环境变量都未设置 | 两档均 disabled，派发不带 per-run `model`，沿用正常 resolution chain；报告静默，无模型 fallback note（#224） |
+
+### 模型分档边界（#224）
+
+- `PI_CR_FAST_MODEL` / `PI_CR_STRONG_MODEL` 只设置一个：只解析对应档；另一档未启用，沿用正常 resolution chain 且不记 fallback。
+- 环境变量值为空白：按未设置处理（disabled），静默。
+- 非空但格式非法（非 `provider/id` 形态、含换行/控制字符/未闭合引号）：该档 fallback，省略整个 `model` 属性，note 记 `<tier>=resolution-chain (invalid)`。
+- 格式正确但当前 registry 查不到 / 查询失败 / 无法唯一确认：该档 fallback，note 记 `<tier>=resolution-chain (registry-unavailable)`。`provider/id` 外形不等于可用性。
+- registry 确认但有效 modelScope 不允许：该档 fallback，note 记 `<tier>=resolution-chain (scope-rejected)`。
+- modelScope 配置存在但无法可靠判断有效规则：该档 fallback，note 记 `<tier>=resolution-chain (scope-unverified)`，不得当作无 modelScope 处理。
+- 没有有效 modelScope 或限制未启用：不构成 scope 拒绝（无范围限制），registry 确认仍必需。
+- 两个变量配了相同 selector：合法，两档独立 enabled，等效单档。
+- fallback 后的实际模型：由 Pi 正常 subagent model resolution chain（per-run → provider-scoped → agentOverrides → frontmatter → `subagents.defaultModel` → parent session model）决定，不保证等于父 session 模型；既有 strict modelScope 越界不由本流程修复。
+- thinking 后缀：只接受 Pi 已知后缀；registry 与 allowlist 匹配时剥离后缀，派发保留确认过的完整 selector；本流程不新增 thinking policy。
+- checker 合并（#225）后：checker 数量变化不改变其 fast 档归属。
 
 ---
 

@@ -564,6 +564,20 @@ Coverage: 7/10 files
 
 调度器据此识别"本轮 0 finding 但 diff 被截断、覆盖不全"，不会把截断导致的空结果误读为"全量审查通过"。未提供这些字段时省略（向后兼容）。
 
+**模型 fallback note（#224）**：仅当已配置（非空）的档位在 preflight 中失败时，向 `render_status_report.py` 传入 `note`，固定格式：
+
+```text
+model profile fallback: <tier>=resolution-chain (<reason>)
+```
+
+reason 取 preflight 结果：`invalid` / `registry-unavailable` / `scope-rejected` / `scope-unverified`。两档同时 fallback 时合并为一条（以 `; ` 分隔），例：
+
+```text
+model profile fallback: fast=resolution-chain (invalid); strong=resolution-chain (scope-rejected)
+```
+
+未启用的档（未配置或空白）不出现、不记 fallback，报告保持静默；正常 enabled 档同样静默。`resolution-chain` 只表示派发项省略了 per-run `model` 属性（由 Pi 正常 resolution chain 解析），不表示最终模型一定是父 session 模型。模型 fallback note 与上文 `Diff truncated` / `Coverage` 提示相互独立、可同时存在（note 与 coverage 是 renderer 的不同输入字段）。
+
 **机器可读 trailer（#176）**：`render_status_report.py` 会在分隔线 `====` 之后追加 `<zima-review><verdict>approved|needs_fix</verdict><summary>...</summary></zima-review>` XML——zima executor 靠它驱动 postExec 标签流转（pi 型 agent 的 CR PJob 必需）；`Status:` 行与报告块形状不变，PJob 调度器的 grep 契约不受影响。
 
 ### 用途

@@ -519,6 +519,36 @@ class TestModelTieringDocs:
                     name in line for name in ("logic-analyzer", "delta-reviewer")
                 ), f"strong mapping line missing agent: {line}"
 
+    # --- A3: fallback disclosure via note ---
+
+    def _step10_section(self, flow_text: str) -> str:
+        # Step 10 spans the title through the end of the report-format body
+        # ("### 用途" starts the trailing usage subsection).
+        return self._section(flow_text, "## Step 10", "### 用途")
+
+    def test_step10_model_fallback_note_contract(self, texts):
+        step10 = self._step10_section(texts["flow"])
+        assert "model profile fallback:" in step10
+        assert "resolution-chain" in step10
+        assert "未启用" in step10 or "disabled" in step10
+        # unset tiers never appear in the note
+        assert "不出现" in step10 or "不记" in step10
+
+    def test_edge_cases_document_model_tiering(self, texts):
+        edge = texts["edge"]
+        assert "PI_CR_FAST_MODEL" in edge and "PI_CR_STRONG_MODEL" in edge
+        for reason in ("invalid", "registry-unavailable", "scope-rejected", "scope-unverified"):
+            assert reason in edge, f"edge-cases.md missing reason {reason}"
+        assert "resolution-chain" in edge
+        # disabled (unset) must be silent
+        assert "静默" in edge
+
+    def test_note_format_is_fixed(self, texts):
+        step10 = self._step10_section(texts["flow"])
+        # exact fixed format with mergeable tiers
+        assert "<tier>=resolution-chain (<reason>)" in step10
+        assert "; " in step10
+
 
 # ---------------------------------------------------------------------------
 # Contract 2: status report block + 3-state Status enum
