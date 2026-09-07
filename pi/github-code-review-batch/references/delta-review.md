@@ -22,6 +22,16 @@
 
 ## 执行步骤
 
+### Step Δ0: 模型分档 preflight（#224）
+
+增量轮入口执行一次 preflight（流程同 [flow.md Step 4 模型分档 preflight](flow.md#step-4)），本文件所有 Round-2 派发复用同一结果：
+
+- **delta-reviewer** 使用 strong profile（`PI_CR_STRONG_MODEL`）
+- **Δ2a bug-scanner** 使用 fast profile（`PI_CR_FAST_MODEL`）
+- **Δ2a logic-analyzer** 使用 strong profile（`PI_CR_STRONG_MODEL`）
+
+档位判定与 fallback 语义以 [flow.md Step 4](flow.md#step-4) 为单一事实源；不因增量轮重新读取或猜测另一套模型。
+
 ### Step Δ1: 获取完整 diff
 
 使用 `bash` 执行 `gh pr diff <PR>` 获取完整 diff。
@@ -35,6 +45,8 @@
 - `current_head_sha`
 - 相关规范文件内容
 
+delta-reviewer 使用 strong profile（`PI_CR_STRONG_MODEL`），复用 [Step Δ0](#step-Δ0) 的 preflight 结果。
+
 ### Step Δ2a: 并行扫描新增 hunk（#123，防回归）
 
 delta-reviewer 专注旧 issues 的 resolved / acknowledged / unresolved 对比（需连贯上下文）；但**修复 commit 是回归高发区**，单 agent 易因"确认偏误"漏报新引入的问题。因此对本次新增/修改的 hunk 额外**并行**启动 bug-scanner + logic-analyzer 各 1 个（复用 [subagent-prompts.md](subagent-prompts.md) 的现成 prompt）：
@@ -46,6 +58,8 @@ git -C <repo> diff <previous_head_sha> <current_head_sha> -- . ':(exclude)tests'
 ```
 
 把该 delta-diff（经 [Step 3.5](flow.md#step-3-5) 的 `compress_diff.py --filter-tests` 预处理）分别喂给 bug-scanner 与 logic-analyzer。它们产出的 issue 与 delta-reviewer 自身的 `new_issues` 合并（见 [Step Δ4](#step-Δ4)）。新增 hunk 为空（纯删除/revert）时返回空列表，优雅降级。
+
+Δ2a bug-scanner 使用 fast profile（`PI_CR_FAST_MODEL`）、Δ2a logic-analyzer 使用 strong profile（`PI_CR_STRONG_MODEL`），均复用 [Step Δ0](#step-Δ0) 的 preflight 结果。
 
 > delta-reviewer 仍保留"扫新问题"职责：它对比旧 issue 修复状态时本就读新代码，顺手报告明显新问题仍有价值；Δ2a 的并行 scanner 是**补充**（多视角防回归），不是替代。
 

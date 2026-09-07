@@ -243,7 +243,7 @@ spread 对象在 preflight 通过时持有 registry 确认过的 canonical `prov
 
 **模型分档 preflight（#224，每轮一次，必做）**：subagent 工具的派发项支持 `model` 字段。本流程的模型分档由环境变量驱动（部署策略），父 Pi agent 只做解析与守门，不自选、不猜模型名；child reviewer 自身不参与选型。首轮在 Step 4 派发前、增量轮在进入 delta-review 前各执行一次 preflight，该轮内 Step 4 / Step 5 / Round-2 的所有派发项复用同一结果。
 
-对 `PI_CR_FAST_MODEL` 与 `PI_CR_STRONG_MODEL` 各自独立执行（两档独立解析、独立 fallback，只配一档不影响另一档）：
+对 fast 与 strong 两档各自独立执行 preflight（两档独立解析、独立 fallback，只配一档不影响另一档；档位映射见下表）：
 
 1. **读取并 trim 环境变量**：空值或仅空白视为该档未启用（disabled），不记 fallback。
 2. **格式校验**：值必须是完整 `provider/id` 形态；先 trim，包含换行、控制字符或未闭合引号的值视为格式非法（invalid）。可选保留 Pi 已知 thinking 后缀（off/minimal/low/medium/high/xhigh/max）。失败 → 该档省略 `model`，reason 记 `invalid`。
@@ -311,6 +311,8 @@ issue-validator 验证时若 agent 未给 severity，按 `medium` 兜底。Agent
 ## Step 5: Issue 验证 {#step-5}
 
 对 [Step 4](#step-4) 中发现的每一个 issue，启动一个并行 `subagent` 进行验证（`agent: "reviewer"`、`context: "fresh"`，task 为 [subagent-prompts.md#issue-validator](subagent-prompts.md#issue-validator) 的 prompt 模板 + 单个 issue 信息），N 个候选 issue 用 subagent 工具的 `workflowScript` `runs.all` 一并 fanout。
+
+issue-validator 使用 fast profile（`PI_CR_FAST_MODEL`）：派发项复用本轮 Step 4 的 preflight 结果（见 [Step 4 模型分档 preflight](#step-4)），不在每个 validator 前重复解析。
 
 验证 agent 输入：
 

@@ -393,15 +393,11 @@ class TestModelTieringDocs:
     def texts(self) -> dict[str, str]:
         docs = {
             "flow": (SKILL_DIR / "references" / "flow.md").read_text(encoding="utf-8"),
-            "delta": (SKILL_DIR / "references" / "delta-review.md").read_text(
-                encoding="utf-8"
-            ),
+            "delta": (SKILL_DIR / "references" / "delta-review.md").read_text(encoding="utf-8"),
             "prompts": (SKILL_DIR / "references" / "subagent-prompts.md").read_text(
                 encoding="utf-8"
             ),
-            "edge": (SKILL_DIR / "references" / "edge-cases.md").read_text(
-                encoding="utf-8"
-            ),
+            "edge": (SKILL_DIR / "references" / "edge-cases.md").read_text(encoding="utf-8"),
         }
         for md_path in sorted(SKILL_DIR.rglob("*.md")):
             docs.setdefault(
@@ -420,9 +416,7 @@ class TestModelTieringDocs:
         # the "（#224" suffix keeps the slice from starting at the earlier
         # dispatch-example comment that merely references this section.
         # Before the rewrite this split raises IndexError => test fails (red).
-        return self._section(
-            flow_text, "模型分档 preflight（#224", "task 的 prompt 模板见"
-        )
+        return self._section(flow_text, "模型分档 preflight（#224", "task 的 prompt 模板见")
 
     # --- A1: preflight variables and order ---
 
@@ -438,9 +432,9 @@ class TestModelTieringDocs:
         fmt = section.find("格式校验")
         reg = section.find("registry")
         scope = section.find("modelScope")
-        assert 0 <= fmt < reg < scope, (
-            "preflight must be documented in order: format -> registry -> modelScope"
-        )
+        assert (
+            0 <= fmt < reg < scope
+        ), "preflight must be documented in order: format -> registry -> modelScope"
 
     # --- A1: registry guard ---
 
@@ -483,6 +477,47 @@ class TestModelTieringDocs:
         # spread-object comment must explain fallback = property omitted
         assert "...FAST_OVERRIDE" in step4 or "...STRONG_OVERRIDE" in step4
         assert "or omit" in step4 or "省略" in step4
+
+    # --- A2: tier mapping across all dispatch points ---
+
+    def test_step5_validator_fast_tier(self, texts):
+        step5 = self._section(texts["flow"], "## Step 5", "## Step 6")
+        assert "issue-validator" in step5 or "验证" in step5
+        assert "fast" in step5 and "PI_CR_FAST_MODEL" in step5
+
+    def test_delta_review_tier_mapping(self, texts):
+        # delta-reviewer -> strong
+        delta2 = self._section(texts["delta"], "Step Δ2:", "Step Δ3:")
+        assert "delta-reviewer" in delta2
+        assert "strong" in delta2 and "PI_CR_STRONG_MODEL" in delta2
+        # Δ2a: bug-scanner -> fast, logic-analyzer -> strong
+        delta2a = self._section(texts["delta"], "Step Δ2a:", "Step Δ3:")
+        assert "bug-scanner" in delta2a and "logic-analyzer" in delta2a
+        assert "PI_CR_FAST_MODEL" in delta2a and "PI_CR_STRONG_MODEL" in delta2a
+        # mapping lines keep agent and tier on the same line
+        for line in delta2a.splitlines():
+            if "PI_CR_FAST_MODEL" in line:
+                assert "bug-scanner" in line
+            if "PI_CR_STRONG_MODEL" in line:
+                assert "logic-analyzer" in line
+
+    def test_round_entry_single_preflight(self, texts):
+        flow_section = self._step4_model_section(texts["flow"])
+        delta_text = texts["delta"]
+        assert "一次 preflight" in flow_section or "各执行一次 preflight" in flow_section
+        assert "preflight" in delta_text and "复用" in delta_text
+
+    def test_flow_mapping_table_pairs(self, texts):
+        section = self._step4_model_section(texts["flow"])
+        for line in section.splitlines():
+            if "PI_CR_FAST_MODEL" in line:
+                assert any(
+                    name in line for name in ("checker", "bug-scanner", "validator")
+                ), f"fast mapping line missing agent: {line}"
+            if "PI_CR_STRONG_MODEL" in line:
+                assert any(
+                    name in line for name in ("logic-analyzer", "delta-reviewer")
+                ), f"strong mapping line missing agent: {line}"
 
 
 # ---------------------------------------------------------------------------
