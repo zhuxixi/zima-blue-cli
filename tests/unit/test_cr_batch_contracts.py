@@ -549,6 +549,18 @@ class TestModelTieringDocs:
         assert "<tier>=resolution-chain (<reason>)" in step10
         assert "; " in step10
 
+    # --- A4: prompts header points to flow.md as single source ---
+
+    def test_prompts_header_tiering_summary(self, texts):
+        header = texts["prompts"].split("## summarizer", 1)[0]
+        assert "PI_CR_FAST_MODEL" in header and "PI_CR_STRONG_MODEL" in header
+        assert "单一事实源" in header
+        assert "flow.md" in header
+        # must not restate full mapping per agent (single source only)
+        body = texts["prompts"].split("## summarizer", 1)[1]
+        assert "PI_CR_FAST_MODEL" not in body
+        assert "PI_CR_STRONG_MODEL" not in body
+
 
 # ---------------------------------------------------------------------------
 # Contract 2: status report block + 3-state Status enum
