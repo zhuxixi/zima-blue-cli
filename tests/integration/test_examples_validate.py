@@ -13,6 +13,8 @@ import shutil
 from pathlib import Path
 
 import pytest
+from jinja2 import BaseLoader, Environment, StrictUndefined
+from jinja2.meta import find_undeclared_variables
 
 from zima.config.manager import ConfigManager
 from zima.models.agent import AgentConfig
@@ -62,6 +64,56 @@ def _validate_entity(kind: str, code: str, manager: ConfigManager) -> list[str]:
     return [f"{kind}/{code}: {e}" for e in errors]
 
 
+def _strict_render_check(pjob_code: str, manager: ConfigManager) -> None:
+    """Strictly render a PJob's workflow template with sentinel values (A7).
+
+    The executor render path (``PJobExecutor._render_workflow``) is
+    deliberately lenient — undefined variables silently render empty — so it
+    cannot prove a template is wired correctly. This check instead:
+
+    1. extracts every template variable via ``jinja2.meta`` (which sees
+       runtime-injected variables too, e.g. webhook ``--set-var`` names that
+       have no static Variable config);
+    2. renders under ``StrictUndefined`` with sentinel values — any undefined
+       name or syntax error raises;
+    3. asserts every sentinel survives into the output, proving real
+       interpolation instead of silent emptying.
+
+    Env settings mirror ``zima.execution.template_renderer._get_jinja_env``
+    (the strict CLI render path) plus ``undefined=StrictUndefined``.
+    """
+    pjob = PJobConfig.from_dict(manager.load_config("pjob", pjob_code))
+    workflow_code = pjob.spec.workflow
+    assert workflow_code, f"{pjob_code}: PJob has no workflow reference"
+
+    workflow = WorkflowConfig.from_dict(manager.load_config("workflow", workflow_code))
+    if workflow.format != "jinja2":
+        return  # plain/mustache templates have no strict jinja2 contract
+
+    env = Environment(
+        loader=BaseLoader(),
+        trim_blocks=True,
+        lstrip_blocks=True,
+        keep_trailing_newline=True,
+        undefined=StrictUndefined,
+    )
+    variable_names = find_undeclared_variables(env.parse(workflow.template))
+    sentinels = {name: f"XTEST_{name}" for name in variable_names}
+
+    try:
+        output = env.from_string(workflow.template).render(**sentinels)
+    except Exception as exc:  # UndefinedError / TemplateError
+        raise AssertionError(
+            f"{pjob_code}: strict render of workflow '{workflow_code}' failed: {exc}"
+        ) from exc
+
+    for name, sentinel in sentinels.items():
+        assert sentinel in output, (
+            f"{pjob_code}: sentinel {sentinel} for variable '{name}' missing from "
+            f"rendered workflow '{workflow_code}' (variable never interpolated)"
+        )
+
+
 @pytest.mark.parametrize("scene", list(SCENES))
 def test_scene_all_entities_validate(scene: str, isolated_zima_home):
     """Every YAML file in the pack must pass entity-level domain validation."""
@@ -86,3 +138,19 @@ def test_scene_pack_composition_matches_matrix(scene: str, isolated_zima_home):
     for kind, expected in SCENES[scene].items():
         codes = manager.list_config_codes(kind)
         assert len(codes) == expected, f"{scene}/{kind}: expected {expected}, got {codes}"
+
+
+@pytest.mark.parametrize("scene", list(SCENES))
+def test_scene_pjobs_strict_render(scene: str, isolated_zima_home):
+    """Every example PJob's template must render strictly (A7).
+
+    The executor's render path is deliberately lenient (undefined variables
+    render empty), so it cannot prove a template is correct. Here every
+    template variable gets a sentinel value and the render runs under
+    ``StrictUndefined``: an undefined variable raises, and every sentinel must
+    survive into the output (proves real interpolation, not silent emptying).
+    """
+    _install_scene(scene, isolated_zima_home)
+    manager = ConfigManager()
+    for code in manager.list_config_codes("pjob"):
+        _strict_render_check(code, manager)
