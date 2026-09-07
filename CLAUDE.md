@@ -21,13 +21,16 @@ uv run zima --help
 uv run zima pjob run <pjob-code>
 
 # Format
-uv run black zima/ tests/ --line-length 100
+uv run black zima/ tests/ scripts/ --line-length 100
 
 # Lint
-uv run ruff check zima/ tests/
+uv run ruff check zima/ tests/ scripts/
 
 # Architecture dependency-direction contracts (layers + framework-free models)
 uv run lint-imports
+
+# Regenerate docs/cli-reference.md (required after any CLI command/option change; CI drift-gates it)
+uv run python scripts/generate_cli_docs.py
 
 # Run all tests
 uv run pytest
@@ -164,6 +167,8 @@ Customizable via `ZIMA_HOME` env var.
 - **`tests/unit/`** — Pure unit tests for models and config manager
 - **pi skill scripts** have contract tests under `tests/unit/` (`test_wait_cr.py`, `test_cr_batch_*.py`) run by the main pytest suite/CI — run them when editing `pi/*/scripts/*.py`; the cr-batch skill's `*.md` docs are contract-locked too (`TestModelDispatchDocs` reads every `*.md` under `pi/github-code-review-batch/` and fails on hardcoded model names)
 - **`examples/auto-merge/auto-merge-guarded.py`** (standalone example, see Project Overview) has tests under `tests/unit/` (`test_auto_merge_guarded.py`, loads the hyphen-named script via importlib) run by the main pytest suite/CI — run them when editing the script
+- **`tests/integration/test_examples_validate.py`** (#235) validates the `examples/webhook` and `examples/sdd` packs in CI: every YAML installed into an isolated ZIMA_HOME and parsed through the domain models, plus strict render (StrictUndefined + sentinel values) of every example PJob template; per-pack entity counts are pinned in the test's `SCENES` dict — changing a pack's composition means updating it
+- **`scripts/generate_cli_docs.py`** (#234) has tests under `tests/unit/test_generate_cli_docs.py` + `tests/integration/test_generate_cli_docs_smoke.py` (real-app smoke) — run them when editing the generator
 - **`tests/integration/`** — CLI command tests using Typer's `CliRunner`, subprocess integration tests
 - **`tests/conftest.py`** — Fixtures: `isolated_zima_home` (temp ZIMA_HOME), `config_manager`, `cli_runner`, `unique_code`
 - **`tests/base.py`** — `TestIsolator` base class with `setup_isolation` autouse fixture
@@ -174,8 +179,9 @@ Customizable via `ZIMA_HOME` env var.
 
 ## CI Pipeline
 
-- **GitHub Actions** on push/PR to `main` (workflow accepts `master` too, see `.github/workflows/integration-test.yml`)
-- Lint: `uv run ruff check zima/ tests/` + `uv run black --check zima/ tests/ --line-length 100` + `uv run lint-imports` (architecture contracts; gate on `.importlinter` / `.arch-governance.yml`)
+- **GitHub Actions** on push/PR to `main` (workflow accepts `master` too, see `.github/workflows/integration-test.yml`); path filters include `scripts/**`, `docs/cli-descriptions.yaml`, `**/*.md`, `examples/**` — docs- or scripts-only changes run CI too (#236)
+- Lint: `uv run ruff check zima/ tests/ scripts/` + `uv run black --check zima/ tests/ scripts/ --line-length 100` + `uv run lint-imports` (architecture contracts; gate on `.importlinter` / `.arch-governance.yml`)
+- Docs drift gate (#236): CI reruns `scripts/generate_cli_docs.py` and fails on any diff in `docs/cli-reference.md` — regenerate + commit after changing CLI commands/options
 - Test: `uv run pytest tests/ -m "not slow" --cov=zima --cov-fail-under=60` (Python 3.10/3.13 matrix)
 - Publish: `.github/workflows/publish.yml` triggers on tag push
 
@@ -251,6 +257,7 @@ Polling-path executions (daemon, no `head_sha` pin) collapse into a `--nohead` b
 ## Documentation
 
 - `AGENTS.md` — Agent context file for Kimi Code agents
+- `docs/cli-reference.md` — **generated** by `scripts/generate_cli_docs.py` (#234), never hand-edit; command descriptions live in `docs/cli-descriptions.yaml` with exact bidirectional coverage — every CLI command needs a catalog entry and every entry must match a real command, so adding/renaming a command means updating the catalog then regenerating (else the generator or CI drift gate fails)
 - `docs/architecture/` — **Current architecture** (authoritative)
 - `docs/history/` — Deprecated designs (reference only)
 - `docs/decisions/` — ADRs; ADR-004 (single execution) is the current model, ADR-005 (architecture governance) defines the dependency-direction contract
