@@ -10,6 +10,10 @@ on:
       - '.importlinter'
       - '.arch-governance.yml'
       - '.github/workflows/integration-test.yml'
+      - 'scripts/**'
+      - 'docs/cli-descriptions.yaml'
+      - '**/*.md'
+      - 'examples/**'
   pull_request:
     branches: [main, master]
     paths:
@@ -19,6 +23,10 @@ on:
       - '.importlinter'
       - '.arch-governance.yml'
       - '.github/workflows/integration-test.yml'
+      - 'scripts/**'
+      - 'docs/cli-descriptions.yaml'
+      - '**/*.md'
+      - 'examples/**'
   workflow_dispatch:
     inputs:
       test_type:
@@ -58,6 +66,21 @@ jobs:
 
       - name: Run import-linter (architecture contracts)
         run: uv run lint-imports
+
+      - name: Check generated docs are up to date
+        run: |
+          uv run python scripts/generate_cli_docs.py
+          untracked="$(git ls-files --others --exclude-standard -- docs/cli-reference.md)"
+          if ! git diff --exit-code; then tracked_drift=1; else tracked_drift=0; fi
+          if [ "$tracked_drift" -ne 0 ] || [ -n "$untracked" ]; then
+            echo "::error::Generated docs stale. Regenerate: uv run python scripts/generate_cli_docs.py"
+            git diff --name-only
+            if [ -n "$untracked" ]; then
+              echo "--- Untracked generated file ---"
+              printf '%s\n' "$untracked"
+            fi
+            exit 1
+          fi
 
   # ============ Fast Tests (PR + push) ============
   test-fast:
