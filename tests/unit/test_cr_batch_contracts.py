@@ -309,11 +309,18 @@ class TestModelDispatchDocs:
         ), "Step 4 must contain a js code block with the runs.all fanout"
         return blocks[0]
 
-    # --- A1: canonical dispatch example carries no model selection ---
+    # --- A1: canonical dispatch example uses conditional spread ---
 
-    def test_step4_example_has_no_model_field(self, texts):
+    def test_step4_example_conditional_model_spread(self, texts):
+        """#224: the example shows conditional injection via spread objects;
+        fallback omits the whole property (no null / empty-string model)."""
         block = self._step4_runs_all_example(texts["flow"])
-        assert "model:" not in block
+        assert "FAST_OVERRIDE" in block
+        assert "STRONG_OVERRIDE" in block
+        assert 'model: "' not in block  # no literal model id anywhere
+        assert "model:" not in block  # property only appears via spread
+        assert "model: null" not in block
+        assert 'model: ""' not in block
 
     def test_docs_no_hardcoded_deepseek_models(self, texts):
         for name, text in texts.items():
@@ -370,6 +377,189 @@ class TestModelDispatchDocs:
         assert "modelScope" in prompts
         # model selection belongs to the parent Pi, not the child reviewer
         assert "父 Pi" in prompts
+
+
+class TestModelTieringDocs:
+    """Issue #224: env-driven model tiering preflight contracts.
+
+    flow.md Step 4 must document the parent-side per-round preflight
+    (env read -> format check -> registry confirmation -> effective
+    modelScope check -> conditional inject/omit), per-tier independence,
+    selector safety, and the conservative default (omit the whole model
+    property whenever anything cannot be confirmed).
+    """
+
+    @pytest.fixture(scope="class")
+    def texts(self) -> dict[str, str]:
+        docs = {
+            "flow": (SKILL_DIR / "references" / "flow.md").read_text(encoding="utf-8"),
+            "delta": (SKILL_DIR / "references" / "delta-review.md").read_text(encoding="utf-8"),
+            "prompts": (SKILL_DIR / "references" / "subagent-prompts.md").read_text(
+                encoding="utf-8"
+            ),
+            "edge": (SKILL_DIR / "references" / "edge-cases.md").read_text(encoding="utf-8"),
+        }
+        for md_path in sorted(SKILL_DIR.rglob("*.md")):
+            docs.setdefault(
+                str(md_path.relative_to(SKILL_DIR)),
+                md_path.read_text(encoding="utf-8"),
+            )
+        return docs
+
+    @staticmethod
+    def _section(text: str, start: str, end: str) -> str:
+        """Slice the text between two literal markers (exclusive of both)."""
+        return text.split(start, 1)[1].split(end, 1)[0]
+
+    def _step4_model_section(self, flow_text: str) -> str:
+        # Marker matches the rewritten section title added by this issue;
+        # the "（#224" suffix keeps the slice from starting at the earlier
+        # dispatch-example comment that merely references this section.
+        # Before the rewrite this split raises IndexError => test fails (red).
+        return self._section(flow_text, "模型分档 preflight（#224", "task 的 prompt 模板见")
+
+    # --- A1: preflight variables and order ---
+
+    def test_env_tier_variables_documented(self, texts):
+        section = self._step4_model_section(texts["flow"])
+        assert "PI_CR_FAST_MODEL" in section
+        assert "PI_CR_STRONG_MODEL" in section
+        # per-tier independence is stated
+        assert "独立" in section
+
+    def test_preflight_order_documented(self, texts):
+        section = self._step4_model_section(texts["flow"])
+        fmt = section.find("格式校验")
+        reg = section.find("registry")
+        scope = section.find("modelScope")
+        assert (
+            0 <= fmt < reg < scope
+        ), "preflight must be documented in order: format -> registry -> modelScope"
+
+    # --- A1: registry guard ---
+
+    def test_registry_guard_documented(self, texts):
+        section = self._step4_model_section(texts["flow"])
+        assert 'subagent({action:"models"})' in section
+        assert "外形不等于" in section and "可用性" in section
+        assert "canonical" in section
+
+    # --- A1: modelScope semantics incl. absent-scope case ---
+
+    def test_no_modelscope_means_no_restriction(self, texts):
+        section = self._step4_model_section(texts["flow"])
+        assert "没有有效 modelScope" in section
+        assert "无范围限制" in section
+        assert "scope-unverified" in section
+
+    # --- A1: conservative omission + resolution chain boundary ---
+
+    def test_conservative_omission_documented(self, texts):
+        section = self._step4_model_section(texts["flow"])
+        assert "无法确认" in section
+        assert "省略整个 `model` 属性" in section
+        assert "resolution chain" in section
+        # must NOT promise fallback equals parent session model
+        assert "继承父模型" not in section
+        assert "继承当前模型" not in section
+
+    # --- A1: selector safety ---
+
+    def test_selector_safety_documented(self, texts):
+        section = self._step4_model_section(texts["flow"])
+        assert "trim" in section
+        assert "控制字符" in section
+        assert "字面量" in section
+
+    def test_dispatch_example_spread_documented(self, texts):
+        step4 = self._section(texts["flow"], "## Step 4", "## Step 5")
+        assert "FAST_OVERRIDE" in step4 and "STRONG_OVERRIDE" in step4
+        # spread-object comment must explain fallback = property omitted
+        assert "...FAST_OVERRIDE" in step4 or "...STRONG_OVERRIDE" in step4
+        assert "or omit" in step4 or "省略" in step4
+
+    # --- A2: tier mapping across all dispatch points ---
+
+    def test_step5_validator_fast_tier(self, texts):
+        step5 = self._section(texts["flow"], "## Step 5", "## Step 6")
+        assert "issue-validator" in step5 or "验证" in step5
+        assert "fast" in step5 and "PI_CR_FAST_MODEL" in step5
+
+    def test_delta_review_tier_mapping(self, texts):
+        # delta-reviewer -> strong
+        delta2 = self._section(texts["delta"], "Step Δ2:", "Step Δ3:")
+        assert "delta-reviewer" in delta2
+        assert "strong" in delta2 and "PI_CR_STRONG_MODEL" in delta2
+        # Δ2a: bug-scanner -> fast, logic-analyzer -> strong
+        delta2a = self._section(texts["delta"], "Step Δ2a:", "Step Δ3:")
+        assert "bug-scanner" in delta2a and "logic-analyzer" in delta2a
+        assert "PI_CR_FAST_MODEL" in delta2a and "PI_CR_STRONG_MODEL" in delta2a
+        # mapping lines keep agent and tier on the same line
+        for line in delta2a.splitlines():
+            if "PI_CR_FAST_MODEL" in line:
+                assert "bug-scanner" in line
+            if "PI_CR_STRONG_MODEL" in line:
+                assert "logic-analyzer" in line
+
+    def test_round_entry_single_preflight(self, texts):
+        flow_section = self._step4_model_section(texts["flow"])
+        delta_text = texts["delta"]
+        assert "一次 preflight" in flow_section or "各执行一次 preflight" in flow_section
+        assert "preflight" in delta_text and "复用" in delta_text
+
+    def test_flow_mapping_table_pairs(self, texts):
+        section = self._step4_model_section(texts["flow"])
+        for line in section.splitlines():
+            if "PI_CR_FAST_MODEL" in line:
+                assert any(
+                    name in line for name in ("checker", "bug-scanner", "validator")
+                ), f"fast mapping line missing agent: {line}"
+            if "PI_CR_STRONG_MODEL" in line:
+                assert any(
+                    name in line for name in ("logic-analyzer", "delta-reviewer")
+                ), f"strong mapping line missing agent: {line}"
+
+    # --- A3: fallback disclosure via note ---
+
+    def _step10_section(self, flow_text: str) -> str:
+        # Step 10 spans the title through the end of the report-format body
+        # ("### 用途" starts the trailing usage subsection).
+        return self._section(flow_text, "## Step 10", "### 用途")
+
+    def test_step10_model_fallback_note_contract(self, texts):
+        step10 = self._step10_section(texts["flow"])
+        assert "model profile fallback:" in step10
+        assert "resolution-chain" in step10
+        assert "未启用" in step10 or "disabled" in step10
+        # unset tiers never appear in the note
+        assert "不出现" in step10 or "不记" in step10
+
+    def test_edge_cases_document_model_tiering(self, texts):
+        edge = texts["edge"]
+        assert "PI_CR_FAST_MODEL" in edge and "PI_CR_STRONG_MODEL" in edge
+        for reason in ("invalid", "registry-unavailable", "scope-rejected", "scope-unverified"):
+            assert reason in edge, f"edge-cases.md missing reason {reason}"
+        assert "resolution-chain" in edge
+        # disabled (unset) must be silent
+        assert "静默" in edge
+
+    def test_note_format_is_fixed(self, texts):
+        step10 = self._step10_section(texts["flow"])
+        # exact fixed format with mergeable tiers
+        assert "<tier>=resolution-chain (<reason>)" in step10
+        assert "; " in step10
+
+    # --- A4: prompts header points to flow.md as single source ---
+
+    def test_prompts_header_tiering_summary(self, texts):
+        header = texts["prompts"].split("## summarizer", 1)[0]
+        assert "PI_CR_FAST_MODEL" in header and "PI_CR_STRONG_MODEL" in header
+        assert "单一事实源" in header
+        assert "flow.md" in header
+        # must not restate full mapping per agent (single source only)
+        body = texts["prompts"].split("## summarizer", 1)[1]
+        assert "PI_CR_FAST_MODEL" not in body
+        assert "PI_CR_STRONG_MODEL" not in body
 
 
 # ---------------------------------------------------------------------------
