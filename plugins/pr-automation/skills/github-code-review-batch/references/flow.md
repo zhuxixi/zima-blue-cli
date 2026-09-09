@@ -156,7 +156,7 @@ gh pr view <PR> --json comments --jq '[.comments[] | {author: .author.login, cre
 
 **按 agent 类型差异化预算与过滤（#169 实测口径）**：
 
-- CLAUDE.md checker ×2、AGENTS.md checker：接收**完整 diff**（规范检查需要完整上下文），预算 20K
+- CLAUDE.md checker、AGENTS.md checker：接收**完整 diff**（规范检查需要完整上下文），预算 20K
 
   ```bash
   gh pr diff <PR> | python scripts/compress_diff.py --max-len 20000 \
@@ -184,7 +184,7 @@ gh pr view <PR> --json comments --jq '[.comments[] | {author: .author.login, cre
 
 ---
 
-## Step 4: 5 个并行审查 Agent {#step-4}
+## Step 4: 4 个并行审查 Agent {#step-4}
 
 **确定性 tool-layer（#121）**：启动 LLM agent 之前，先运行 [scripts/run_tool_layer.py](../scripts/run_tool_layer.py)——按仓库 manifest 自动探测并执行 `ruff` / `mypy` / `tsc` / `eslint`（缺失则静默降级，不报错）。它用零误报工具吃掉"缺失导入 / 未解析引用 / 类型错误 / 语法错误"，产出 reason 为 `lint` / `typecheck` 的 issue，与下面 agent 的结果一起进入 [Step 5](#step-5) / [Step 6](#step-6)。bug-scanner 不再重复这些类别。
 
@@ -199,22 +199,21 @@ echo '{"repo_root": ".", "changed_files": ["zima/a.py", "tests/b.py"]}' | python
 
 脚本对 ruff/mypy/eslint 直接以文件为参数目标，tsc（项目级）靠输出后置交集兜底。**若不传变更文件，脚本会全仓扫描，pre-existing lint 债务会淹没审查轮**（PR #166 实测 40 个无关 findings）——LLM agent 审查遵循"只关注 PR 修改的内容"，tool-layer 输出同样必须遵守。
 
-启动 5 个并行 sub-agent（每个用 `Agent` 工具派发，独立上下文），每个接收经过 [Step 3.5](#step-3-5) 预处理的输入包。派发结构：
+启动 4 个并行 sub-agent（每个用 `Agent` 工具派发，独立上下文），每个接收经过 [Step 3.5](#step-3-5) 预处理的输入包。派发结构：
 
-- `claude-checker-1`（显式规则 framing）→ [claude-compliance-checker](subagent-prompts.md#claude-compliance-checker) Checker-1 prompt
-- `claude-checker-2`（隐含约定 framing）→ [claude-compliance-checker](subagent-prompts.md#claude-compliance-checker) Checker-2 prompt
+- `claude-checker`（两阶段 prompt：显式规则 → 隐含约定/反模式）→ [claude-compliance-checker](subagent-prompts.md#claude-compliance-checker) prompt
 - `agents-checker` → [agents-compliance-checker](subagent-prompts.md#agents-compliance-checker) prompt
 - `bug-scanner` → [bug-scanner](subagent-prompts.md#bug-scanner) prompt
 - `logic-analyzer` → [logic-analyzer](subagent-prompts.md#logic-analyzer) prompt
 
-task 的 prompt 模板见 [subagent-prompts.md](subagent-prompts.md) 对应小节，输入包（diff 文件路径、摘要、规范文本）以模板变量方式填入。5 个 sub-agent 职责：
+task 的 prompt 模板见 [subagent-prompts.md](subagent-prompts.md) 对应小节，输入包（diff 文件路径、摘要、规范文本）以模板变量方式填入。4 个 sub-agent 职责：
 
-- **CLAUDE.md checker ×2、AGENTS.md checker**：完整 diff（或截断后的）+ 变更摘要 + PR 标题和描述 + 相关规范文件内容
+- **CLAUDE.md checker、AGENTS.md checker**：完整 diff（或截断后的）+ 变更摘要 + PR 标题和描述 + 相关规范文件内容
 - **Bug scanner、Logic analyzer**：过滤掉测试文件的 diff（或截断后的）+ 变更摘要 + PR 标题和描述
 
-5 个 agent 的具体职责、输入输出契约、prompt 模板见 [subagent-prompts.md](subagent-prompts.md)：
+4 个 agent 的具体职责、输入输出契约、prompt 模板见 [subagent-prompts.md](subagent-prompts.md)：
 
-- [claude-compliance-checker](subagent-prompts.md#claude-compliance-checker)（启动两次，独立运行，交叉验证）
+- [claude-compliance-checker](subagent-prompts.md#claude-compliance-checker)（单实例两阶段：显式规则 → 隐含约定/反模式，#225）
 - [agents-compliance-checker](subagent-prompts.md#agents-compliance-checker)
 - [bug-scanner](subagent-prompts.md#bug-scanner)
 - [logic-analyzer](subagent-prompts.md#logic-analyzer)
@@ -248,7 +247,7 @@ task 的 prompt 模板见 [subagent-prompts.md](subagent-prompts.md) 对应小�
 
 issue-validator 验证时若 agent 未给 severity，按 `medium` 兜底。Agent 通常只需提供 severity；显式 JSON boolean `blocking` 仅用于有充分理由的策略覆盖。`build_review_body.py` 渲染时按 severity 降序排列（critical 在前），metadata `issues[]` 保留原始顺序并补齐规范化后的 `blocking`。
 
-**为什么 CLAUDE.md checker 跑两次（#122：差异化而非复跑）**：两个 checker 使用**不同 framing**（Checker-1 显式规则、Checker-2 隐含约定/反模式），让召回增益来自视角互补而非采样噪声。两者的 `reason` 都为 `"CLAUDE.md"`、schema 不变，下游无需改动。这与跨 harness 的并行审查（cc vs pi）是两个不同层次的冗余——前者在同一 skill 内部，后者跨 harness。
+**为什么 CLAUDE.md checker 只派发一次（#225：两阶段合并）**：#122 曾以两个不同 framing 的 checker 做视角互补（显式规则 / 隐含约定）；#225 将其合并为单 checker——prompt 内分两阶段，先逐条核对明文规则、再切换视角检查隐含约定与反模式，视角互补保留在同一份 prompt 内，Round-1 fanout 由 5 降为 4。`reason` 仍包含 `"CLAUDE.md"`、schema 不变，下游无需改动。合并是否无损由同一真实 PR 的新旧对比验证（issue #225 验收 U1）确认后定稿。这与跨 harness 的并行审查（cc vs pi）是两个不同层次的冗余——前者在同一 skill 内部，后者跨 harness。
 
 ---
 
