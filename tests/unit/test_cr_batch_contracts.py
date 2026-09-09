@@ -1629,9 +1629,7 @@ class TestCheckerMergeDocs:
         docs = {
             "skill": (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8"),
             "flow": (SKILL_DIR / "references" / "flow.md").read_text(encoding="utf-8"),
-            "delta": (SKILL_DIR / "references" / "delta-review.md").read_text(
-                encoding="utf-8"
-            ),
+            "delta": (SKILL_DIR / "references" / "delta-review.md").read_text(encoding="utf-8"),
             "prompts": (SKILL_DIR / "references" / "subagent-prompts.md").read_text(
                 encoding="utf-8"
             ),
@@ -1729,6 +1727,4 @@ class TestCheckerMergeDocs:
     def test_pi_no_legacy_dual_checker_execution_text(self, texts):
         for name, text in texts.items():
             for token in self.LEGACY_TOKENS:
-                assert (
-                    token not in text
-                ), f"legacy dual-checker token {token!r} remains in {name}"
+                assert token not in text, f"legacy dual-checker token {token!r} remains in {name}"

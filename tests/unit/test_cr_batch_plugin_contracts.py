@@ -210,9 +210,7 @@ class TestCcCheckerMergeDocs:
         docs = {
             "skill": (PLUGIN_ROOT / "SKILL.md").read_text(encoding="utf-8"),
             "flow": (PLUGIN_ROOT / "references" / "flow.md").read_text(encoding="utf-8"),
-            "delta": (PLUGIN_ROOT / "references" / "delta-review.md").read_text(
-                encoding="utf-8"
-            ),
+            "delta": (PLUGIN_ROOT / "references" / "delta-review.md").read_text(encoding="utf-8"),
             "prompts": (PLUGIN_ROOT / "references" / "subagent-prompts.md").read_text(
                 encoding="utf-8"
             ),
@@ -241,9 +239,7 @@ class TestCcCheckerMergeDocs:
 
     def test_cc_step4_dispatch_has_four_agents(self, texts):
         section = self._cc_dispatch_section(texts["flow"])
-        keys = re.findall(
-            r"`(claude-checker|agents-checker|bug-scanner|logic-analyzer)`", section
-        )
+        keys = re.findall(r"`(claude-checker|agents-checker|bug-scanner|logic-analyzer)`", section)
         assert keys == [
             "claude-checker",
             "agents-checker",
@@ -251,9 +247,7 @@ class TestCcCheckerMergeDocs:
             "logic-analyzer",
         ], f"cc Step 4 dispatch list must name exactly these 4 agents: {keys}"
         for token in ("runs.all", "FAST_OVERRIDE", "PI_CR_FAST_MODEL"):
-            assert (
-                token not in section
-            ), f"pi-only dispatch token {token!r} leaked into cc flow.md"
+            assert token not in section, f"pi-only dispatch token {token!r} leaked into cc flow.md"
 
     def test_cc_round1_agent_count_docs_are_consistent(self, texts):
         assert "4 个并行审查 Agent" in texts["skill"]
@@ -280,11 +274,7 @@ class TestCcCheckerMergeDocs:
 
     def test_pi_and_cc_checker_prompt_sections_are_identical(self):
         pi_prompts = (
-            _REPO_ROOT
-            / "pi"
-            / "github-code-review-batch"
-            / "references"
-            / "subagent-prompts.md"
+            _REPO_ROOT / "pi" / "github-code-review-batch" / "references" / "subagent-prompts.md"
         ).read_text(encoding="utf-8")
         cc_prompts = (PLUGIN_ROOT / "references" / "subagent-prompts.md").read_text(
             encoding="utf-8"
