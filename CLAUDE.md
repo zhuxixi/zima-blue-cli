@@ -163,6 +163,7 @@ Customizable via `ZIMA_HOME` env var.
 
 - **`tests/unit/`** — Pure unit tests for models and config manager
 - **pi skill scripts** have contract tests under `tests/unit/` (`test_wait_cr.py`, `test_cr_batch_*.py`) run by the main pytest suite/CI — run them when editing `pi/*/scripts/*.py`; the cr-batch skill's `*.md` docs are contract-locked too (`TestModelDispatchDocs` reads every `*.md` under `pi/github-code-review-batch/` and fails on hardcoded model names)
+- **cr-batch skill docs ship in two synced copies** — `pi/github-code-review-batch/` and `plugins/pr-automation/skills/github-code-review-batch/` (cc plugin): edit both together; the #225 single two-phase checker shape is contract-locked in both (`TestCheckerMergeDocs` / `TestCcCheckerMergeDocs`, which also enforces byte-identical checker prompt sections — legacy dual-checker tokens like `claude-checker-1/2` fail)
 - **`examples/auto-merge/auto-merge-guarded.py`** (standalone example, see Project Overview) has tests under `tests/unit/` (`test_auto_merge_guarded.py`, loads the hyphen-named script via importlib) run by the main pytest suite/CI — run them when editing the script
 - **`tests/integration/`** — CLI command tests using Typer's `CliRunner`, subprocess integration tests
 - **`tests/conftest.py`** — Fixtures: `isolated_zima_home` (temp ZIMA_HOME), `config_manager`, `cli_runner`, `unique_code`
