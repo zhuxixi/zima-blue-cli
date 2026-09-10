@@ -63,7 +63,7 @@ PR 编号提取规则（依次尝试）：
 | Step 2 | 收集 CLAUDE.md / AGENTS.md（含子目录） | [flow.md#step-2](references/flow.md#step-2) |
 | Step 3 | summarizer 生成变更摘要 | [flow.md#step-3](references/flow.md#step-3), [subagent-prompts.md#summarizer](references/subagent-prompts.md#summarizer) |
 | Step 3.5 | diff 预处理（过滤测试文件 + 长度兜底） | `scripts/compress_diff.py` |
-| Step 4 | 5 个并行审查 Agent | [subagent-prompts.md](references/subagent-prompts.md) |
+| Step 4 | 4 个并行审查 Agent | [subagent-prompts.md](references/subagent-prompts.md) |
 | Step 5 | issue-validator 并行验证 | [subagent-prompts.md#issue-validator](references/subagent-prompts.md#issue-validator) |
 | Step 6 | 过滤 + 去重 + 优先级排序 | [flow.md#step-6](references/flow.md#step-6) |
 | Step 7 | 最终资格审查（防止给已关闭 PR 发评论） | [flow.md#step-7](references/flow.md#step-7) |
@@ -103,7 +103,7 @@ PJob 调度器（zima daemon 或 webhook-server）通过 grep `Status: <state>` 
 | Agent | 职责 | 并发数 |
 |-------|------|--------|
 | summarizer | 摘要 PR 变更意图 | 1 |
-| claude-compliance-checker | 检查 CLAUDE.md 合规（显式规则 + 隐含约定两种 framing） | 2（差异化，#122） |
+| claude-compliance-checker | 检查 CLAUDE.md 合规（单 checker 两阶段：显式规则 → 隐含约定/反模式） | 1（两阶段，#225） |
 | agents-compliance-checker | 检查 AGENTS.md 合规 | 1 |
 | bug-scanner | 扫描 bug（导入/引用由 tool-layer 覆盖，#121） | 1 |
 | logic-analyzer | 逻辑/安全分析、资源泄漏、竞态 | 1 |
@@ -152,7 +152,7 @@ gh pr review <PR> --comment --body-file /tmp/cc-cr-{pr}.md      # 发布 review 
 ## 设计原理
 
 1. **多 Agent 并行**：从不同角度独立审查，避免单一视角的盲区
-2. **冗余检查**：两个 CLAUDE.md checker 用**不同 framing**（显式规则 + 隐含约定）互补运行（#122）
+2. **两阶段规范检查**：单个 CLAUDE.md checker 在一份 prompt 内顺序执行两阶段——先核对明文规则，再切换视角检查隐含约定与反模式（#225 合并自 #122 的差异化 framing）
 3. **Issue 验证**：每个发现的问题都经过独立验证，大幅降低误报率
 4. **HIGH SIGNAL**：只报告高置信度的问题，避免噪音淹没真正重要的问题
 5. **终端与 PR 同步**：终端输出和 PR 评论完全一致，确保透明性

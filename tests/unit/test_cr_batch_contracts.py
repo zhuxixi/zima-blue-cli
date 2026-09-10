@@ -1606,3 +1606,125 @@ class TestTrivialPrecheckFlow:
         assert "set +e" in flow
         assert "如何判断 trivial PR" not in flow
         assert "LLM 不得自行宣布 trivial" in flow
+
+
+class TestCheckerMergeDocs:
+    """Issue #225: single two-phase claude-compliance-checker contracts (pi copy).
+
+    The two differentiated-framing dispatches (#122) merge into one dispatch
+    whose prompt runs Phase-1 (explicit rules) then Phase-2 (implicit
+    conventions / anti-patterns) and emits one flat JSON array. These tests
+    lock the pi-side docs to that design.
+    """
+
+    LEGACY_TOKENS = (
+        "启动两次",
+        "claude-checker-1",
+        "claude-checker-2",
+        "CLAUDE.md checker ×2",
+    )
+
+    @pytest.fixture(scope="class")
+    def texts(self) -> dict[str, str]:
+        docs = {
+            "skill": (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8"),
+            "flow": (SKILL_DIR / "references" / "flow.md").read_text(encoding="utf-8"),
+            "delta": (SKILL_DIR / "references" / "delta-review.md").read_text(encoding="utf-8"),
+            "prompts": (SKILL_DIR / "references" / "subagent-prompts.md").read_text(
+                encoding="utf-8"
+            ),
+        }
+        for md_path in sorted(SKILL_DIR.rglob("*.md")):
+            docs.setdefault(
+                str(md_path.relative_to(SKILL_DIR)),
+                md_path.read_text(encoding="utf-8"),
+            )
+        return docs
+
+    @staticmethod
+    def _section(text: str, start: str, end: str) -> str:
+        return text.split(start, 1)[1].split(end, 1)[0]
+
+    def _step4_section(self, flow_text: str) -> str:
+        return self._section(flow_text, "## Step 4", "## Step 5")
+
+    def _step4_runs_all_keys(self, flow_text: str) -> list[str]:
+        step4 = self._step4_section(flow_text)
+        blocks = re.findall(r"```js\n(.*?)```", step4, re.DOTALL)
+        assert (
+            blocks and "runs.all" in blocks[0]
+        ), "Step 4 must contain a js code block with the runs.all fanout"
+        return re.findall(r'key:\s*"([^"]+)"', blocks[0])
+
+    def _checker_section(self, prompts_text: str) -> str:
+        return self._section(
+            prompts_text,
+            "## claude-compliance-checker",
+            "## agents-compliance-checker",
+        )
+
+    # --- A2: single checker lane in the Step 4 fanout ---
+
+    def test_pi_step4_dispatch_has_four_lanes(self, texts):
+        keys = self._step4_runs_all_keys(texts["flow"])
+        assert keys == [
+            "claude-checker",
+            "agents-checker",
+            "bug-scanner",
+            "logic-analyzer",
+        ], f"Step 4 must fan out to exactly 4 lanes with one claude-checker: {keys}"
+
+    def test_pi_checker_task_uses_two_phase_prompt(self, texts):
+        step4 = self._step4_section(texts["flow"])
+        assert "两阶段" in step4
+        assert "显式规则" in step4
+        assert "隐含约定" in step4
+
+    def test_pi_round1_agent_count_docs_are_consistent(self, texts):
+        assert "4 个并行审查 Agent" in texts["skill"]
+        assert "4 个并行审查 Agent" in texts["flow"]
+        assert "4 个并行审查 subagent" in texts["delta"]
+
+    # --- A7: the merged checker stays on the fast tier ---
+
+    def test_pi_checker_fast_mapping_is_preserved(self, texts):
+        step4 = self._step4_section(texts["flow"])
+        for line in step4.splitlines():
+            if "PI_CR_FAST_MODEL" in line and "checker" in line:
+                assert "×2" not in line
+                assert "bug-scanner" in line
+                break
+        else:
+            pytest.fail("fast mapping line for the checker is missing")
+
+    # --- A4/A5: merged two-phase prompt keeps the flat schema ---
+
+    def test_pi_checker_prompt_preserves_flat_schema(self, texts):
+        section = self._checker_section(texts["prompts"])
+        for token in (
+            "一个扁平 JSON 数组",
+            "description",
+            "reason",
+            "file",
+            "lines",
+            "suggestion",
+            "severity",
+            "CLAUDE.md",
+        ):
+            assert token in section, f"checker prompt missing {token!r}"
+        assert "phase1_findings" not in section
+        assert "phase2_findings" not in section
+
+    def test_pi_checker_prompt_switches_view_and_requires_guideline_basis(self, texts):
+        section = self._checker_section(texts["prompts"])
+        for token in ("阶段 1", "阶段 2", "切换视角", "不重复"):
+            assert token in section, f"checker prompt missing {token!r}"
+        # Phase 2 must stay grounded in CLAUDE.md, not free-floating opinion
+        assert "CLAUDE.md" in section.split("阶段 2", 1)[1]
+
+    # --- A6: no legacy dual-checker execution text anywhere in the skill ---
+
+    def test_pi_no_legacy_dual_checker_execution_text(self, texts):
+        for name, text in texts.items():
+            for token in self.LEGACY_TOKENS:
+                assert token not in text, f"legacy dual-checker token {token!r} remains in {name}"

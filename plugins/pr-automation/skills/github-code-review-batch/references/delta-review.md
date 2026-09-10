@@ -127,8 +127,8 @@ delta-reviewer 输出 JSON：
 
 | 步骤 | 完整流程 | 增量流程 |
 |------|---------|---------|
-| Step 3 | summarizer + 5 个审查 sub-agent | delta-reviewer 1 个 sub-agent |
-| Step 4 | 5 个并行审查 sub-agent | delta-reviewer（旧 issue 对比）+ Δ2a 并行 bug/logic scanner（新 hunk，#123） |
+| Step 3 | summarizer + 4 个审查 sub-agent | delta-reviewer 1 个 sub-agent |
+| Step 4 | 4 个并行审查 sub-agent | delta-reviewer（旧 issue 对比）+ Δ2a 并行 bug/logic scanner（新 hunk，#123） |
 | Step 5 | 每个 issue 单独验证 | 由 delta-reviewer 内部完成对比验证 |
 | 输出 | 全新问题列表 | resolved + acknowledged + new + unresolved 分类 |
 

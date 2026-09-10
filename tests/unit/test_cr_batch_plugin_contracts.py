@@ -20,6 +20,7 @@ code with it. Python adds the script's own directory to ``sys.path``, so the
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -188,3 +189,97 @@ class TestCcPluginContracts:
         assert proc.returncode == 0, proc.stderr
         parsed = json.loads(proc.stdout)
         assert isinstance(parsed, list)
+
+
+class TestCcCheckerMergeDocs:
+    """Issue #225: the cc plugin copy mirrors the pi two-phase merge.
+
+    The plugin keeps its Agent-tool dispatch shape (no pi workflowScript or
+    model tiering) but must carry the same single two-phase checker prompt.
+    """
+
+    LEGACY_TOKENS = (
+        "启动两次",
+        "claude-checker-1",
+        "claude-checker-2",
+        "CLAUDE.md checker ×2",
+    )
+
+    @pytest.fixture(scope="class")
+    def texts(self) -> dict[str, str]:
+        docs = {
+            "skill": (PLUGIN_ROOT / "SKILL.md").read_text(encoding="utf-8"),
+            "flow": (PLUGIN_ROOT / "references" / "flow.md").read_text(encoding="utf-8"),
+            "delta": (PLUGIN_ROOT / "references" / "delta-review.md").read_text(encoding="utf-8"),
+            "prompts": (PLUGIN_ROOT / "references" / "subagent-prompts.md").read_text(
+                encoding="utf-8"
+            ),
+        }
+        for md_path in sorted(PLUGIN_ROOT.rglob("*.md")):
+            docs.setdefault(
+                str(md_path.relative_to(PLUGIN_ROOT)),
+                md_path.read_text(encoding="utf-8"),
+            )
+        return docs
+
+    @staticmethod
+    def _section(text: str, start: str, end: str) -> str:
+        return text.split(start, 1)[1].split(end, 1)[0]
+
+    def _cc_dispatch_section(self, flow_text: str) -> str:
+        return self._section(flow_text, "派发结构：", "task 的 prompt 模板见")
+
+    @staticmethod
+    def _checker_section(prompts_text: str) -> str:
+        return prompts_text.split("## claude-compliance-checker", 1)[1].split(
+            "## agents-compliance-checker", 1
+        )[0]
+
+    # --- A3: four agents in the cc Agent-tool dispatch list ---
+
+    def test_cc_step4_dispatch_has_four_agents(self, texts):
+        section = self._cc_dispatch_section(texts["flow"])
+        keys = re.findall(r"`(claude-checker|agents-checker|bug-scanner|logic-analyzer)`", section)
+        assert keys == [
+            "claude-checker",
+            "agents-checker",
+            "bug-scanner",
+            "logic-analyzer",
+        ], f"cc Step 4 dispatch list must name exactly these 4 agents: {keys}"
+        for token in ("runs.all", "FAST_OVERRIDE", "PI_CR_FAST_MODEL"):
+            assert token not in section, f"pi-only dispatch token {token!r} leaked into cc flow.md"
+
+    def test_cc_round1_agent_count_docs_are_consistent(self, texts):
+        assert "4 个并行审查 Agent" in texts["skill"]
+        assert "4 个并行审查 Agent" in texts["flow"]
+        assert "4 个并行审查 sub-agent" in texts["delta"]
+
+    # --- A4: cc checker prompt carries the same two-phase contract ---
+
+    def test_cc_checker_prompt_matches_two_phase_contract(self, texts):
+        section = self._checker_section(texts["prompts"])
+        for token in ("阶段 1", "阶段 2", "切换视角", "一个扁平 JSON 数组"):
+            assert token in section, f"cc checker prompt missing {token!r}"
+
+    # --- A6: no legacy dual-checker execution text in the plugin copy ---
+
+    def test_cc_no_legacy_dual_checker_execution_text(self, texts):
+        for name, text in texts.items():
+            for token in self.LEGACY_TOKENS:
+                assert (
+                    token not in text
+                ), f"legacy dual-checker token {token!r} remains in cc {name}"
+
+    # --- Sync guard: pi and cc checker sections stay byte-identical ---
+
+    def test_pi_and_cc_checker_prompt_sections_are_identical(self):
+        pi_prompts = (
+            _REPO_ROOT / "pi" / "github-code-review-batch" / "references" / "subagent-prompts.md"
+        ).read_text(encoding="utf-8")
+        cc_prompts = (PLUGIN_ROOT / "references" / "subagent-prompts.md").read_text(
+            encoding="utf-8"
+        )
+        assert self._checker_section(pi_prompts) == self._checker_section(cc_prompts), (
+            "pi and cc checker sections must be byte-identical "
+            "(dispatch headers live outside the section)"
+        )

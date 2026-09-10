@@ -179,7 +179,7 @@ trivial 判定权完全属于 `scripts/trivial_check.py`（v1 规则：OPEN + �
 
 **按 agent 类型差异化预算与过滤（#169 实测口径）**：
 
-- CLAUDE.md checker ×2、AGENTS.md checker：接收**完整 diff**（规范检查需要完整上下文），预算 20K
+- CLAUDE.md checker、AGENTS.md checker：接收**完整 diff**（规范检查需要完整上下文），预算 20K
 
   ```bash
   gh pr diff <PR> | python scripts/compress_diff.py --max-len 20000 \
@@ -207,7 +207,7 @@ trivial 判定权完全属于 `scripts/trivial_check.py`（v1 规则：OPEN + �
 
 ---
 
-## Step 4: 5 个并行审查 Agent {#step-4}
+## Step 4: 4 个并行审查 Agent {#step-4}
 
 **确定性 tool-layer（#121）**：启动 LLM agent 之前，先运行 [scripts/run_tool_layer.py](../scripts/run_tool_layer.py)——按仓库 manifest 自动探测并执行 `ruff` / `mypy` / `tsc` / `eslint`（缺失则静默降级，不报错）。它用零误报工具吃掉"缺失导入 / 未解析引用 / 类型错误 / 语法错误"，产出 reason 为 `lint` / `typecheck` 的 issue，与下面 agent 的结果一起进入 [Step 5](#step-5) / [Step 6](#step-6)。bug-scanner 不再重复这些类别。
 
@@ -222,7 +222,7 @@ echo '{"repo_root": ".", "changed_files": ["zima/a.py", "tests/b.py"]}' | python
 
 脚本对 ruff/mypy/eslint 直接以文件为参数目标，tsc（项目级）靠输出后置交集兜底。**若不传变更文件，脚本会全仓扫描，pre-existing lint 债务会淹没审查轮**（PR #166 实测 40 个无关 findings）——LLM agent 审查遵循"只关注 PR 修改的内容"，tool-layer 输出同样必须遵守。
 
-启动 5 个并行 `subagent`（subagent 工具 `workflowScript` + `runs.all`，每个 `agent: "reviewer"`、`context: "fresh"`），每个接收经过 [Step 3.5](#step-3-5) 预处理的输入包。派发结构：
+启动 4 个并行 `subagent`（subagent 工具 `workflowScript` + `runs.all`，每个 `agent: "reviewer"`、`context: "fresh"`），每个接收经过 [Step 3.5](#step-3-5) 预处理的输入包。派发结构：
 
 ```js
 // Parent resolves each profile once per round (see "模型分档 preflight").
@@ -231,15 +231,14 @@ echo '{"repo_root": ".", "changed_files": ["zima/a.py", "tests/b.py"]}' | python
 // tier uses {} so the dispatch item omits that property entirely
 // (Pi resolution chain applies).
 await runs.all([
-  { key: "claude-checker-1", agent: "reviewer", context: "fresh", ...FAST_OVERRIDE, task: "<claude-compliance-checker prompt，显式规则 framing>" },
-  { key: "claude-checker-2", agent: "reviewer", context: "fresh", ...FAST_OVERRIDE, task: "<claude-compliance-checker prompt，隐含约定 framing>" },
+  { key: "claude-checker", agent: "reviewer", context: "fresh", ...FAST_OVERRIDE, task: "<claude-compliance-checker prompt（两阶段：阶段 1 显式规则 → 阶段 2 隐含约定/反模式）>" },
   { key: "agents-checker",   agent: "reviewer", context: "fresh", ...FAST_OVERRIDE, task: "<agents-compliance-checker prompt>" },
   { key: "bug-scanner",      agent: "reviewer", context: "fresh", ...FAST_OVERRIDE, task: "<bug-scanner prompt>" },
   { key: "logic-analyzer",   agent: "reviewer", context: "fresh", ...STRONG_OVERRIDE, task: "<logic-analyzer prompt>" },
 ])
 ```
 
-spread 对象在 preflight 通过时持有 registry 确认过的 canonical `provider/id`；fallback 时为空对象，对应派发项的 `model` 属性整个省略（禁止 `model: ""` / `model: null` 伪装省略），由 Pi 正常 resolution chain 解析。示例按当前双 checker 形态书写，#225（checker 合并）落地后按实际 agent 数量更新，档位归属不变。
+spread 对象在 preflight 通过时持有 registry 确认过的 canonical `provider/id`；fallback 时为空对象，对应派发项的 `model` 属性整个省略（禁止 `model: ""` / `model: null` 伪装省略），由 Pi 正常 resolution chain 解析。
 
 **模型分档 preflight（#224，每轮一次，必做）**：subagent 工具的派发项支持 `model` 字段。本流程的模型分档由环境变量驱动（部署策略），父 Pi agent 只做解析与守门，不自选、不猜模型名；child reviewer 自身不参与选型。首轮在 Step 4 派发前、增量轮在进入 delta-review 前各执行一次 preflight，该轮内 Step 4 / Step 5 / Round-2 的所有派发项复用同一结果。
 
@@ -255,7 +254,7 @@ spread 对象在 preflight 通过时持有 registry 确认过的 canonical `prov
 
 | 职责 | profile |
 |---|---|
-| CLAUDE.md checker ×2、AGENTS.md checker、bug-scanner | fast（`PI_CR_FAST_MODEL`） |
+| CLAUDE.md checker、AGENTS.md checker、bug-scanner | fast（`PI_CR_FAST_MODEL`） |
 | issue-validator ×N | fast（`PI_CR_FAST_MODEL`） |
 | logic-analyzer、delta-reviewer | strong（`PI_CR_STRONG_MODEL`） |
 
@@ -263,14 +262,14 @@ spread 对象在 preflight 通过时持有 registry 确认过的 canonical `prov
 
 注意：`enabledModels`（settings 顶层）是主会话模型循环候选范围，不是 subagent 的 modelScope allowlist；它可能间接影响继承父 session 模型的 child，但不能用来判断 child 是否获准派发。
 
-task 的 prompt 模板见 [subagent-prompts.md](subagent-prompts.md) 对应小节，输入包（diff 文件路径、摘要、规范文本）以模板变量方式填入。5 个 subagent 职责：
+task 的 prompt 模板见 [subagent-prompts.md](subagent-prompts.md) 对应小节，输入包（diff 文件路径、摘要、规范文本）以模板变量方式填入。4 个 subagent 职责：
 
-- **CLAUDE.md checker ×2、AGENTS.md checker**：完整 diff（或截断后的）+ 变更摘要 + PR 标题和描述 + 相关规范文件内容
+- **CLAUDE.md checker、AGENTS.md checker**：完整 diff（或截断后的）+ 变更摘要 + PR 标题和描述 + 相关规范文件内容
 - **Bug scanner、Logic analyzer**：过滤掉测试文件的 diff（或截断后的）+ 变更摘要 + PR 标题和描述
 
-5 个 agent 的具体职责、输入输出契约、prompt 模板见 [subagent-prompts.md](subagent-prompts.md)：
+4 个 agent 的具体职责、输入输出契约、prompt 模板见 [subagent-prompts.md](subagent-prompts.md)：
 
-- [claude-compliance-checker](subagent-prompts.md#claude-compliance-checker)（启动两次，独立运行，交叉验证）
+- [claude-compliance-checker](subagent-prompts.md#claude-compliance-checker)（单实例两阶段：显式规则 → 隐含约定/反模式，#225）
 - [agents-compliance-checker](subagent-prompts.md#agents-compliance-checker)
 - [bug-scanner](subagent-prompts.md#bug-scanner)
 - [logic-analyzer](subagent-prompts.md#logic-analyzer)
@@ -304,7 +303,7 @@ task 的 prompt 模板见 [subagent-prompts.md](subagent-prompts.md) 对应小�
 
 issue-validator 验证时若 agent 未给 severity，按 `medium` 兜底。Agent 通常只需提供 severity；显式 JSON boolean `blocking` 仅用于有充分理由的策略覆盖。`build_review_body.py` 渲染时按 severity 降序排列（critical 在前），metadata `issues[]` 保留原始顺序并补齐规范化后的 `blocking`。
 
-**为什么 CLAUDE.md checker 跑两次（#122：差异化而非复跑）**：两个 checker 使用**不同 framing**（Checker-1 显式规则、Checker-2 隐含约定/反模式），让召回增益来自视角互补而非采样噪声。两者的 `reason` 都为 `"CLAUDE.md"`、schema 不变，下游无需改动。这与跨 harness 的并行审查（pi vs cc）是两个不同层次的冗余——前者在同一 skill 内部，后者跨 harness。
+**为什么 CLAUDE.md checker 只派发一次（#225：两阶段合并）**：#122 曾以两个不同 framing 的 checker 做视角互补（显式规则 / 隐含约定）；#225 将其合并为单 checker——prompt 内分两阶段，先逐条核对明文规则、再切换视角检查隐含约定与反模式，视角互补保留在同一份 prompt 内，Round-1 fanout 由 5 降为 4。`reason` 仍包含 `"CLAUDE.md"`、schema 不变，下游无需改动。合并是否无损由同一真实 PR 的新旧对比验证（issue #225 验收 U1）确认后定稿。这与跨 harness 的并行审查（pi vs cc）是两个不同层次的冗余——前者在同一 skill 内部，后者跨 harness。
 
 ---
 
