@@ -162,7 +162,7 @@ Customizable via `ZIMA_HOME` env var.
 ## Testing
 
 - **`tests/unit/`** — Pure unit tests for models and config manager
-- **pi skill scripts** have contract tests under `tests/unit/` (`test_wait_cr.py`, `test_cr_batch_*.py`) run by the main pytest suite/CI — run them when editing `pi/*/scripts/*.py`; the cr-batch skill's `*.md` docs are contract-locked too (`TestModelDispatchDocs` reads every `*.md` under `pi/github-code-review-batch/` and fails on hardcoded model names)
+- **pi skill scripts** have contract tests under `tests/unit/` (`test_wait_cr.py`, `test_cr_batch_*.py`) run by the main pytest suite/CI — run them when editing `pi/*/scripts/*.py`; the cr-batch skill's `*.md` docs are contract-locked too (`TestModelDispatchDocs` reads every `*.md` under `pi/github-code-review-batch/` and fails on hardcoded model names — dispatch is env-driven via `PI_CR_FAST_MODEL` (fast tier) / `PI_CR_STRONG_MODEL` (strong tier), `flow.md` Step 4 preflight is the single source of truth; `TestModelTieringDocs` (#224) slices the tiering sections of `flow.md`/`delta-review.md`/`edge-cases.md` on literal markers, so rewording those section titles breaks tests)
 - **`examples/auto-merge/auto-merge-guarded.py`** (standalone example, see Project Overview) has tests under `tests/unit/` (`test_auto_merge_guarded.py`, loads the hyphen-named script via importlib) run by the main pytest suite/CI — run them when editing the script
 - **`tests/integration/`** — CLI command tests using Typer's `CliRunner`, subprocess integration tests
 - **`tests/conftest.py`** — Fixtures: `isolated_zima_home` (temp ZIMA_HOME), `config_manager`, `cli_runner`, `unique_code`
