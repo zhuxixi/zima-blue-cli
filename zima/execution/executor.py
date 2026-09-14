@@ -1298,6 +1298,12 @@ class PJobExecutor:
         temp_dir = self._create_temp_dir(pjob_code, "preview")
         prompt_file = self._render_workflow(bundle, temp_dir)
         env_vars = self._resolve_env(bundle)
-        command = bundle.build_command(prompt_file)
+        # Parity with execute(): pi agents get --session-dir pointing inside
+        # the temp dir so the previewed command matches what really runs
+        # (#213). Non-pi builders ignore the unknown runtime arg.
+        command = bundle.build_command(
+            prompt_file,
+            runtime_args={"sessionDir": str(temp_dir / "pi-sessions")},
+        )
 
         return command, prompt_file, env_vars

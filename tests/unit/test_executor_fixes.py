@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -184,7 +185,8 @@ class TestActionErrorStatusFlip:
 class TestExecutorSessionDirInjection:
     """pi agents must receive --session-dir pointing inside the temp dir (#213)."""
 
-    def test_pi_command_carries_session_dir(self, isolated_zima_home, config_manager):
+    @pytest.fixture
+    def sd_configs(self, isolated_zima_home, config_manager):
         from zima.models.pjob import PJobConfig
         from zima.models.workflow import WorkflowConfig
 
@@ -203,16 +205,36 @@ class TestExecutorSessionDirInjection:
         pjob = PJobConfig.create(code="sd-pjob", name="SD PJob", agent="sd-agent", workflow="sd-wf")
         config_manager.save_config("pjob", "sd-pjob", pjob.to_dict())
 
+    @staticmethod
+    def _session_dir_of(command):
+        """Return the value passed to --session-dir in a built command."""
+        assert "--session-dir" in command
+        return command[command.index("--session-dir") + 1]
+
+    def test_pi_command_carries_session_dir(self, sd_configs, isolated_zima_home):
         executor = PJobExecutor()
         result = executor.execute("sd-pjob", dry_run=True)
 
         # dry_run echoes the command without executing the agent (the command is
         # built before the dry-run branch)
-        assert "--session-dir" in result.command
-        session_dir = result.command[result.command.index("--session-dir") + 1]
-        assert session_dir.endswith("sd-pjob-" + result.execution_id + "/pi-sessions")
+        session_dir = self._session_dir_of(result.command)
+        # OS-independent: the value uses native separators (backslashes on
+        # Windows), so compare Path components instead of a slash suffix.
+        assert Path(session_dir).parts[-2:] == (
+            f"sd-pjob-{result.execution_id}",
+            "pi-sessions",
+        )
         # A dry run never launched the agent: no fabricated failure reason.
         assert result.usage is None
+
+    def test_preview_command_carries_session_dir(self, sd_configs, isolated_zima_home):
+        """The preview path (pjob render --show-command) must match execution (#213)."""
+        executor = PJobExecutor()
+
+        command, _prompt_file, _env_vars = executor.build_command("sd-pjob")
+
+        session_dir = self._session_dir_of(command)
+        assert Path(session_dir).parts[-2:] == ("sd-pjob-preview", "pi-sessions")
 
 
 class TestUsageCollection:
