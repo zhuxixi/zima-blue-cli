@@ -86,6 +86,7 @@ The core design is composability through seven YAML-based configuration types:
 - **`zima/execution/history.py`** — Execution history tracking with PID recording.
 - **`zima/execution/actions_runner.py`** — `ActionsRunner`: executes postExec actions (GitHub label/comment) after agent exit.
 - **`zima/execution/failure_guard.py`** — Failure guard (#202): skips agent launch during a cooldown after N consecutive executions with no valid `<zima-review>` verdict (details in Gotchas).
+- **`zima/execution/usage_collector.py`** — Usage ledger (#213): aggregates pi parent-session JSONL + pi-subagents `*_meta.json` into one `usage` payload on execution records; `collect_usage` never raises (pi-only — other agent types report `unsupported_agent_type`; details in Gotchas).
 - **`zima/actions/base.py`** — `ActionProvider` ABC: interface providers implement (add_label, remove_label, post_comment, fetch_diff, scan_prs, verify_pr_label — fail-closed by default).
 - **`zima/actions/registry.py`** — `ProviderRegistry`: discovers providers (built-in github + external) via the `zima.action_providers` entry-point group (`importlib.metadata.entry_points`).
 - **`zima/models/defaults.py`** — Default action-provider name resolution (`ZIMA_GIT_REPO_PROVIDER` env var).
@@ -115,6 +116,7 @@ zima pjob run <code>
   → Dedup guard: same-(repo, pr_number, head_sha) review already running/succeeded recently → SkipAction (SKIPPED, no postExec); `--dedup-off` bypasses
   → Executes subprocess (kimi/claude/pi)
   → Runs postExec actions (e.g. GitHub label transition) in finally block
+  → Collects usage ledger (pi-only, fail-open) from `<temp_dir>/pi-sessions` before temp cleanup; dry-run/SKIPPED keep `usage: None`
   → Captures output, stores execution history centrally
   → Returns ExecutionResult
 ```
@@ -246,8 +248,14 @@ Polling-path executions (daemon, no `head_sha` pin) collapse into a `--nohead` b
 ### Agent CLIs
 
 - Kimi agent 调用 `kimi`（Kimi Code CLI）二进制（旧名 `kimi-cli` 已废弃，0.5.5 迁移），运行 Kimi PJob 前需确保 `kimi` 在 PATH 中
-- pi agent 调用 `pi`（pi-coding-agent）二进制，运行 pi PJob 前需确保 `pi` 在 PATH 中；pi 用 `--mode` 而非 `--output-format` 控制输出格式，`--thinking max` 默认深度思考，prompt 经 stdin pipe 传入（同 claude）
+- pi agent 调用 `pi`（pi-coding-agent）二进制，运行 pi PJob 前需确保 `pi` 在 PATH 中；pi 用 `--mode` 而非 `--output-format` 控制输出格式，`--thinking max` 默认深度思考，prompt 经 stdin pipe 传入（同 claude）；#213 起 `noSession`/`--no-session` 已移除，executor 改注入 `--session-dir <temp_dir>/pi-sessions`（经 `ConfigBundle.build_command(prompt_file, runtime_args=...)`，未知 runtime args 被非 pi builder 静默忽略）
 - Kimi 旧参数 `maxStepsPerTurn`/`maxRalphIterations`/`maxRetriesPerStep`/`yolo`/`workDir` 已移除；三个 agent（kimi/claude/pi）的工作目录统一由 subprocess `cwd` 控制，无 `--work-dir` CLI flag
+
+### Usage Ledger (#213)
+
+- 只统计 `<temp_dir>/pi-sessions` 顶层 `*.jsonl`（parent）+ `subagent-artifacts/*_meta.json`（children）：`forks/` 是 parent 消息的副本，数了会双计数
+- 收集必须发生在 temp 清理之前（executor postExec 后的 step）；全程 fail-open——坏行/坏文件静默跳过，`collect_usage` 永不 raise；失败 shape（`{"collected": False, "reason": ...}`）刻意不带 `totals`，缺失账目绝不冒充零花费
+- `usage` 持久化在执行历史记录与运行时状态文件（`history.py::_STATE_FILE_FIELDS`）上，`zima pjob history <id>` 详情打印 Usage 行；`cost_usd` 是价格表估价（`cost_note: estimated`），非实付
 
 ### Webhook Server
 
