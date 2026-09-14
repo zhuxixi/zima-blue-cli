@@ -31,7 +31,6 @@ spec:
     provider: ollama
     model: deepseek-v4-flash:0731-cloud
     thinking: max
-    noSession: true
     outputFormat: text
     tools:
     - read

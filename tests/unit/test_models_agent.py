@@ -38,11 +38,11 @@ class TestAgentConfigCreation(TestIsolator):
         assert config.metadata.code == "pi-agent"
 
     def test_pi_default_parameters(self):
-        """Test pi agent gets default parameters merged (thinking max, noSession, text, tools)."""
+        """Test pi agent gets default parameters merged (thinking max, text, tools)."""
         config = AgentConfig.create("test", "Test", "pi")
 
         assert config.parameters["thinking"] == "max"
-        assert config.parameters["noSession"] is True
+        assert "noSession" not in config.parameters
         assert config.parameters["outputFormat"] == "text"
         assert config.parameters["tools"] == ["read", "bash", "grep", "find", "ls"]
         assert config.parameters["noContextFiles"] is False
@@ -295,7 +295,6 @@ class TestAgentConfigCommandBuilding(TestIsolator):
                 "provider": "ollama",
                 "model": "deepseek-v4-flash:0731-cloud",
                 "thinking": "max",
-                "noSession": True,
                 "outputFormat": "text",
                 "tools": ["read", "bash", "grep", "find", "ls"],
             },
@@ -308,9 +307,28 @@ class TestAgentConfigCommandBuilding(TestIsolator):
         assert "--provider" in cmd and "ollama" in cmd
         assert "--model" in cmd and "deepseek-v4-flash:0731-cloud" in cmd
         assert "--thinking" in cmd and "max" in cmd
-        assert "--no-session" in cmd
+        assert "--no-session" not in cmd
+        assert "--session-dir" not in cmd  # only injected when provided at runtime
         assert "--mode" in cmd and "text" in cmd
         assert "--tools" in cmd and "read,bash,grep,find,ls" in cmd
+
+    def test_build_pi_command_injects_session_dir(self):
+        """sessionDir extra arg becomes --session-dir (#213)."""
+        config = AgentConfig.create("test", "Test", "pi", parameters={})
+
+        cmd = config.build_command(extra_args={"sessionDir": "/tmp/zima-exec/pi-sessions"})
+
+        assert "--session-dir" in cmd
+        assert cmd[cmd.index("--session-dir") + 1] == "/tmp/zima-exec/pi-sessions"
+        assert "--no-session" not in cmd
+
+    def test_build_pi_command_ignores_residual_no_session(self):
+        """Legacy `noSession: true` in user YAML must not resurrect --no-session."""
+        config = AgentConfig.create("test", "Test", "pi", parameters={"noSession": True})
+
+        cmd = config.build_command()
+
+        assert "--no-session" not in cmd
 
     def test_build_pi_command_no_work_dir(self):
         """Test pi command does NOT pass work-dir/cwd (relies on Popen cwd, per PR #71)."""
