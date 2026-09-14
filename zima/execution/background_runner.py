@@ -128,6 +128,9 @@ def run_pjob_in_background(
         stderr_preview=stderr_preview,
         error_detail=result.error_detail[:2000] if result.error_detail else "",
         scan_pr_result=result.scan_pr_result,
+        # getattr: ExecutionResult gains `usage` in Task 10; older/fake results
+        # without the attribute must forward as None, never raise (#213).
+        usage=getattr(result, "usage", None),
     )
 
     return 0 if result.status.value == "success" else 1
