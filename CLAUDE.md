@@ -8,7 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The repo also ships a pi-coding-agent skills package (GitHub issue-driven dev loop): root `package.json` is its pi package manifest (not npm), skills live under `pi/` (`github-issue-driven` / `issue-research` / `zima-pr-monitor` / `github-code-review-batch`), installed locally via `pi install <repo path>`; pi worktrees use `.pi/worktrees/` (gitignored). `pi/zima-pr-monitor/scripts/wait-cr.py` block-waits read-only on `~/.zima/history/pjobs/<code>/<execution_id>.json` until every running execution reaches terminal state (written only after postExec) — changing that history layout or invariant breaks the skill.
 
+`pi/github-code-review-batch` Step 1.0 runs a deterministic trivial precheck (`scripts/trivial_check.py`, #232): first-round-only (no prior pi-cr metadata), docs-only PRs (open, non-draft, every changed file ends `.md`, no rename/copy) short-circuit with a script-emitted `Status: PASS` report — Steps 2-9 and the PR comment are skipped, and trivial judgment belongs to the script alone (the LLM must never self-declare a PR trivial).
+
 `examples/auto-merge/auto-merge-guarded.py` is a standalone stdlib-only script (not part of the `zima` package; deployed to `~/.zima/scripts/` and cron-scheduled on the owner machine) that auto-approves + squash-merges whitelisted PRs after CI green and Zima CR convergence — it parses `pi-cr-meta` in PR review bodies and reads the same `~/.zima/history/pjobs/<code>/` runtime state files as wait-cr.py, so that history layout now has a second out-of-package consumer.
+
+The cr-batch skill ships a second copy as a Claude Code plugin: `plugins/pr-automation/skills/github-code-review-batch/` (cc side), synced from the pi version (#229) — scripts are copied verbatim except `pi-cr-meta`→`cc-cr-meta` literal swaps in `build_review_body.py`/`parse_metadata.py`, while SKILL.md/references are hand-adapted per harness (pi dispatch prose removed, metadata-detection direction flipped). Changes to either side must be ported to the other; the two copies drift on purpose in docs, never in the `Status:` 3-state / trigger-phrase / `<zima-review>` contracts.
 
 ## Development Commands
 
@@ -21,13 +25,16 @@ uv run zima --help
 uv run zima pjob run <pjob-code>
 
 # Format
-uv run black zima/ tests/ --line-length 100
+uv run black zima/ tests/ scripts/ --line-length 100
 
 # Lint
-uv run ruff check zima/ tests/
+uv run ruff check zima/ tests/ scripts/
 
 # Architecture dependency-direction contracts (layers + framework-free models)
 uv run lint-imports
+
+# Regenerate docs/cli-reference.md (required after any CLI command/option change; CI drift-gates it)
+uv run python scripts/generate_cli_docs.py
 
 # Run all tests
 uv run pytest
@@ -162,8 +169,12 @@ Customizable via `ZIMA_HOME` env var.
 ## Testing
 
 - **`tests/unit/`** — Pure unit tests for models and config manager
-- **pi skill scripts** have contract tests under `tests/unit/` (`test_wait_cr.py`, `test_cr_batch_*.py`) run by the main pytest suite/CI — run them when editing `pi/*/scripts/*.py`; the cr-batch skill's `*.md` docs are contract-locked too (`TestModelDispatchDocs` reads every `*.md` under `pi/github-code-review-batch/` and fails on hardcoded model names)
+- **pi skill scripts** have contract tests under `tests/unit/` (`test_wait_cr.py`, `test_cr_batch_*.py`) run by the main pytest suite/CI — run them when editing `pi/*/scripts/*.py`; the cr-batch skill's `*.md` docs are contract-locked too (`TestModelDispatchDocs` reads every `*.md` under `pi/github-code-review-batch/` and fails on hardcoded model names — dispatch is env-driven via `PI_CR_FAST_MODEL` (fast tier) / `PI_CR_STRONG_MODEL` (strong tier), `flow.md` Step 4 preflight is the single source of truth; `TestModelTieringDocs` (#224) slices the tiering sections of `flow.md`/`delta-review.md`/`edge-cases.md` on literal markers, so rewording those section titles breaks tests)
+- **cr-batch skill docs ship in two synced copies** — `pi/github-code-review-batch/` and `plugins/pr-automation/skills/github-code-review-batch/` (cc plugin): edit both together; the #225 single two-phase checker shape is contract-locked in both (`TestCheckerMergeDocs` / `TestCcCheckerMergeDocs`, which also enforces byte-identical checker prompt sections — legacy dual-checker tokens like `claude-checker-1/2` fail)
+- **cc plugin cr-batch copy** has its own contract gate `tests/unit/test_cr_batch_plugin_contracts.py` (subprocess black-box: trigger phrases / `Status:` 3-state enum / `<zima-review>` trailer / `cc-cr-meta` round-trip + `run_tool_layer.py --files` smoke) — run it when editing `plugins/pr-automation/skills/github-code-review-batch/scripts/*.py`; it locks cc contracts only, no byte parity with the pi version
 - **`examples/auto-merge/auto-merge-guarded.py`** (standalone example, see Project Overview) has tests under `tests/unit/` (`test_auto_merge_guarded.py`, loads the hyphen-named script via importlib) run by the main pytest suite/CI — run them when editing the script
+- **`tests/integration/test_examples_validate.py`** (#235) validates the `examples/webhook` and `examples/sdd` packs in CI: every YAML installed into an isolated ZIMA_HOME and parsed through the domain models, plus strict render (StrictUndefined + sentinel values) of every example PJob template; per-pack entity counts are pinned in the test's `SCENES` dict — changing a pack's composition means updating it
+- **`scripts/generate_cli_docs.py`** (#234) has tests under `tests/unit/test_generate_cli_docs.py` + `tests/integration/test_generate_cli_docs_smoke.py` (real-app smoke) — run them when editing the generator
 - **`tests/integration/`** — CLI command tests using Typer's `CliRunner`, subprocess integration tests
 - **`tests/conftest.py`** — Fixtures: `isolated_zima_home` (temp ZIMA_HOME), `config_manager`, `cli_runner`, `unique_code`
 - **`tests/base.py`** — `TestIsolator` base class with `setup_isolation` autouse fixture
@@ -174,8 +185,9 @@ Customizable via `ZIMA_HOME` env var.
 
 ## CI Pipeline
 
-- **GitHub Actions** on push/PR to `main` (workflow accepts `master` too, see `.github/workflows/integration-test.yml`)
-- Lint: `uv run ruff check zima/ tests/` + `uv run black --check zima/ tests/ --line-length 100` + `uv run lint-imports` (architecture contracts; gate on `.importlinter` / `.arch-governance.yml`)
+- **GitHub Actions** on push/PR to `main` (workflow accepts `master` too, see `.github/workflows/integration-test.yml`); path filters include `scripts/**`, `docs/cli-descriptions.yaml`, `**/*.md`, `examples/**` — docs- or scripts-only changes run CI too (#236)
+- Lint: `uv run ruff check zima/ tests/ scripts/` + `uv run black --check zima/ tests/ scripts/ --line-length 100` + `uv run lint-imports` (architecture contracts; gate on `.importlinter` / `.arch-governance.yml`)
+- Docs drift gate (#236): CI reruns `scripts/generate_cli_docs.py` and fails on any diff in `docs/cli-reference.md` — regenerate + commit after changing CLI commands/options
 - Test: `uv run pytest tests/ -m "not slow" --cov=zima --cov-fail-under=60` (Python 3.10/3.13 matrix)
 - Publish: `.github/workflows/publish.yml` triggers on tag push
 
@@ -251,8 +263,10 @@ Polling-path executions (daemon, no `head_sha` pin) collapse into a `--nohead` b
 ## Documentation
 
 - `AGENTS.md` — Agent context file for Kimi Code agents
-- `docs/architecture/` — **Current architecture** (authoritative)
+- `docs/cli-reference.md` — **generated** by `scripts/generate_cli_docs.py` (#234), never hand-edit; command descriptions live in `docs/cli-descriptions.yaml` with exact bidirectional coverage — every CLI command needs a catalog entry and every entry must match a real command, so adding/renaming a command means updating the catalog then regenerating (else the generator or CI drift gate fails)
+- `docs/architecture/` — **Current architecture** (authoritative); `data-and-runtime-reference.md` holds the data-model/runtime reference migrated out of the removed `docs/API-INTERFACE.md` (#231)
+- `docs/guides/` — Hand-written English user guides (`configuration.md` absorbed API-INTERFACE's config spec); user-facing docs (README, `guides/**`, examples READMEs) are English-only per ADR-006
 - `docs/history/` — Deprecated designs (reference only)
-- `docs/decisions/` — ADRs; ADR-004 (single execution) is the current model, ADR-005 (architecture governance) defines the dependency-direction contract
-- `docs/design/` — Feature design documents (PJob design, API interface, etc.)
+- `docs/decisions/` — ADRs; ADR-004 (single execution) is the current model, ADR-005 (architecture governance) defines the dependency-direction contract, ADR-006 (docs architecture)
+- `docs/design/` — Feature design documents (PJob design, etc.; CLI-INTERFACE is marked historical, not a live interface reference)
 - `docs/superpowers/` — Feature-dev working artifacts (plans/specs, e.g. failure-guard design) referenced from code docstrings; not architecture docs
