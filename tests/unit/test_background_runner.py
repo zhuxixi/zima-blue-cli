@@ -115,3 +115,55 @@ class TestDedupOffForwarding:
         state = history.get_runtime_state("test-pjob", "cli00001")
         assert state is not None
         assert state["pid"] == os.getpid()
+
+
+class TestUsageForwarding:
+    def _fake_result(self, usage):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            stdout="",
+            stderr="",
+            status=SimpleNamespace(value="success"),
+            returncode=0,
+            duration_seconds=0.0,
+            scan_pr_result=None,
+            error_detail="",
+            usage=usage,
+        )
+
+    def test_terminal_state_includes_usage(self, isolated_zima_home):
+        """The terminal history record must carry the usage ledger (#213)."""
+        from unittest.mock import patch
+
+        from zima.execution.background_runner import run_pjob_in_background
+        from zima.execution.history import ExecutionHistory
+
+        pjob_code = "br-usage-pjob"
+        execution_id = "b1b2b3b4"
+        history = ExecutionHistory()
+        history.write_runtime_state(
+            pjob_code,
+            execution_id,
+            {
+                "execution_id": execution_id,
+                "pjob_code": pjob_code,
+                "status": "running",
+                "pid": None,
+                "started_at": "2026-09-14T10:00:00+08:00",
+                "log_path": "/tmp/br.log",
+                "agent": "br-agent",
+                "workflow": "br-wf",
+            },
+        )
+
+        usage = {"collected": True, "totals": {"total_tokens": 42, "cost_usd": 0.001}}
+
+        with patch("zima.execution.executor.PJobExecutor") as MockExecutor:
+            MockExecutor.return_value.execute.return_value = self._fake_result(usage)
+
+            rc = run_pjob_in_background(pjob_code, execution_id)
+
+        assert rc == 0
+        state = history.get_runtime_state(pjob_code, execution_id)
+        assert state["usage"] == usage

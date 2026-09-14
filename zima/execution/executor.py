@@ -30,6 +30,7 @@ from zima.execution.failure_guard import (
     normalize_target,
 )
 from zima.execution.history import ExecutionHistory
+from zima.execution.usage_collector import collect_usage
 from zima.models.config_bundle import ConfigBundle
 from zima.models.pjob import Overrides, PJobConfig
 from zima.review.parser import ReviewParser
@@ -92,6 +93,7 @@ class ExecutionResult:
         temp_dir: Temporary directory (if kept)
         action_errors: Post-exec action failure messages
         scan_pr_result: Scan PR result data (repo, pr_number, etc.)
+        usage: Usage ledger collected before temp cleanup (#213).
     """
 
     pjob_code: str = ""
@@ -112,6 +114,7 @@ class ExecutionResult:
     pid: Optional[int] = None  # 执行的进程 PID
     action_errors: list[str] = field(default_factory=list)
     scan_pr_result: Optional[dict] = None
+    usage: Optional[dict] = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -132,6 +135,7 @@ class ExecutionResult:
             "pid": self.pid,
             "action_errors": self.action_errors,
             **({"scan_pr_result": self.scan_pr_result} if self.scan_pr_result is not None else {}),
+            "usage": self.usage,
         }
 
     @property
@@ -625,8 +629,12 @@ class PJobExecutor:
             prompt_file = self._render_workflow(bundle, temp_dir)
             result.prompt_file = prompt_file
 
-            # 7. Build command
-            command = bundle.build_command(prompt_file)
+            # 7. Build command (pi gets its session dir inside the temp dir so
+            # that usage can be collected before the temp dir is removed; #213)
+            command = bundle.build_command(
+                prompt_file,
+                runtime_args={"sessionDir": str(temp_dir / "pi-sessions")},
+            )
             result.command = command
 
             # 8. Dry run - capture prompt content and return
@@ -836,6 +844,21 @@ class PJobExecutor:
                         )
                     except Exception:  # noqa: BLE001 - observability must not fail the run
                         pass
+
+            # 14. Collect the usage ledger while the session files still exist
+            # (the temp dir is removed right below). Fail-open by design (#213).
+            # Dry runs and SKIPPED executions never launched the agent, so
+            # nothing was collected: keep usage None ("not_collected") instead
+            # of fabricating a no_session_dir reason (#213).
+            if not dry_run and result.status != ExecutionStatus.SKIPPED:
+                try:
+                    _bundle_for_usage = locals().get("bundle")
+                    result.usage = collect_usage(
+                        (temp_dir / "pi-sessions") if temp_dir else None,
+                        agent_type=getattr(getattr(_bundle_for_usage, "agent", None), "type", ""),
+                    )
+                except Exception:  # noqa: BLE001 - observability must not fail the run
+                    result.usage = {"collected": False, "reason": "parse_error"}
 
             # Cleanup temp directory
             _pjob_cleanup = locals().get("pjob")
@@ -1275,6 +1298,12 @@ class PJobExecutor:
         temp_dir = self._create_temp_dir(pjob_code, "preview")
         prompt_file = self._render_workflow(bundle, temp_dir)
         env_vars = self._resolve_env(bundle)
-        command = bundle.build_command(prompt_file)
+        # Parity with execute(): pi agents get --session-dir pointing inside
+        # the temp dir so the previewed command matches what really runs
+        # (#213). Non-pi builders ignore the unknown runtime arg.
+        command = bundle.build_command(
+            prompt_file,
+            runtime_args={"sessionDir": str(temp_dir / "pi-sessions")},
+        )
 
         return command, prompt_file, env_vars

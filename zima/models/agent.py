@@ -27,7 +27,6 @@ AGENT_PARAMETER_TEMPLATES = {
         "provider": "",
         "model": "",
         "thinking": "max",
-        "noSession": True,
         "outputFormat": "text",
         "tools": ["read", "bash", "grep", "find", "ls"],
         "noContextFiles": False,
@@ -294,7 +293,8 @@ class AgentConfig(BaseConfig):
           --provider              : Provider name (ollama, google, etc.)
           --model                : Model pattern or ID
           --thinking             : off/minimal/low/medium/high/xhigh/max
-          --no-session           : Don't save session (ephemeral)
+          --session-dir          : Write the session file into this directory
+                                   (injected by the executor; #213)
           --mode                 : Output mode (text/json/rpc) — NOT --output-format
           --tools                : Comma-separated tool allowlist
           --exclude-tools        : Comma-separated tool denylist
@@ -324,8 +324,8 @@ class AgentConfig(BaseConfig):
         if params.get("thinking"):
             cmd.extend(["--thinking", str(params["thinking"])])
 
-        if params.get("noSession"):
-            cmd.append("--no-session")
+        if params.get("sessionDir"):
+            cmd.extend(["--session-dir", str(params["sessionDir"])])
 
         if params.get("outputFormat"):
             cmd.extend(["--mode", str(params["outputFormat"])])
