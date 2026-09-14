@@ -1005,10 +1005,18 @@ def test_history_detail_shows_usage_line(monkeypatch, tmp_path):
             "duration_seconds": 300.0,
             "usage": {
                 "collected": True,
-                "totals": {"input": 6550000, "output": 10700, "cache_read": 0,
-                           "cache_write": 0, "total_tokens": 6560700, "cost_usd": 0.4941},
-                "by_role": {"parent": {"total_tokens": 17163},
-                            "children": {"total_tokens": 6543537}},
+                "totals": {
+                    "input": 6550000,
+                    "output": 10700,
+                    "cache_read": 0,
+                    "cache_write": 0,
+                    "total_tokens": 6560700,
+                    "cost_usd": 0.4941,
+                },
+                "by_role": {
+                    "parent": {"total_tokens": 17163},
+                    "children": {"total_tokens": 6543537},
+                },
                 "by_model": [],
                 "children_count": 12,
                 "cost_note": "estimated",
