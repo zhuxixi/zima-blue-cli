@@ -10,6 +10,8 @@ The repo also ships a pi-coding-agent skills package (GitHub issue-driven dev lo
 
 `examples/auto-merge/auto-merge-guarded.py` is a standalone stdlib-only script (not part of the `zima` package; deployed to `~/.zima/scripts/` and cron-scheduled on the owner machine) that auto-approves + squash-merges whitelisted PRs after CI green and Zima CR convergence — it parses `pi-cr-meta` in PR review bodies and reads the same `~/.zima/history/pjobs/<code>/` runtime state files as wait-cr.py, so that history layout now has a second out-of-package consumer.
 
+The cr-batch skill ships a second copy as a Claude Code plugin: `plugins/pr-automation/skills/github-code-review-batch/` (cc side), synced from the pi version (#229) — scripts are copied verbatim except `pi-cr-meta`→`cc-cr-meta` literal swaps in `build_review_body.py`/`parse_metadata.py`, while SKILL.md/references are hand-adapted per harness (pi dispatch prose removed, metadata-detection direction flipped). Changes to either side must be ported to the other; the two copies drift on purpose in docs, never in the `Status:` 3-state / trigger-phrase / `<zima-review>` contracts.
+
 ## Development Commands
 
 ```bash
@@ -163,6 +165,7 @@ Customizable via `ZIMA_HOME` env var.
 
 - **`tests/unit/`** — Pure unit tests for models and config manager
 - **pi skill scripts** have contract tests under `tests/unit/` (`test_wait_cr.py`, `test_cr_batch_*.py`) run by the main pytest suite/CI — run them when editing `pi/*/scripts/*.py`; the cr-batch skill's `*.md` docs are contract-locked too (`TestModelDispatchDocs` reads every `*.md` under `pi/github-code-review-batch/` and fails on hardcoded model names)
+- **cc plugin cr-batch copy** has its own contract gate `tests/unit/test_cr_batch_plugin_contracts.py` (subprocess black-box: trigger phrases / `Status:` 3-state enum / `<zima-review>` trailer / `cc-cr-meta` round-trip + `run_tool_layer.py --files` smoke) — run it when editing `plugins/pr-automation/skills/github-code-review-batch/scripts/*.py`; it locks cc contracts only, no byte parity with the pi version
 - **`examples/auto-merge/auto-merge-guarded.py`** (standalone example, see Project Overview) has tests under `tests/unit/` (`test_auto_merge_guarded.py`, loads the hyphen-named script via importlib) run by the main pytest suite/CI — run them when editing the script
 - **`tests/integration/`** — CLI command tests using Typer's `CliRunner`, subprocess integration tests
 - **`tests/conftest.py`** — Fixtures: `isolated_zima_home` (temp ZIMA_HOME), `config_manager`, `cli_runner`, `unique_code`
