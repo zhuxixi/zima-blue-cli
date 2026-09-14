@@ -313,3 +313,69 @@ def collect_usage(session_dir: Optional[Path], agent_type: str = "pi") -> dict:
     except Exception:
         # Fail-open by design: observability must never break an execution.
         return {"collected": False, "reason": "parse_error"}
+
+
+def _safe_int(value) -> int:
+    """Coerce a value to ``int``; unparseable input becomes 0, never raises."""
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _safe_float(value) -> float:
+    """Coerce a value to ``float``; unparseable input becomes 0.0, never raises."""
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _human_count(value: float) -> str:
+    """Format a token count with K/M suffixes (two decimals)."""
+    number = _safe_float(value)
+    for suffix, divisor in (("M", 1_000_000.0), ("K", 1_000.0)):
+        if abs(number) >= divisor:
+            return f"{number / divisor:.2f}{suffix}"
+    return f"{int(number)}"
+
+
+def format_usage_line(usage: Optional[dict]) -> str:
+    """Render one human-readable usage summary line.
+
+    Handles three states: collected, failed collection (with reason), and
+    missing/legacy records (``not_collected``). A missing or unreadable
+    ledger never renders as zero spend, and malformed payloads never raise.
+    """
+    if not isinstance(usage, dict):
+        return "Usage:  unknown (not_collected)"
+    if not usage.get("collected"):
+        reason = usage.get("reason") or "not_collected"
+        return f"Usage:  unknown ({reason})"
+
+    totals = usage.get("totals")
+    if not isinstance(totals, dict):
+        totals = {}
+    by_role = usage.get("by_role")
+    if not isinstance(by_role, dict):
+        by_role = {}
+    parent_bucket = by_role.get("parent")
+    if not isinstance(parent_bucket, dict):
+        parent_bucket = {}
+
+    total_tokens = _safe_int(totals.get("total_tokens"))
+    parent_tokens = _safe_int(parent_bucket.get("total_tokens"))
+    if total_tokens > 0:
+        parent_pct = int(round(parent_tokens / total_tokens * 100))
+        child_pct = 100 - parent_pct
+    else:
+        parent_pct = 0
+        child_pct = 0
+    cost = _safe_float(totals.get("cost_usd"))
+
+    return (
+        f"Usage:  in {_human_count(totals.get('input'))}"
+        f" / out {_human_count(totals.get('output'))}"
+        f"  ·  est. ${cost:.2f}"
+        f"  ·  parent {parent_pct}% / children {child_pct}%"
+    )

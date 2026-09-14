@@ -8,7 +8,9 @@ import pytest
 
 from zima.execution.usage_collector import (
     _empty_totals,
+    _human_count,
     collect_usage,
+    format_usage_line,
     merge_usage,
     parse_child_usage,
     parse_parent_usage,
@@ -407,3 +409,73 @@ class TestCollectUsage:
         monkeypatch.setattr("zima.execution.usage_collector.parse_parent_usage", _boom)
 
         assert collect_usage(session_dir) == {"collected": False, "reason": "parse_error"}
+
+
+class TestFormatUsageLine:
+    def test_collected_line(self):
+        usage = {
+            "collected": True,
+            "totals": {
+                "input": 6_550_000,
+                "output": 10_700,
+                "cache_read": 0,
+                "cache_write": 0,
+                "total_tokens": 6_560_700,
+                "cost_usd": 0.4941,
+            },
+            "by_role": {
+                "parent": {"total_tokens": 17_163},
+                "children": {"total_tokens": 6_543_537},
+            },
+            "by_model": [],
+            "children_count": 12,
+            "cost_note": "estimated",
+        }
+
+        line = format_usage_line(usage)
+
+        assert line == (
+            "Usage:  in 6.55M / out 10.70K  ·  est. $0.49  ·  " "parent 0% / children 100%"
+        )
+
+    def test_none_record_is_unknown(self):
+        assert format_usage_line(None) == "Usage:  unknown (not_collected)"
+
+    def test_failed_collection_shows_reason(self):
+        line = format_usage_line({"collected": False, "reason": "no_session_dir"})
+
+        assert line == "Usage:  unknown (no_session_dir)"
+
+    def test_failed_collection_without_reason_falls_back(self):
+        assert format_usage_line({"collected": False}) == "Usage:  unknown (not_collected)"
+
+    def test_human_count_plain_number(self):
+        assert _human_count(999) == "999"
+        assert _human_count(1500) == "1.50K"
+        assert _human_count(2_500_000) == "2.50M"
+
+    def test_zero_total_does_not_divide_by_zero(self):
+        usage = {
+            "collected": True,
+            "totals": {
+                "input": 0,
+                "output": 0,
+                "cache_read": 0,
+                "cache_write": 0,
+                "total_tokens": 0,
+                "cost_usd": 0.0,
+            },
+            "by_role": {"parent": {"total_tokens": 0}, "children": {"total_tokens": 0}},
+            "by_model": [],
+            "children_count": 0,
+            "cost_note": "estimated",
+        }
+
+        assert "parent 0% / children 0%" in format_usage_line(usage)
+
+    def test_partially_formed_dict_does_not_raise(self):
+        usage = {"collected": True, "totals": "garbage", "by_role": []}
+
+        assert format_usage_line(usage) == (
+            "Usage:  in 0 / out 0  ·  est. $0.00  ·  parent 0% / children 0%"
+        )
