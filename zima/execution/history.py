@@ -87,6 +87,7 @@ class ExecutionRecord:
         error_detail: Detailed error information.
         pid: Process PID.
         scan_pr_result: Scan PR result data (repo, pr_number, etc.).
+        usage: Usage ledger collected from pi session files (#213).
     """
 
     execution_id: str
@@ -102,6 +103,7 @@ class ExecutionRecord:
     error_detail: str = ""
     pid: Optional[int] = None
     scan_pr_result: Optional[dict] = None
+    usage: Optional[dict] = None
 
     def to_dict(self) -> dict:
         """Convert to dictionary."""
@@ -119,6 +121,7 @@ class ExecutionRecord:
             "error_detail": self.error_detail,
             "pid": self.pid,
             **({"scan_pr_result": self.scan_pr_result} if self.scan_pr_result is not None else {}),
+            **({"usage": self.usage} if self.usage is not None else {}),
         }
 
     @classmethod
@@ -138,6 +141,7 @@ class ExecutionRecord:
             error_detail=data.get("error_detail", ""),
             pid=data.get("pid"),
             scan_pr_result=data.get("scan_pr_result"),
+            usage=data.get("usage"),
         )
 
     @classmethod
@@ -164,6 +168,7 @@ class ExecutionRecord:
             error_detail=error_detail,
             pid=result.pid,
             scan_pr_result=getattr(result, "scan_pr_result", None),
+            usage=getattr(result, "usage", None),
         )
 
 
@@ -188,6 +193,7 @@ _STATE_FILE_FIELDS = [
     "agent",
     "workflow",
     "scan_pr_result",
+    "usage",
 ]
 
 

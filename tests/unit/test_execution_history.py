@@ -516,3 +516,74 @@ class TestFindRecentDuplicate:
             exclude_execution_id="me000001",
         )
         assert dup is not None and dup["execution_id"] == "dup00001"
+
+
+class TestUsageLedgerField:
+    @pytest.fixture(autouse=True)
+    def setup(self, isolated_zima_home):
+        self.history = ExecutionHistory()
+        self.pjob_code = "usage-pjob"
+        self.exec_id = "u1u2u3u4"
+        self.usage = {
+            "collected": True,
+            "totals": {
+                "input": 100,
+                "output": 10,
+                "cache_read": 0,
+                "cache_write": 0,
+                "total_tokens": 110,
+                "cost_usd": 0.01,
+            },
+            "by_role": {"parent": {"total_tokens": 110}, "children": {"total_tokens": 0}},
+            "by_model": [],
+            "children_count": 0,
+            "cost_note": "estimated",
+        }
+
+    def test_usage_survives_write_and_read(self):
+        self.history.write_runtime_state(
+            self.pjob_code,
+            self.exec_id,
+            {
+                "execution_id": self.exec_id,
+                "pjob_code": self.pjob_code,
+                "status": "success",
+                "started_at": "2026-09-14T10:00:00+08:00",
+            },
+        )
+        self.history.update_runtime_state(self.pjob_code, self.exec_id, usage=self.usage)
+
+        record = self.history.get_record(self.pjob_code, self.exec_id)
+
+        assert record is not None
+        assert record.usage == self.usage
+
+    def test_legacy_record_without_usage_reads_as_none(self):
+        self.history.write_runtime_state(
+            self.pjob_code,
+            self.exec_id,
+            {
+                "execution_id": self.exec_id,
+                "pjob_code": self.pjob_code,
+                "status": "success",
+                "started_at": "2026-09-01T10:00:00+08:00",
+            },
+        )
+
+        record = self.history.get_record(self.pjob_code, self.exec_id)
+
+        assert record is not None
+        assert record.usage is None
+
+    def test_legacy_add_path_keeps_usage(self):
+        record = ExecutionRecord(
+            execution_id=self.exec_id,
+            pjob_code=self.pjob_code,
+            status="success",
+            returncode=0,
+            usage=self.usage,
+        )
+
+        self.history.add(record)
+
+        assert self.history.get_record(self.pjob_code, self.exec_id).usage == self.usage
