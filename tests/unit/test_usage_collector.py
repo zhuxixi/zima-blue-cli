@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import json
 
-from zima.execution.usage_collector import _empty_totals, parse_child_usage, parse_parent_usage
+import pytest
+
+from zima.execution.usage_collector import (
+    _empty_totals,
+    merge_usage,
+    parse_child_usage,
+    parse_parent_usage,
+)
 
 
 def _zero_totals():
@@ -249,3 +256,66 @@ class TestParseChildUsage:
         assert len(result["by_model"]) == 1
         assert result["by_model"][0]["input"] == 300
         assert result["by_model"][0]["turns"] == 5
+
+
+class TestMergeUsage:
+    def test_combines_parent_and_children(self):
+        parent = {
+            "totals": {
+                "input": 100,
+                "output": 10,
+                "cache_read": 0,
+                "cache_write": 0,
+                "total_tokens": 110,
+                "cost_usd": 0.01,
+            },
+            "by_model": [{"role": "parent"}],
+        }
+        children = {
+            "totals": {
+                "input": 900,
+                "output": 90,
+                "cache_read": 0,
+                "cache_write": 0,
+                "total_tokens": 990,
+                "cost_usd": 0.09,
+            },
+            "by_model": [{"role": "child"}],
+            "children_count": 3,
+        }
+
+        merged = merge_usage(parent, children)
+
+        assert merged["collected"] is True
+        # Integer counters must match exactly; cost is a float sum, so it is
+        # compared with approx (binary floats cannot represent 0.1 exactly).
+        assert merged["totals"]["input"] == 1000
+        assert merged["totals"]["output"] == 100
+        assert merged["totals"]["cache_read"] == 0
+        assert merged["totals"]["cache_write"] == 0
+        assert merged["totals"]["total_tokens"] == 1100
+        assert merged["totals"]["cost_usd"] == pytest.approx(0.1)
+        assert merged["by_role"]["parent"]["total_tokens"] == 110
+        assert merged["by_role"]["children"]["total_tokens"] == 990
+        assert merged["by_model"] == [{"role": "parent"}, {"role": "child"}]
+        assert merged["children_count"] == 3
+        assert merged["cost_note"] == "estimated"
+
+    def test_no_children(self):
+        parent = {
+            "totals": {
+                "input": 5,
+                "output": 5,
+                "cache_read": 0,
+                "cache_write": 0,
+                "total_tokens": 10,
+                "cost_usd": 0.0,
+            },
+            "by_model": [],
+        }
+        children = {"totals": _empty_totals(), "by_model": [], "children_count": 0}
+
+        merged = merge_usage(parent, children)
+
+        assert merged["totals"]["total_tokens"] == 10
+        assert merged["children_count"] == 0

@@ -234,3 +234,35 @@ def parse_child_usage(artifacts_dir: Optional[Path]) -> dict:
                 bucket["turns"] += parsed["turns"]
 
     return {"totals": totals, "by_model": list(buckets.values()), "children_count": children_count}
+
+
+#: Marks cost as a price-table estimate rather than a cash spend.
+COST_NOTE_ESTIMATED = "estimated"
+
+
+def merge_usage(parent: dict, children: dict) -> dict:
+    """Merge parent and child usage into the persisted ``usage`` payload.
+
+    Args:
+        parent: Result of :func:`parse_parent_usage`.
+        children: Result of :func:`parse_child_usage`.
+
+    Returns:
+        The complete ``usage`` dict stored on the execution record, with
+        ``collected: True``.
+    """
+    totals = _empty_totals()
+    _add_into(totals, parent.get("totals") or {})
+    _add_into(totals, children.get("totals") or {})
+
+    return {
+        "collected": True,
+        "totals": totals,
+        "by_role": {
+            "parent": parent.get("totals") or _empty_totals(),
+            "children": children.get("totals") or _empty_totals(),
+        },
+        "by_model": list(parent.get("by_model") or []) + list(children.get("by_model") or []),
+        "children_count": int(children.get("children_count") or 0),
+        "cost_note": COST_NOTE_ESTIMATED,
+    }
