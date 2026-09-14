@@ -625,8 +625,12 @@ class PJobExecutor:
             prompt_file = self._render_workflow(bundle, temp_dir)
             result.prompt_file = prompt_file
 
-            # 7. Build command
-            command = bundle.build_command(prompt_file)
+            # 7. Build command (pi gets its session dir inside the temp dir so
+            # that usage can be collected before the temp dir is removed; #213)
+            command = bundle.build_command(
+                prompt_file,
+                runtime_args={"sessionDir": str(temp_dir / "pi-sessions")},
+            )
             result.command = command
 
             # 8. Dry run - capture prompt content and return

@@ -296,3 +296,19 @@ class TestConfigBundle:
         assert summary["variable"]["code"] == "test-var"
         assert summary["env"]["code"] == "test-env"
         assert summary["pmg"]["code"] == "test-pmg"
+
+    def test_build_command_forwards_runtime_args(self, isolated_zima_home):
+        """Runtime args must reach the agent builder as extra_args (#213)."""
+        from zima.models.agent import AgentConfig
+        from zima.models.config_bundle import ConfigBundle
+
+        agent = AgentConfig.create("a1", "A1", "pi", parameters={})
+        bundle = ConfigBundle(agent=agent)
+
+        cmd = bundle.build_command(
+            prompt_file=Path("/tmp/prompt.md"),
+            runtime_args={"sessionDir": "/tmp/exec/pi-sessions"},
+        )
+
+        assert "--session-dir" in cmd
+        assert cmd[cmd.index("--session-dir") + 1] == "/tmp/exec/pi-sessions"

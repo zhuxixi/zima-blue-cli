@@ -174,3 +174,35 @@ class TestActionErrorStatusFlip:
         # Status was already FAILED, should stay FAILED
         assert result.status == ExecutionStatus.FAILED
         assert result.returncode == 1
+
+
+class TestExecutorSessionDirInjection:
+    """pi agents must receive --session-dir pointing inside the temp dir (#213)."""
+
+    def test_pi_command_carries_session_dir(self, isolated_zima_home, config_manager):
+        from zima.models.pjob import PJobConfig
+        from zima.models.workflow import WorkflowConfig
+
+        config_manager.save_config(
+            "agent",
+            "sd-agent",
+            {
+                "apiVersion": "zima.io/v1",
+                "kind": "Agent",
+                "metadata": {"code": "sd-agent", "name": "SD Agent"},
+                "spec": {"type": "pi", "parameters": {"mockCommand": ["echo", "ok"]}},
+            },
+        )
+        wf = WorkflowConfig.create(code="sd-wf", name="SD Workflow", template="do it", variables=[])
+        config_manager.save_config("workflow", "sd-wf", wf.to_dict())
+        pjob = PJobConfig.create(code="sd-pjob", name="SD PJob", agent="sd-agent", workflow="sd-wf")
+        config_manager.save_config("pjob", "sd-pjob", pjob.to_dict())
+
+        executor = PJobExecutor()
+        result = executor.execute("sd-pjob", dry_run=True)
+
+        # dry_run echoes the command without executing the agent (the command is
+        # built before the dry-run branch)
+        assert "--session-dir" in result.command
+        session_dir = result.command[result.command.index("--session-dir") + 1]
+        assert session_dir.endswith("sd-pjob-" + result.execution_id + "/pi-sessions")

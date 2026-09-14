@@ -274,6 +274,7 @@ class ConfigBundle:
     def build_command(
         self,
         prompt_file: Path,
+        runtime_args: Optional[dict] = None,
     ) -> list[str]:
         """
         Build the complete agent command.
@@ -285,12 +286,15 @@ class ConfigBundle:
 
         Args:
             prompt_file: Path to the rendered prompt file
+            runtime_args: Runtime parameter overrides forwarded to the agent
+                (e.g. ``{"sessionDir": "..."}`` for pi agents, #213). Unknown
+                keys are ignored by agent types that do not consume them.
 
         Returns:
             Command as list of arguments (for subprocess)
         """
         # Delegate to AgentConfig for type-specific command building
-        cmd = self.agent.build_command(prompt_file=prompt_file)
+        cmd = self.agent.build_command(prompt_file=prompt_file, extra_args=runtime_args)
 
         # Append PMG parameters (generic, agent-agnostic)
         pmg_params = self.build_agent_params()
