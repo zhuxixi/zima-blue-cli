@@ -8,6 +8,7 @@ import pytest
 
 from zima.execution.usage_collector import (
     _empty_totals,
+    collect_usage,
     merge_usage,
     parse_child_usage,
     parse_parent_usage,
@@ -319,3 +320,90 @@ class TestMergeUsage:
 
         assert merged["totals"]["total_tokens"] == 10
         assert merged["children_count"] == 0
+
+
+class TestCollectUsage:
+    def test_collects_parent_and_children_from_session_dir(self, tmp_path):
+        session_dir = tmp_path / "pi-sessions"
+        session_dir.mkdir()
+        _write_session(
+            session_dir,
+            "s.jsonl",
+            [
+                _assistant(
+                    "zai-coding-cn", "glm-5.3", input_tokens=100, output=10, total=110, cost=0.01
+                )
+            ],
+        )
+        _write_child_meta(
+            session_dir / "subagent-artifacts",
+            "r1",
+            "checker",
+            "zai-coding-cn/glm-5.3-flash",
+            input_tokens=900,
+            output=90,
+            cost=0.09,
+            turns=2,
+        )
+
+        usage = collect_usage(session_dir)
+
+        assert usage["collected"] is True
+        assert usage["totals"]["total_tokens"] == 1100
+        assert usage["by_role"]["parent"]["total_tokens"] == 110
+        assert usage["by_role"]["children"]["total_tokens"] == 990
+        assert usage["children_count"] == 1
+        assert usage["cost_note"] == "estimated"
+
+    def test_ignores_forks_and_transcripts(self, tmp_path):
+        """forks/ copies and *_transcript.jsonl must not be counted twice."""
+        session_dir = tmp_path / "pi-sessions"
+        forks = session_dir / "forks"
+        forks.mkdir(parents=True)
+        parent_only = [_assistant("p", "m", input_tokens=100, output=10, total=110, cost=0.01)]
+        _write_session(session_dir, "s.jsonl", parent_only)
+        _write_session(forks, "fork.jsonl", parent_only)  # copy of the parent history
+        artifacts = session_dir / "subagent-artifacts"
+        artifacts.mkdir()
+        (artifacts / "r1_worker_transcript.jsonl").write_text(
+            json.dumps(parent_only[0]) + "\n", encoding="utf-8"
+        )
+
+        usage = collect_usage(session_dir)
+
+        assert usage["totals"]["total_tokens"] == 110  # not 220
+
+    def test_missing_dir_is_reported_not_raised(self, tmp_path):
+        assert collect_usage(tmp_path / "absent") == {
+            "collected": False,
+            "reason": "no_session_dir",
+        }
+
+    def test_none_session_dir(self):
+        assert collect_usage(None) == {"collected": False, "reason": "no_session_dir"}
+
+    def test_empty_dir_reports_empty(self, tmp_path):
+        session_dir = tmp_path / "pi-sessions"
+        session_dir.mkdir()
+
+        assert collect_usage(session_dir) == {"collected": False, "reason": "empty"}
+
+    def test_unsupported_agent_type(self, tmp_path):
+        session_dir = tmp_path / "pi-sessions"
+        session_dir.mkdir()
+
+        assert collect_usage(session_dir, agent_type="claude") == {
+            "collected": False,
+            "reason": "unsupported_agent_type",
+        }
+
+    def test_parse_error_is_swallowed(self, tmp_path, monkeypatch):
+        session_dir = tmp_path / "pi-sessions"
+        session_dir.mkdir()
+
+        def _boom(*_args, **_kwargs):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr("zima.execution.usage_collector.parse_parent_usage", _boom)
+
+        assert collect_usage(session_dir) == {"collected": False, "reason": "parse_error"}

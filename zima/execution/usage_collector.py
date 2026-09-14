@@ -266,3 +266,50 @@ def merge_usage(parent: dict, children: dict) -> dict:
         "children_count": int(children.get("children_count") or 0),
         "cost_note": COST_NOTE_ESTIMATED,
     }
+
+
+def collect_usage(session_dir: Optional[Path], agent_type: str = "pi") -> dict:
+    """Collect the usage ledger for one execution. Never raises.
+
+    This is the fail-open boundary of the module: parse and merge helpers may
+    raise on unexpected input, but any exception raised inside the pipeline is
+    swallowed here and reported as ``parse_error`` so that observability can
+    never break an execution (#213).
+
+    Args:
+        session_dir: ``<temp_dir>/pi-sessions`` — the directory handed to pi
+            via ``--session-dir``.
+        agent_type: Agent type of the executed PJob (only ``"pi"`` is
+            supported; anything else reports ``unsupported_agent_type``).
+
+    Returns:
+        Either the merged ``usage`` payload (``collected: True``) or
+        ``{"collected": False, "reason": <code>}`` with ``code`` in
+        ``{"no_session_dir", "empty", "parse_error", "unsupported_agent_type"}``.
+        The failed shape deliberately carries no ``totals`` key: a missing
+        ledger must never masquerade as zero spend.
+    """
+    if agent_type != "pi":
+        return {"collected": False, "reason": "unsupported_agent_type"}
+    if session_dir is None:
+        return {"collected": False, "reason": "no_session_dir"}
+
+    try:
+        root = Path(session_dir)
+        if not root.is_dir():
+            return {"collected": False, "reason": "no_session_dir"}
+
+        # Top-level session files only: forks/ holds copies of the parent
+        # history and subagent-artifacts/ holds child transcripts — counting
+        # either would double count.
+        session_files = sorted(p for p in root.glob("*.jsonl") if p.is_file())
+        parent = parse_parent_usage(session_files)
+        children = parse_child_usage(root / "subagent-artifacts")
+        merged = merge_usage(parent, children)
+
+        if merged["totals"]["total_tokens"] <= 0:
+            return {"collected": False, "reason": "empty"}
+        return merged
+    except Exception:
+        # Fail-open by design: observability must never break an execution.
+        return {"collected": False, "reason": "parse_error"}
