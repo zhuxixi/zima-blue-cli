@@ -15,6 +15,7 @@ from rich.tree import Tree
 from zima.config.manager import ConfigManager
 from zima.execution.executor import PJobExecutor
 from zima.execution.history import ExecutionHistory
+from zima.execution.usage_collector import format_usage_line
 from zima.models.actions import VALID_ACTION_CONDITIONS, VALID_POST_ACTION_TYPES, PostExecAction
 from zima.models.pjob import Overrides, PJobConfig
 from zima.utils import get_zima_home, validate_code_with_error
@@ -1224,6 +1225,7 @@ def show_history(
         console.print(f"Started: {record.started_at}")
         console.print(f"Finished: {record.finished_at}")
         console.print(f"Command: {' '.join(record.command)}")
+        console.print(format_usage_line(record.usage))
 
         if record.stderr_preview:
             console.print(

@@ -982,3 +982,42 @@ class TestPJobRuntimeCommands:
         result = CliRunner().invoke(app, ["pjob", "history", "test-pjob"])
         assert result.exit_code == 0
         assert "run001" in result.output
+
+
+def test_history_detail_shows_usage_line(monkeypatch, tmp_path):
+    """`pjob history --detail` renders the usage ledger line (#213)."""
+    from tests.conftest import strip_ansi
+    from zima.execution.history import ExecutionHistory
+
+    monkeypatch.setenv("ZIMA_HOME", str(tmp_path))
+
+    ExecutionHistory().write_runtime_state(
+        "usage-cli-pjob",
+        "c1c2c3c4",
+        {
+            "execution_id": "c1c2c3c4",
+            "pjob_code": "usage-cli-pjob",
+            "status": "success",
+            "returncode": 0,
+            "command": ["pi", "-p"],
+            "started_at": "2026-09-14T10:00:00+08:00",
+            "finished_at": "2026-09-14T10:05:00+08:00",
+            "duration_seconds": 300.0,
+            "usage": {
+                "collected": True,
+                "totals": {"input": 6550000, "output": 10700, "cache_read": 0,
+                           "cache_write": 0, "total_tokens": 6560700, "cost_usd": 0.4941},
+                "by_role": {"parent": {"total_tokens": 17163},
+                            "children": {"total_tokens": 6543537}},
+                "by_model": [],
+                "children_count": 12,
+                "cost_note": "estimated",
+            },
+        },
+    )
+
+    result = runner.invoke(app, ["pjob", "history", "usage-cli-pjob", "--detail", "c1c2c3c4"])
+
+    assert result.exit_code == 0
+    assert "Usage:" in strip_ansi(result.output)
+    assert "est. $0.49" in strip_ansi(result.output)
