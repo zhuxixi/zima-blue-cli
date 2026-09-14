@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import json
 
-from zima.execution.usage_collector import parse_parent_usage
+from zima.execution.usage_collector import _empty_totals, parse_child_usage, parse_parent_usage
+
+
+def _zero_totals():
+    """Return a zeroed totals bucket for equality assertions."""
+    return _empty_totals()
 
 
 def _write_session(tmp_path, name, entries):
@@ -137,3 +142,110 @@ class TestParseParentUsage:
         assert set(by_model) == {("zai-coding-cn", "glm-5.3"), ("zai-coding-cn", "glm-5.3-flash")}
         assert by_model[("zai-coding-cn", "glm-5.3")]["total_tokens"] == 44
         assert by_model[("zai-coding-cn", "glm-5.3-flash")]["total_tokens"] == 22
+
+
+def _write_child_meta(
+    artifacts_dir, run_id, agent, model, *, input_tokens, output, cache_read=0, cost=0.0, turns=1
+):
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    path = artifacts_dir / f"{run_id}_{agent}_meta.json"
+    path.write_text(
+        json.dumps(
+            {
+                "runId": run_id,
+                "agent": agent,
+                "model": model,
+                "usage": {
+                    "input": input_tokens,
+                    "output": output,
+                    "cacheRead": cache_read,
+                    "cacheWrite": 0,
+                    "cost": cost,
+                    "turns": turns,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+class TestParseChildUsage:
+    def test_reads_meta_files(self, tmp_path):
+        artifacts = tmp_path / "subagent-artifacts"
+        _write_child_meta(
+            artifacts,
+            "r1",
+            "worker",
+            "zai-coding-cn/glm-5.3-flash",
+            input_tokens=1909,
+            output=102,
+            cache_read=2304,
+            cost=0.0002,
+            turns=1,
+        )
+
+        result = parse_child_usage(artifacts)
+
+        assert result["children_count"] == 1
+        assert result["totals"] == {
+            "input": 1909,
+            "output": 102,
+            "cache_read": 2304,
+            "cache_write": 0,
+            "total_tokens": 4315,
+            "cost_usd": 0.0002,
+        }
+        bucket = result["by_model"][0]
+        assert bucket["role"] == "child"
+        assert bucket["agent"] == "worker"
+        assert bucket["provider"] == "zai-coding-cn"
+        assert bucket["model"] == "glm-5.3-flash"
+        assert bucket["turns"] == 1
+
+    def test_missing_dir_returns_empty(self, tmp_path):
+        result = parse_child_usage(tmp_path / "nope")
+
+        assert result == {"totals": _zero_totals(), "by_model": [], "children_count": 0}
+
+    def test_skips_meta_without_usage(self, tmp_path):
+        artifacts = tmp_path / "subagent-artifacts"
+        artifacts.mkdir()
+        (artifacts / "r9_worker_meta.json").write_text('{"agent": "worker"}', encoding="utf-8")
+        (artifacts / "broken_meta.json").write_text("{ not json", encoding="utf-8")
+
+        result = parse_child_usage(artifacts)
+
+        assert result["children_count"] == 0
+        assert result["by_model"] == []
+
+    def test_aggregates_same_agent_and_model(self, tmp_path):
+        artifacts = tmp_path / "subagent-artifacts"
+        _write_child_meta(
+            artifacts,
+            "r1",
+            "checker",
+            "zai-coding-cn/glm-5.3-flash",
+            input_tokens=100,
+            output=10,
+            cost=0.001,
+            turns=2,
+        )
+        _write_child_meta(
+            artifacts,
+            "r2",
+            "checker",
+            "zai-coding-cn/glm-5.3-flash",
+            input_tokens=200,
+            output=20,
+            cost=0.002,
+            turns=3,
+        )
+
+        result = parse_child_usage(artifacts)
+
+        assert result["children_count"] == 2
+        assert result["totals"]["total_tokens"] == 330
+        assert len(result["by_model"]) == 1
+        assert result["by_model"][0]["input"] == 300
+        assert result["by_model"][0]["turns"] == 5

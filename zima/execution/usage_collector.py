@@ -129,3 +129,108 @@ def parse_parent_usage(session_files: Sequence[Path]) -> dict:
             _add_into(bucket, parsed)
 
     return {"totals": totals, "by_model": list(buckets.values())}
+
+
+def _split_child_model(raw: str) -> tuple[str, str]:
+    """Split a pi-subagents model string into ``(provider, model)``.
+
+    ``model`` keeps the reported value verbatim (including any ``:thinking``
+    suffix) so the ledger can show which tier actually ran. Aggregation
+    therefore happens per exact model string.
+    """
+    raw = raw or "unknown"
+    if "/" in raw:
+        provider, model = raw.split("/", 1)
+        return provider, model
+    return "unknown", raw
+
+
+def _child_entry(meta: dict) -> Optional[dict]:
+    """Extract a usage entry from a pi-subagents ``*_meta.json`` payload.
+
+    pi-subagents metadata reports no ``totalTokens`` field, so the total is
+    computed as the sum of the four token counters. Returns ``None`` when the
+    payload carries no usable ``usage`` object.
+    """
+    usage = meta.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    provider, model = _split_child_model(str(meta.get("model") or ""))
+    try:
+        input_tokens = int(usage.get("input") or 0)
+        output = int(usage.get("output") or 0)
+        cache_read = int(usage.get("cacheRead") or 0)
+        cache_write = int(usage.get("cacheWrite") or 0)
+        cost = float(usage.get("cost") or 0.0)
+    except (TypeError, ValueError):
+        return None
+    turns = usage.get("turns")
+    try:
+        turns = int(turns) if turns is not None else None
+    except (TypeError, ValueError):
+        turns = None
+    return {
+        "input": input_tokens,
+        "output": output,
+        "cache_read": cache_read,
+        "cache_write": cache_write,
+        "total_tokens": input_tokens + output + cache_read + cache_write,
+        "cost_usd": cost,
+        "agent": meta.get("agent") or "unknown",
+        "provider": provider,
+        "model": model,
+        "turns": turns,
+    }
+
+
+def parse_child_usage(artifacts_dir: Optional[Path]) -> dict:
+    """Aggregate subagent usage from pi-subagents artifact metadata.
+
+    Args:
+        artifacts_dir: ``<session_dir>/subagent-artifacts`` (may be missing).
+
+    Returns:
+        ``{"totals": <totals>, "by_model": [<bucket>, ...], "children_count": int}``
+        where buckets are grouped by ``(agent, provider, model)``.
+
+    A bucket's ``turns`` starts at ``0`` and is summed across its children;
+    if any contributing child lacks ``turns``, the bucket's ``turns`` becomes
+    ``None`` — unknown must not masquerade as a sum of zeros.
+    """
+    totals = _empty_totals()
+    buckets: dict[tuple[str, str, str], dict] = {}
+    children_count = 0
+
+    if artifacts_dir is not None and Path(artifacts_dir).is_dir():
+        for meta_file in sorted(Path(artifacts_dir).glob("*_meta.json")):
+            try:
+                meta = json.loads(meta_file.read_text(encoding="utf-8", errors="replace"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(meta, dict):
+                continue
+            parsed = _child_entry(meta)
+            if parsed is None:
+                continue
+
+            children_count += 1
+            _add_into(totals, parsed)
+            key = (parsed["agent"], parsed["provider"], parsed["model"])
+            bucket = buckets.get(key)
+            if bucket is None:
+                bucket = {
+                    "role": ROLE_CHILD,
+                    "agent": key[0],
+                    "provider": key[1],
+                    "model": key[2],
+                    "turns": 0,
+                    **_empty_totals(),
+                }
+                buckets[key] = bucket
+            _add_into(bucket, parsed)
+            if parsed["turns"] is None or bucket["turns"] is None:
+                bucket["turns"] = None
+            else:
+                bucket["turns"] += parsed["turns"]
+
+    return {"totals": totals, "by_model": list(buckets.values()), "children_count": children_count}
