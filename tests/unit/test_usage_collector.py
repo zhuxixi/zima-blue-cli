@@ -213,6 +213,40 @@ class TestParseChildUsage:
         assert bucket["model"] == "glm-5.3-flash"
         assert bucket["turns"] == 1
 
+    def test_mixed_turns_sets_bucket_turns_to_none(self, tmp_path):
+        """One child without turns makes the bucket's turns unknown (None) —
+        never a sum of only the known ones (#213)."""
+        artifacts = tmp_path / "subagent-artifacts"
+        _write_child_meta(
+            artifacts,
+            "r1",
+            "checker",
+            "zai-coding-cn/glm-5.3-flash",
+            input_tokens=100,
+            output=10,
+            cost=0.001,
+            turns=2,
+        )
+        _write_child_meta(
+            artifacts,
+            "r2",
+            "checker",
+            "zai-coding-cn/glm-5.3-flash",
+            input_tokens=200,
+            output=20,
+            cost=0.002,
+            turns=None,
+        )
+
+        result = parse_child_usage(artifacts)
+
+        assert result["children_count"] == 2
+        assert len(result["by_model"]) == 1
+        bucket = result["by_model"][0]
+        assert bucket["turns"] is None
+        assert bucket["input"] == 300
+        assert bucket["total_tokens"] == 330
+
     def test_missing_dir_returns_empty(self, tmp_path):
         result = parse_child_usage(tmp_path / "nope")
 

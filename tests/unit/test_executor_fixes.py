@@ -211,6 +211,8 @@ class TestExecutorSessionDirInjection:
         assert "--session-dir" in result.command
         session_dir = result.command[result.command.index("--session-dir") + 1]
         assert session_dir.endswith("sd-pjob-" + result.execution_id + "/pi-sessions")
+        # A dry run never launched the agent: no fabricated failure reason.
+        assert result.usage is None
 
 
 class TestUsageCollection:

@@ -193,6 +193,25 @@ class TestDedupGuard:
         assert "dup00001" in result.stderr
         mock_run.assert_not_called()
 
+    def test_skipped_execution_records_no_usage(self, mock_pjob_with_scan):
+        """A dedup-skipped execution never ran the agent, so its ledger stays
+        None ("not_collected") instead of a fabricated no_session_dir payload.
+        """
+        self._seed_duplicate("running", started_minutes_ago=1)
+        executor = PJobExecutor()
+        with (
+            patch.object(
+                executor._actions_runner,
+                "run_pre",
+                return_value={"repo": "owner/repo", "pr_number": "42"},
+            ),
+            patch.object(executor, "_run_command") as mock_run,
+        ):
+            result = executor.execute("test-pjob")
+        assert result.status == ExecutionStatus.SKIPPED
+        assert result.usage is None
+        mock_run.assert_not_called()
+
     def test_recent_success_same_head_skips(self, mock_pjob_with_scan):
         self._seed_duplicate("success", head_sha="abc123", started_minutes_ago=5)
         executor = PJobExecutor()

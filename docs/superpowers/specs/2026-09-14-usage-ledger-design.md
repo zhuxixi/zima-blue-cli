@@ -92,6 +92,8 @@ pi 会自行递归创建 `--session-dir` 指向的目录（实测 `--session-dir
 
 `reason` 取值集合：`no_session_dir` | `empty` | `parse_error` | `unsupported_agent_type`。
 
+**采集只对真正启动过 agent 的执行发生**：dry-run 与 `SKIPPED`（去重跳过、熔断冷却、trivial 跳过）不采集，`usage` 保持缺失（展示为 `unknown (not_collected)`）——不伪造 `no_session_dir` 这类失败原因，记录自身的 `status` 字段已说明原因。
+
 **约束**：
 
 - `by_model` 按 `(role, agent, provider, model)` 四元组聚合，**不逐条消息存**。

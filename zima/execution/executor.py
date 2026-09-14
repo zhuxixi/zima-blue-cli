@@ -847,14 +847,18 @@ class PJobExecutor:
 
             # 14. Collect the usage ledger while the session files still exist
             # (the temp dir is removed right below). Fail-open by design (#213).
-            try:
-                _bundle_for_usage = locals().get("bundle")
-                result.usage = collect_usage(
-                    (temp_dir / "pi-sessions") if temp_dir else None,
-                    agent_type=getattr(getattr(_bundle_for_usage, "agent", None), "type", ""),
-                )
-            except Exception:  # noqa: BLE001 - observability must not fail the run
-                result.usage = {"collected": False, "reason": "parse_error"}
+            # Dry runs and SKIPPED executions never launched the agent, so
+            # nothing was collected: keep usage None ("not_collected") instead
+            # of fabricating a no_session_dir reason (#213).
+            if not dry_run and result.status != ExecutionStatus.SKIPPED:
+                try:
+                    _bundle_for_usage = locals().get("bundle")
+                    result.usage = collect_usage(
+                        (temp_dir / "pi-sessions") if temp_dir else None,
+                        agent_type=getattr(getattr(_bundle_for_usage, "agent", None), "type", ""),
+                    )
+                except Exception:  # noqa: BLE001 - observability must not fail the run
+                    result.usage = {"collected": False, "reason": "parse_error"}
 
             # Cleanup temp directory
             _pjob_cleanup = locals().get("pjob")
