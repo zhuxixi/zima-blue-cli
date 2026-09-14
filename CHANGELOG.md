@@ -1,5 +1,18 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- **Behavior change (pi agents)**: pi runs no longer pass `--no-session`; the executor now passes
+  `--session-dir <execution temp dir>/pi-sessions`, so the session file is written inside the
+  execution's own temporary directory and deleted with it. The global pi session store
+  (`~/.pi/agent/sessions`) is never touched. The `noSession` agent parameter is retired and
+  ignored if still present in configs (#213).
+- Execution history now records a `usage` ledger (tokens in/out, cache, estimated cost, per-model
+  breakdown covering the parent agent and all subagents). `zima pjob history <code> --detail <id>`
+  renders a summary line. Cost is a price-table estimate, not a cash figure (#213).
+
 ## [0.8.2] - 2026-09-04
 
 ### Fixes
