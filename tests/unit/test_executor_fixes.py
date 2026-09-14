@@ -1,8 +1,13 @@
-"""Unit tests for executor bug fixes (#11, #13, #15, #16, #92)."""
+"""Unit tests for executor bug fixes (#11, #13, #15, #16, #92, #213)."""
 
+import json
 import os
+import sys
+
+import pytest
 
 from zima.execution.executor import ExecutionResult, ExecutionStatus, PJobExecutor, _friendly_error
+from zima.utils import get_zima_home
 
 
 class TestFriendlyError:
@@ -206,3 +211,97 @@ class TestExecutorSessionDirInjection:
         assert "--session-dir" in result.command
         session_dir = result.command[result.command.index("--session-dir") + 1]
         assert session_dir.endswith("sd-pjob-" + result.execution_id + "/pi-sessions")
+
+
+class TestUsageCollection:
+    """Executor collects the usage ledger before deleting the temp dir (#213)."""
+
+    # Fake pi agent (same interpreter, separate process): parses --session-dir
+    # from its own argv — exactly what real pi does — and writes one parent
+    # session file plus one subagent artifact meta into it. Payloads are
+    # embedded via repr() so no shell quoting is involved.
+    SESSION_LINE = {
+        "type": "message",
+        "message": {
+            "role": "assistant",
+            "provider": "zai-coding-cn",
+            "model": "glm-5.3",
+            "usage": {
+                "input": 100,
+                "output": 10,
+                "cacheRead": 0,
+                "cacheWrite": 0,
+                "totalTokens": 110,
+                "cost": {"total": 0.01},
+            },
+        },
+    }
+    CHILD_META = {
+        "agent": "checker",
+        "model": "zai-coding-cn/glm-5.3-flash",
+        "usage": {
+            "input": 900,
+            "output": 90,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "cost": 0.09,
+            "turns": 2,
+        },
+    }
+
+    @classmethod
+    def _mock_agent_command(cls):
+        script = (
+            "import pathlib, sys\n"
+            "sess = None\n"
+            "args = sys.argv[1:]\n"
+            "for i, a in enumerate(args):\n"
+            '    if a == "--session-dir" and i + 1 < len(args):\n'
+            "        sess = args[i + 1]\n"
+            "if sess:\n"
+            "    root = pathlib.Path(sess)\n"
+            '    (root / "subagent-artifacts").mkdir(parents=True, exist_ok=True)\n'
+            '    (root / "s.jsonl").write_text('
+            + repr(json.dumps(cls.SESSION_LINE))
+            + ' + "\\n", encoding="utf-8")\n'
+            '    (root / "subagent-artifacts" / "r1_checker_meta.json").write_text('
+            + repr(json.dumps(cls.CHILD_META))
+            + ', encoding="utf-8")\n'
+        )
+        return [sys.executable, "-c", script]
+
+    @pytest.fixture
+    def pjob(self, isolated_zima_home, config_manager):
+        from zima.models.pjob import PJobConfig
+        from zima.models.workflow import WorkflowConfig
+
+        config_manager.save_config(
+            "agent",
+            "ul-agent",
+            {
+                "apiVersion": "zima.io/v1",
+                "kind": "Agent",
+                "metadata": {"code": "ul-agent", "name": "UL Agent"},
+                "spec": {"type": "pi", "parameters": {"mockCommand": self._mock_agent_command()}},
+            },
+        )
+        wf = WorkflowConfig.create(code="ul-wf", name="UL Workflow", template="do it", variables=[])
+        config_manager.save_config("workflow", "ul-wf", wf.to_dict())
+        pjob = PJobConfig.create(code="ul-pjob", name="UL PJob", agent="ul-agent", workflow="ul-wf")
+        config_manager.save_config("pjob", "ul-pjob", pjob.to_dict())
+        return pjob
+
+    def test_usage_collected_and_temp_removed(self, pjob, isolated_zima_home):
+        executor = PJobExecutor()
+
+        result = executor.execute("ul-pjob")
+
+        assert result.status.value == "success"
+        assert result.usage["collected"] is True
+        assert result.usage["totals"]["total_tokens"] == 1100
+        assert result.usage["by_role"]["parent"]["total_tokens"] == 110
+        assert result.usage["by_role"]["children"]["total_tokens"] == 990
+        assert result.usage["children_count"] == 1
+        assert result.usage["cost_note"] == "estimated"
+        assert result.temp_dir is None  # temp dir cleaned up
+        assert not (get_zima_home() / "temp" / "pjobs" / f"ul-pjob-{result.execution_id}").exists()
