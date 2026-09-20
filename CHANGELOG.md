@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.9.0] - 2026-09-20
+
+### Features
+- **observability**: execution usage ledger for tokens/cost (#213) (#243)
+- **docs-gen**: CLI reference generator — Typer tree extraction, catalog, drift-proof rendering (2/4 of #228) (#234)
+- **cr-batch**: deterministic trivial precheck for Step 1 (#223) (#232)
+- **pr-automation**: sync cc cr-batch skill to pi version + bump 0.6.0 (#221) (#229)
+
+### Changes
+- **claude.md**: consolidate 5 stale auto/claude-md doc syncs (#230/#233/#237/#239/#241) (#242)
+- **cr-batch**: merge dual CLAUDE checkers into single two-phase checker (#225) (#240)
+- **cr-batch**: model tiering via PI_CR_FAST_MODEL/PI_CR_STRONG_MODEL env vars (#224) (#238)
+- ci(docs): drift gate for generated cli-reference + path filters (A4) (#236) (#236)
+- test(examples): validate example packs in CI — structure + strict template render (3/4 of #228) (#235) (#235)
+- dual-path configuration baseline — guides, README rewrite, API-INTERFACE split (1/4 of #228) (#231)
+- **claude.md**: auto-merge example — standalone script, history-layout consumer, unit tests (980bdca) (#208)
+- **claude.md**: requireReview postExec gate + pr_* byte cap (#201) (#227)
+- **claude.md**: failure_guard module entry in Key Layers + docs/superpowers/ pointer (#214)
+- **skill**: release skill Step 11 — 本机服务升级与重启（发版闭环）(#222) (#226)
+- **claude.md**: cr-batch skill docs are contract-locked (no hardcoded models) (#217)
+
+[0.9.0]: https://github.com/zhuxixi/zima-blue-cli/compare/v0.8.2...v0.9.0
+
 ## [Unreleased]
 
 ### Changed
