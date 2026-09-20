@@ -1,0 +1,37 @@
+# Example pi agent for webhook-triggered code review.
+#
+# Key deployment prerequisite: the `tools` allowlist must include `subagent`
+# (the dispatch tool registered by the pi-subagents extension). pi's --tools
+# allowlist applies to built-in, extension, and custom tools alike — a name
+# not in the list is not loaded. Without it the CR skill silently falls back
+# to single-session sequential review: no parallel fanout, no model tiering,
+# and the usage ledger records children_count=0.
+#
+# Verify after deployment with one real CR round: the job log should report
+# parallel dispatch (not "no subagent dispatch tool in this session") and the
+# usage ledger children_count should be > 0.
+apiVersion: zima.io/v1
+kind: Agent
+metadata:
+  code: pi-cr
+  name: Pi CR Agent
+  description: Pi code reviewer with subagent dispatch
+spec:
+  type: pi
+  parameters:
+    # Replace provider/model with your deployment values (parent session,
+    # i.e. the strong tier); model tiering for dispatched reviewers is driven
+    # by the PI_CR_FAST_MODEL / PI_CR_STRONG_MODEL env vars, not by this file.
+    provider: zai-coding-cn
+    model: glm-5.3
+    thinking: max
+    noSession: true
+    outputFormat: text
+    tools:
+    - read
+    - bash
+    - grep
+    - find
+    - ls
+    - subagent   # dispatch tool from pi-subagents — required for CR fanout
+    addDirs: []
