@@ -366,7 +366,9 @@ def format_usage_line(usage: Optional[dict]) -> str:
     total_tokens = _safe_int(totals.get("total_tokens"))
     parent_tokens = _safe_int(parent_bucket.get("total_tokens"))
     if total_tokens > 0:
-        parent_pct = int(round(parent_tokens / total_tokens * 100))
+        # Clamp anomalous rollups (e.g. parent > total) so the split never
+        # renders a negative children share like "parent 150% / children -50%".
+        parent_pct = max(0, min(100, int(round(parent_tokens / total_tokens * 100))))
         child_pct = 100 - parent_pct
     else:
         parent_pct = 0
