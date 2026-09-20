@@ -25,7 +25,6 @@ spec:
     provider: zai-coding-cn
     model: glm-5.3
     thinking: max
-    noSession: true
     outputFormat: text
     tools:
     - read
