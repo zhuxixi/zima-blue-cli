@@ -38,7 +38,7 @@ MODEL_MAP = {
 # a pack are not validated for that pack — a missing kind is not a failure; a
 # changed count is.
 SCENES = {
-    "webhook": {"agent": 2, "workflow": 2, "variable": 1, "env": 1, "pjob": 2},
+    "webhook": {"agent": 3, "workflow": 2, "variable": 1, "env": 1, "pjob": 2},
     "sdd": {"agent": 4, "workflow": 6, "env": 1, "pjob": 12},
 }
 

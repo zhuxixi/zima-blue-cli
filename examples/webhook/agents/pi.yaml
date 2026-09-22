@@ -1,0 +1,43 @@
+# Example pi agent for webhook-triggered code review.
+#
+# Execution modes are selected by the `tools` allowlist (pi's --tools applies
+# to built-in, extension, and custom tools alike):
+#
+# - Single-session mode (this file, recommended): no `subagent` in the list.
+#   Review roles run sequentially in one shared-context session. Measured on
+#   comparable small PRs this costs ~4.7x fewer tokens than dispatch mode
+#   (shared context + prompt-cache reuse vs. fresh context per child); the
+#   trade-off is weaker viewpoint isolation across roles.
+# - Dispatch mode (optional): add `subagent` (requires the pi-subagents
+#   extension, auto-discovered; `reviewer` is a builtin agent). Step 4/5/delta
+#   run parallel fanout with model tiering driven by PI_CR_FAST_MODEL /
+#   PI_CR_STRONG_MODEL. Parent orchestration + per-child fresh context raise
+#   total tokens significantly; choose it when role isolation or parallelism
+#   matters more than token spend.
+#
+# Identify the active mode from the usage ledger: children_count=0 (and a
+# "no subagent dispatch tool" log line) = single-session; children_count>0
+# = dispatch.
+apiVersion: zima.io/v1
+kind: Agent
+metadata:
+  code: pi-cr
+  name: Pi CR Agent
+  description: Pi code reviewer (single-session mode)
+spec:
+  type: pi
+  parameters:
+    # Replace provider/model with your deployment values (this is the
+    # reviewing model; single-session mode has no per-role tiering).
+    provider: zai-coding-cn
+    model: glm-5.3
+    thinking: max
+    outputFormat: text
+    tools:
+    - read
+    - bash
+    - grep
+    - find
+    - ls
+    # - subagent   # uncomment to switch to dispatch mode (see header notes)
+    addDirs: []
