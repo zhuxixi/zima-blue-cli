@@ -488,6 +488,28 @@ class TestFormatUsageLine:
         assert _human_count(1500) == "1.50K"
         assert _human_count(2_500_000) == "2.50M"
 
+    def test_parent_exceeding_total_is_clamped(self):
+        usage = {
+            "collected": True,
+            "totals": {
+                "input": 100,
+                "output": 0,
+                "cache_read": 0,
+                "cache_write": 0,
+                "total_tokens": 100,
+                "cost_usd": 0.0,
+            },
+            "by_role": {"parent": {"total_tokens": 150}, "children": {"total_tokens": 0}},
+            "by_model": [],
+            "children_count": 0,
+            "cost_note": "estimated",
+        }
+
+        assert "parent 100% / children 0%" in format_usage_line(usage)
+
+        usage["by_role"]["parent"]["total_tokens"] = -50
+        assert "parent 0% / children 100%" in format_usage_line(usage)
+
     def test_zero_total_does_not_divide_by_zero(self):
         usage = {
             "collected": True,
