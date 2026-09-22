@@ -49,12 +49,10 @@ PR 编号提取规则（依次尝试）：
 1. **GitHub CLI (`gh`)** 已安装并认证：`gh --version` / `gh auth status`，需要对仓库的读取和评论权限
 2. 当前目录在 Git 仓库中且有 GitHub remote（`git remote -v` 验证）
 3. **Python 3** 可用（用于运行 `scripts/` 下的辅助脚本）
-4. **pi 派发模式部署前置（CR PJob / 无头 pi 进程必读）**：宿主 pi 进程必须能派发 subagent，三个条件缺一不可：
-   - pi-subagents 扩展已安装（随用户环境自动发现加载）
-   - Agent 配置的 `tools` 白名单必须包含 `subagent`——pi 的 `--tools` 白名单对内置、扩展、自定义工具统一生效，名单里没有的工具不加载
-   - 模型分档由 `PI_CR_FAST_MODEL` / `PI_CR_STRONG_MODEL` 环境变量驱动（见 [flow.md Step 4 preflight](references/flow.md#step-4)）；`reviewer` 为 pi-subagents 内置 agent，无需自定义定义文件
-
-   白名单缺失 `subagent` 时的降级是**静默的**：父会话将在单会话内逐角色顺序执行（无并行 fanout、分档不生效），usage ledger 记录 `children_count=0`。部署后应跑一轮真实 CR 验证：日志出现并行派发、ledger `children_count > 0`。示例 agent 配置见 `examples/webhook/agents/pi.yaml`。
+4. **pi 执行形态选择（CR PJob / 无头 pi 进程必读）**：本 skill 支持两种执行形态，由 Agent 配置的 `tools` 白名单决定（pi 的 `--tools` 白名单对内置、扩展、自定义工具统一生效）：
+   - **单会话形态（默认推荐）**：白名单不含 `subagent`（典型：`read,bash,grep,find,ls`）。审查角色在同一会话内按各自的独立视角契约顺序执行，上下文共享带来显著成本优势（实测同规模小 PR：单会话约 57 万 tokens vs 派发约 267 万，约 4.7 倍差距，见 usage ledger #213）；代价是角色间上下文共享，视角独立性弱于 fresh-context 派发。
+   - **派发形态（可选）**：白名单加入 `subagent`（需 pi-subagents 扩展，随用户环境自动发现；`reviewer` 为其内置 agent）。Step 4/5/delta 按设计走并行 fanout，模型分档由 `PI_CR_FAST_MODEL` / `PI_CR_STRONG_MODEL` 环境变量驱动（见 [flow.md Step 4 preflight](references/flow.md#step-4)）。parent 编排开销与每个 child 的 fresh context 重读材料使总 token 显著上升，适合需要角色隔离/并行提速的场景。
+   - 形态判定：usage ledger `children_count=0` 且日志含「本会话无 subagent 派发工具」即单会话形态；`children_count>0` 即派发形态。两种形态的流程、验证与发布步骤完全一致。示例 agent 配置见 `examples/webhook/agents/pi.yaml`。
 
 ## 主流程总览
 
@@ -128,7 +126,7 @@ PJob 调度器（zima daemon 或 webhook-server）通过 grep `Status: <state>` 
 - Metadata 完全无法解析：**报错并停止**，不静默 fallback 到 Round-1（避免破坏调度器状态机）
 - 审查中途 PR 被关闭：Step 7 拦截，不发布评论
 - 所有 issues 都被 committer acknowledged：状态报告输出 `PASS`
-- 日志出现「本会话无 subagent 派发工具」/ ledger `children_count=0`：Agent 配置的 `tools` 白名单缺 `subagent`，见「前置要求」第 4 条；派发已静默降级为单会话顺序执行，模型分档未生效
+- 不确定当前跑的是哪种执行形态：看 usage ledger 的 `children_count`（0=单会话，>0=派发）与日志是否含「本会话无 subagent 派发工具」；两种形态的成本与取舍见「前置要求」第 4 条
 
 ## 常用 gh 命令
 

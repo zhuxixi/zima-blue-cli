@@ -1,27 +1,34 @@
 # Example pi agent for webhook-triggered code review.
 #
-# Key deployment prerequisite: the `tools` allowlist must include `subagent`
-# (the dispatch tool registered by the pi-subagents extension). pi's --tools
-# allowlist applies to built-in, extension, and custom tools alike — a name
-# not in the list is not loaded. Without it the CR skill silently falls back
-# to single-session sequential review: no parallel fanout, no model tiering,
-# and the usage ledger records children_count=0.
+# Execution modes are selected by the `tools` allowlist (pi's --tools applies
+# to built-in, extension, and custom tools alike):
 #
-# Verify after deployment with one real CR round: the job log should report
-# parallel dispatch (not "no subagent dispatch tool in this session") and the
-# usage ledger children_count should be > 0.
+# - Single-session mode (this file, recommended): no `subagent` in the list.
+#   Review roles run sequentially in one shared-context session. Measured on
+#   comparable small PRs this costs ~4.7x fewer tokens than dispatch mode
+#   (shared context + prompt-cache reuse vs. fresh context per child); the
+#   trade-off is weaker viewpoint isolation across roles.
+# - Dispatch mode (optional): add `subagent` (requires the pi-subagents
+#   extension, auto-discovered; `reviewer` is a builtin agent). Step 4/5/delta
+#   run parallel fanout with model tiering driven by PI_CR_FAST_MODEL /
+#   PI_CR_STRONG_MODEL. Parent orchestration + per-child fresh context raise
+#   total tokens significantly; choose it when role isolation or parallelism
+#   matters more than token spend.
+#
+# Identify the active mode from the usage ledger: children_count=0 (and a
+# "no subagent dispatch tool" log line) = single-session; children_count>0
+# = dispatch.
 apiVersion: zima.io/v1
 kind: Agent
 metadata:
   code: pi-cr
   name: Pi CR Agent
-  description: Pi code reviewer with subagent dispatch
+  description: Pi code reviewer (single-session mode)
 spec:
   type: pi
   parameters:
-    # Replace provider/model with your deployment values (parent session,
-    # i.e. the strong tier); model tiering for dispatched reviewers is driven
-    # by the PI_CR_FAST_MODEL / PI_CR_STRONG_MODEL env vars, not by this file.
+    # Replace provider/model with your deployment values (this is the
+    # reviewing model; single-session mode has no per-role tiering).
     provider: zai-coding-cn
     model: glm-5.3
     thinking: max
@@ -32,5 +39,5 @@ spec:
     - grep
     - find
     - ls
-    - subagent   # dispatch tool from pi-subagents — required for CR fanout
+    # - subagent   # uncomment to switch to dispatch mode (see header notes)
     addDirs: []
