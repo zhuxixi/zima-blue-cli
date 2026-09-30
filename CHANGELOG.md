@@ -25,6 +25,11 @@
 
 ## [Unreleased]
 
+### Features
+
+- **skill**: new `spec-cross-review` — step-4 design-doc cross-review (manual model switch, five
+  lenses, three-tier findings, convergence gate before user confirmation) (#250)
+
 ### Changed
 
 - **Behavior change (pi agents)**: pi runs no longer pass `--no-session`; the executor now passes
