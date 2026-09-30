@@ -198,13 +198,13 @@ class TestNoHardcodedModels:
         return docs
 
     @pytest.mark.parametrize("literal", BANNED_LITERALS)
-    def test_no_banned_literal(self, literal: str) -> None:
+    def test_no_hardcoded_banned_literal(self, literal: str) -> None:
         for name, text in self._docs():
             assert literal not in text, f"{literal!r} found in {name}"
 
-    def test_no_machine_private_config_reference(self) -> None:
+    def test_no_hardcoded_machine_private_config_reference(self) -> None:
         for name, text in self._docs():
-            assert "~/.pi/agent/settings.json" not in text, name
+            assert "~/.pi/" not in text, name
 
 
 class TestReadmeTable:
