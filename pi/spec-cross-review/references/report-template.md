@@ -44,7 +44,10 @@
 - 结论：<继续 / 收敛>
 - 下一轮目标：…
 
+继续 → 第一行；收敛 → 第二行：
+
 [spec-cross-review] 下一步：切到 <provider>/<model>，然后说 spec-cross-review（第 <k> 轮复核）。
+[spec-cross-review] 收敛：第 <k> 轮无真缺口。待用户确认设计后进入步 5（worktree）。
 
 ---
 

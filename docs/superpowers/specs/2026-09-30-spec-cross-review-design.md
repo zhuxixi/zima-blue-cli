@@ -152,7 +152,7 @@ issue 原文提案假设"复核 subagent + 独立模型变量 + preflight（格�
 
 ```
 ~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/
-├── spec.md                              # 头部：Drafted / Revised 行（模型 + 时间 + sha256）
+├── spec.md                              # 头部：Drafted / Revised 行（模型 + 时间）
 └── research/
     ├── spec-cross-review-state.md       # 一屏索引（模板见 references/report-template.md）
     ├── spec-review-round-1.md           # 复核报告 + 修订摘要（同一文件两段）
@@ -161,7 +161,7 @@ issue 原文提案假设"复核 subagent + 独立模型变量 + preflight（格�
 
 轮次报告固定五段：
 
-1. **头**：`Round k` / `Reviewer: <selected> (selected) / <physical> (physical)` / `Drafter: <provider>/<model>` / `Reviewed spec sha256: <hash>` / `Mode: cross-model | degraded (same-model)` / 时间戳。
+1. **头**：`Round k` / `Reviewer: <selected> (selected) / <physical> (physical)` / `Drafter: <provider>/<model>` / `Reviewed spec sha256: <hash>` / `Mode: cross-model | degraded (same-model) | cross-model (post-hoc same-physical)` / 时间戳。
 2. **五视角核对表**：每个视角的结论与发现编号。
 3. **发现表**：D8 定义的全部字段。
 4. **收敛判定**：真缺口数 / 细化数 / 本轮结论（继续 / 收敛）+ 下一轮目标。
@@ -244,7 +244,7 @@ description: |
 
 | ID | 功能点 | 验收方式 | 具体验证 | 通过标准 |
 |----|--------|----------|----------|----------|
-| A1 | 新 skill 文档结构与 frontmatter | 自动化（static/unit） | `uv run pytest tests/unit/test_spec_cross_review_contracts.py -k structure -v` | `pi/spec-cross-review/SKILL.md` 存在；frontmatter 含 `name: spec-cross-review` 与非空 description；D15 列出的必需章节（触发与前置 / 模型判定与分流 / 硬规则 / 分级 / 收敛 / 留痕 / 边界）全部命中；三个 references 文件存在；D4 的降级提示文案与 D12 的两行下一步文案原样命中（字面量断言） |
+| A1 | 新 skill 文档结构与 frontmatter | 自动化（static/unit） | `uv run pytest tests/unit/test_spec_cross_review_contracts.py -k "structure or pinned" -v` | `pi/spec-cross-review/SKILL.md` 存在；frontmatter 含 `name: spec-cross-review` 与非空 description；D15 列出的必需章节（触发与前置 / 模型判定与分流 / 硬规则 / 分级 / 收敛 / 留痕 / 边界）全部命中；三个 references 文件存在；D4 的降级提示文案与 D12 的两行下一步文案原样命中（字面量断言） |
 | A2 | 步 4 修订落位且顺序正确 | 自动化（static/unit） | 同上 `-k flow` | 标记串 `REQUIRED SUB-SKILL: Use spec-cross-review` 与 `收敛后才 ⏸ 暂停等待用户确认设计` 都存在，且前者 index 更小（`assert_order`）；含 `Drafted:` 记录要求 |
 | A3 | 禁止硬编码模型 | 自动化（static/unit） | 同上 `-k no_hardcoded` | 本次新增的全部 skill 文件（SKILL.md + references）与修订的 `pi/github-issue-driven/SKILL.md` 中不出现 banned 字面量（先例同款清单：`deepseek-v4`、`zai-coding-cn`；扩展方式只允许往清单加新的具体字面量）；**不使用形态正则**（路径中段伪阳性：`tests/unit/test_x.py` 会命中 `unit/test_x.py`）；**不得引用机器私有配置**（`~/.pi/...`）；模型来源指向 `PI_*` 与草稿头记录 |
 | A4 | 报告 / state 模板字段齐全 | 自动化（static/unit） | 同上 `-k template` | `references/report-template.md` 含 Round / Reviewer / Drafter / sha256 / Mode / 三档分级标签 / 修订摘要段 / state 字段 |
