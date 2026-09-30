@@ -17,7 +17,15 @@ description: Use when starting work on a GitHub issue — scanning or claiming a
 1. **扫 issue**：`gh issue list --repo <owner>/<repo> --state open --json number,title,labels,body`
 2. **认领**：`gh issue edit <N> --add-assignee @me`（评论说明开始处理）
 3. **纯调研** → **REQUIRED SUB-SKILL: Use issue-research**（JFox KB + git + 过往 issue/PR；多轮，每轮一主题，结论评论到 issue；调研文件放 `~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/research/`）
-4. **路由**：bug → `systematic-debugging`；新需求/功能 → `brainstorming`（均为 superpowers 包技能）。产 **spec / 根因报告**，draft 在 `~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/spec.md`（和 research 一样**不进 main**）。**⏸ spec 完成后暂停，等用户确认设计再继续。**
+4. **路由**：bug → `systematic-debugging`；新需求/功能 → `brainstorming`（均为 superpowers 包技能）。产 **spec / 根因报告**，draft 在 `~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/spec.md`（和 research 一样**不进 main**）。
+   **REQUIRED SUB-SKILL: Use spec-cross-review**——spec / 根因报告草稿完成后先执行交叉复核，
+   **收敛后才 ⏸ 暂停等待用户确认设计**。交接方式：
+   - 草稿头部必须写 `Drafted: <provider>/<model> (selected) · <provider>/<model> (physical) @ <ISO8601>`；
+     每次修订追加同格式的 `Revised:` 行。
+   - 草稿完成后输出交接指令（切到异构模型 + 触发 `spec-cross-review`），由用户手动切换模型后手动触发；
+     复核循环为「异模型复核 → 起草者修订 → 再审」，**收敛（无真缺口）或到达轮次上限（默认 4）**为止。
+   - 复核留痕在 `~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/research/`，
+     轮次结论评论回 issue；收敛后才进入本步的 ⏸。
    - **验收方式分层（必答）**：对本次改动的每个功能点建立验收矩阵，标记为 `自动化验证` 或 `用户实测`，并为每项分配稳定 ID（如 `A1`、`U1`）。自动化验证必须注明具体层级（`unit`、`integration`、`static`、`build`、`automated E2E` 等）、验证命令和通过标准；用户实测必须注明操作步骤、观察结果和通过标准。
    - **可测性拆分设计（必答，自动化验证类功能点）**：spec 对每个可自动化验证的功能点必须给出可测性拆分设计——拆成哪些独立的方法/函数（纯函数优先、副作用隔离）、每个怎么测，并写明由此形成的测试边界。这是设计约束，不是可选建议。
    - 自动化验证优先选择足以证明行为的最低成本层级：能用 `unit` 验证的不要升级为 `integration`；必须跨组件时使用 `integration`；类型、格式或依赖约束使用 `static`/`build`；能稳定脚本化的完整流程使用 `automated E2E`。`用户实测` 不是自动化验证暂时没写出来时的兜底分类。
@@ -60,3 +68,4 @@ description: Use when starting work on a GitHub issue — scanning or claiming a
 - `git add <file>` 按文件 stage，**别用 `git add -A`**（会把 untracked 临时文件 sweep 进 commit）。
 - 调研/spec draft **不进项目目录**（会污染 commit），放 `~/.claude/github-issue-driven/...`。
 - issue 的调研结论要评论回 issue 区（留轨迹）。
+- **spec 草稿的模型记录不得省略**（`Drafted:` / `Revised:` 行）：异模型判据依赖它，缺了只能按降级复核。
