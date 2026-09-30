@@ -9,6 +9,8 @@ zima-blue-cli 仓库的 pi 技能包：GitHub issue-driven 研发闭环（issue 
 | `github-issue-driven` | 10 步闭环主流程 | 全部 |
 | `issue-research` | 调研（JFox KB + git + 过往 issue/PR） | 步 3 |
 | `zima-pr-monitor` | PR 监听（单 bot 收敛判定，按 `cc-cr-meta` / `pi-cr-meta` 前缀区分 + 合并） | 步 8-9 |
+| `spec-cross-review` | 设计文档交叉复核（人工切模型多轮，收敛后才交用户确认） | 步 4 |
+| `github-code-review-batch` | 批量/调度式代码审查（CR 执行，多 Agent 并行 + issue 验证） | 步 8-9 |
 
 ## 安装
 

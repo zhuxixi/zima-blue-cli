@@ -205,3 +205,19 @@ class TestNoHardcodedModels:
     def test_no_machine_private_config_reference(self) -> None:
         for name, text in self._docs():
             assert "~/.pi/agent/settings.json" not in text, name
+
+
+class TestReadmeTable:
+    """A6: the pi package README registers both skills."""
+
+    @pytest.fixture(scope="class")
+    def readme(self) -> str:
+        return _read(README)
+
+    @pytest.mark.parametrize("skill", ("spec-cross-review", "github-code-review-batch"))
+    def test_skill_row_present(self, readme: str, skill: str) -> None:
+        rows = [line for line in readme.splitlines() if line.startswith("|") and skill in line]
+        assert rows, f"no table row for {skill}"
+        cells = [cell.strip() for cell in rows[0].strip("|").split("|")]
+        assert len(cells) >= 3
+        assert all(cells[1:3]), f"empty role/step cell for {skill}"
