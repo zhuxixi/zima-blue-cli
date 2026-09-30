@@ -127,3 +127,36 @@ class TestReportTemplate:
         assert "`cross-model`" in template
         assert "`degraded (same-model)`" in template
         assert "`cross-model (post-hoc same-physical)`" in template
+
+
+class TestEdgeCaseCoverage:
+    """Review Focus: every scenario the spec names must be documented.
+
+    These assertions prove the doc *mentions* the case; real behavior is
+    covered by the U1 pilot only.
+    """
+
+    def test_checklist_file_exists(self) -> None:
+        assert (SKILL_DIR / "references" / "checklist.md").is_file()
+
+    def test_edge_cases_file_exists(self) -> None:
+        assert (SKILL_DIR / "references" / "edge-cases.md").is_file()
+
+    @pytest.fixture(scope="class")
+    def edge(self) -> str:
+        return _read(SKILL_DIR / "references" / "edge-cases.md")
+
+    @pytest.mark.parametrize(
+        "marker",
+        (
+            "自然语言",
+            "重建",
+            "hash 不匹配",
+            "Drafted:",
+            "降级复核",
+            "轮次上限",
+            "复核零发现",
+        ),
+    )
+    def test_edge_case_documented(self, edge: str, marker: str) -> None:
+        assert marker in edge, marker
