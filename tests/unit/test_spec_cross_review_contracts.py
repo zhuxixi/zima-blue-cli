@@ -88,3 +88,42 @@ class TestPinnedLiterals:
 
     def test_convergence_cap_is_four(self, skill: str) -> None:
         assert "默认上限 4 轮" in skill
+
+
+class TestReportTemplate:
+    """A4: the round-report / state-index template carries every field."""
+
+    @pytest.fixture(scope="class")
+    def template(self) -> str:
+        return _read(SKILL_DIR / "references" / "report-template.md")
+
+    def test_template_file_exists(self) -> None:
+        assert (SKILL_DIR / "references" / "report-template.md").is_file()
+
+    @pytest.mark.parametrize(
+        "field",
+        (
+            "Round k",
+            "Reviewer:",
+            "Drafter:",
+            "Reviewed spec sha256:",
+            "Mode:",
+            "真缺口",
+            "细化",
+            "核对通过",
+            "## 修订摘要",
+            "当前状态",
+            "Open findings",
+        ),
+    )
+    def test_template_fields(self, template: str, field: str) -> None:
+        assert field in template, field
+
+    def test_template_pins_hash_command(self, template: str) -> None:
+        assert "sha256sum" in template
+        assert "不写回被计算的文件自身" in template
+
+    def test_template_pins_mode_enum(self, template: str) -> None:
+        assert "`cross-model`" in template
+        assert "`degraded (same-model)`" in template
+        assert "`cross-model (post-hoc same-physical)`" in template
