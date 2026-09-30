@@ -180,3 +180,28 @@ class TestFlowStep4:
     def test_drafted_header_requirement(self, flow: str) -> None:
         assert "Drafted:" in flow
         assert "Revised:" in flow
+
+
+class TestNoHardcodedModels:
+    """A3: skill docs must not name concrete models (deployment policy).
+
+    Portable by design: a literal blacklist (same style as
+    test_cr_batch_contracts.py::test_docs_no_hardcoded_deepseek_models),
+    no shape regex (paths like tests/unit/x.py would false-positive),
+    and no machine-private config (§250 R1-G3 / R2-D3).
+    """
+
+    def _docs(self) -> list[tuple[str, str]]:
+        docs: list[tuple[str, str]] = [("github-issue-driven/SKILL.md", _read(FLOW))]
+        for path in sorted(SKILL_DIR.rglob("*.md")):
+            docs.append((str(path.relative_to(_REPO_ROOT)), _read(path)))
+        return docs
+
+    @pytest.mark.parametrize("literal", BANNED_LITERALS)
+    def test_no_banned_literal(self, literal: str) -> None:
+        for name, text in self._docs():
+            assert literal not in text, f"{literal!r} found in {name}"
+
+    def test_no_machine_private_config_reference(self) -> None:
+        for name, text in self._docs():
+            assert "~/.pi/agent/settings.json" not in text, name
