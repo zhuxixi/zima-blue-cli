@@ -160,3 +160,23 @@ class TestEdgeCaseCoverage:
     )
     def test_edge_case_documented(self, edge: str, marker: str) -> None:
         assert marker in edge, marker
+
+
+class TestFlowStep4:
+    """A2: step 4 must gate on the cross-review before the ⏸ pause."""
+
+    @pytest.fixture(scope="class")
+    def flow(self) -> str:
+        return _read(FLOW)
+
+    def test_required_sub_skill_marker(self, flow: str) -> None:
+        assert "REQUIRED SUB-SKILL: Use spec-cross-review" in flow
+
+    def test_marker_precedes_pause_sentence(self, flow: str) -> None:
+        before = flow.index("REQUIRED SUB-SKILL: Use spec-cross-review")
+        after = flow.index("收敛后才 ⏸ 暂停等待用户确认设计")
+        assert before < after
+
+    def test_drafted_header_requirement(self, flow: str) -> None:
+        assert "Drafted:" in flow
+        assert "Revised:" in flow
