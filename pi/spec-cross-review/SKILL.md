@@ -151,6 +151,9 @@ description: |
    或被显式降级。
 3. 核实生效：再次 `subagent({action:"models", agent:"spec-reviewer"})`，确认 Effective
    model 与起草模型不同。
+4. 「未注册 / 无法解析」排查：profile 随包经 `package.json` 的 `pi.subagents.agents` 注册
+   （`./pi/agents`）。未注册通常是 pi-subagents 版本过旧（需 ≥0.76）或包安装过期——
+   重新安装 / 升级包后重试 `{action:"models"}`。
 
 ## 边界情况
 

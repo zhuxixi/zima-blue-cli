@@ -198,15 +198,15 @@ system prompt 内嵌**稳定契约**：只读（且 tools 不含 write/edit）�
 | ID | 功能点 | 验收方式 | 具体验证 | 通过标准 |
 |----|--------|----------|----------|----------|
 | S1 | 包级 agent 目录注册生效（待核实项） | spike（自动化查询） | 注册后 `subagent({action:"models", agent:"spec-reviewer"})` | 能解析到包内 profile 且返回 effective model；字段名不生效时换 `pi-subagents.agents` 备选形式并记录结论 |
-| A1 | spec-reviewer profile 结构契约 | 自动化（static/unit） | `uv run pytest tests/unit/test_spec_cross_review_contracts.py -k profile` | `pi/agents/spec-reviewer.md` 存在；frontmatter 含 D2 全部字段且值匹配；**无 `model` 字段**；tools 不含 `write`/`edit` |
-| A2 | 包注册字段 | 自动化（static/unit） | 同上 `-k package_json` | `package.json` 的 `pi.subagents.agents` 含 `./pi/agents` |
-| A3 | 禁硬编码模型 | 自动化（static/unit） | 同上 `-k no_hardcoded` | 新增 profile 与 `dispatch-contract.md` 及修订的 skill 文档不含 `BANNED_LITERALS`；不使用形态正则；不引用机器私有配置 |
-| A4 | 派发契约字段齐全 | 自动化（static/unit） | 同上 `-k dispatch_contract` | `references/dispatch-contract.md` 含 outputSchema 必需字段（`round`/`reviewedSha256`/`lenses`/`findings`/`counts`/`convergence`/`mode`；findings 的 `id`/`level`/`location`/`why`/`suggestion`/`costIfSkipped`）与任务模板的变量占位 |
-| A5 | SKILL.md 编排契约 | 自动化（static/unit） | 同上 `-k skill_contract` | 含 preflight 契约（models API + fail-closed）、每轮编排步骤、D9 两条进度行字面量（原样）、D10 降级提示字面量（沿用 #250 D4，原样）、收敛判据、部署前置指引 |
-| A6 | 报告模板字段 | 自动化（static/unit） | 同上 `-k template` | `report-template.md` 含 `Reviewer: spec-reviewer`、新 Mode 取值、`Reviewed spec sha256`、verbatim JSON 附段 |
-| A7 | 边界情况文档 | 自动化（static/unit） | 同上 `-k edge_cases` | `edge-cases.md` 含 D11 全部失败分支 |
-| A8 | github-issue-driven 步 4 同步 | 自动化（static/unit） | 同上 `-k flow` | 两个标记串保留且顺序正确（复核在 ⏸ 之前）；含「自动进入」描述与 `Drafted:` 强制记录 |
-| A9 | README 登记 | 自动化（static/unit） | 同上 `-k readme` | `pi/README.md` 技能表 `spec-cross-review` 行描述更新 + agent profile 说明 |
+| A1 | spec-reviewer profile 结构契约 | 自动化（static/unit） | `uv run pytest tests/unit/test_spec_cross_review_contracts.py -k "ProfileContract"` | `pi/agents/spec-reviewer.md` 存在；frontmatter 含 D2 全部字段且值匹配；**无 `model` 字段**；tools 不含 `write`/`edit` |
+| A2 | 包注册字段 | 自动化（static/unit） | 同上 `-k "PackageRegistration"` | `package.json` 的 `pi.subagents.agents` 含 `./pi/agents` |
+| A3 | 禁硬编码模型 | 自动化（static/unit） | 同上 `-k "Hardcoded"` | 新增 profile 与 `dispatch-contract.md` 及修订的 skill 文档不含 `BANNED_LITERALS`；不使用形态正则；不引用机器私有配置 |
+| A4 | 派发契约字段齐全 | 自动化（static/unit） | 同上 `-k "DispatchContract"` | `references/dispatch-contract.md` 含 outputSchema 必需字段（`round`/`reviewedSha256`/`lenses`/`findings`/`counts`/`convergence`/`mode`；findings 的 `id`/`level`/`location`/`why`/`suggestion`/`costIfSkipped`）与任务模板的变量占位 |
+| A5 | SKILL.md 编排契约 | 自动化（static/unit） | 同上 `-k "SkillStructure or PinnedLiterals"` | 含 preflight 契约（models API + fail-closed）、每轮编排步骤、D9 两条进度行字面量（原样）、D10 降级提示字面量（沿用 #250 D4，原样）、收敛判据、部署前置指引 |
+| A6 | 报告模板字段 | 自动化（static/unit） | 同上 `-k "ReportTemplate"` | `report-template.md` 含 `Reviewer: spec-reviewer`、新 Mode 取值、`Reviewed spec sha256`、verbatim JSON 附段 |
+| A7 | 边界情况文档 | 自动化（static/unit） | 同上 `-k "EdgeCase"` | `edge-cases.md` 含 D11 全部失败分支 |
+| A8 | github-issue-driven 步 4 同步 | 自动化（static/unit） | 同上 `-k "FlowStep4"` | 两个标记串保留且顺序正确（复核在 ⏸ 之前）；含「自动进入」描述与 `Drafted:` 强制记录 |
+| A9 | README 登记 | 自动化（static/unit） | 同上 `-k "ReadmeTable"` | `pi/README.md` 技能表 `spec-cross-review` 行描述更新 + agent profile 说明 |
 | A10 | 仓内既有测试不回归 | 自动化（build） | `uv run pytest tests/ -m "not slow" --cov=zima --cov-fail-under=60` | 全绿，覆盖率达标 |
 | U1 | 真实流程可用 | 用户实测 | 拿一个真实 issue 走完整步 4：起草 → 自动进入复核 → 全自动多轮 → 收敛 → ⏸ 用户确认。**可执行时机：PR 合并回 main 之后、从主 checkout 发起的会话中执行（worktree 内不执行）** | 轮次报告 / 修订摘要 / state / verbatim JSON / issue 评论齐全；报告头记录的评审模型确实 ≠ 起草模型；**至少拦下 1 个真缺口**；全程零手动切模型；回收每轮 token/时长数据写进 state |
 | U2 | 部署前置生效 | 用户实测 | 在未配置 `agentOverrides.spec-reviewer.model` 的环境触发步 4 | preflight fail-closed，输出的部署指引可直接照做（不静默降级、不进循环） |

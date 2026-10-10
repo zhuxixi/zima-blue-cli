@@ -83,7 +83,7 @@ class TestProfileContract:
         assert "inheritProjectContext: true" in head
         assert "inheritSkills: false" in head
         assert "systemPromptMode: replace" in head
-        assert "thinking:" in head
+        assert "thinking: high" in head
 
     def test_no_model_field(self, profile: str) -> None:
         head = profile.split("---", 2)[1]
@@ -163,6 +163,25 @@ class TestDispatchContract:
     def test_checklist_single_source(self, doc: str) -> None:
         # 五视角清单的单一定义源是 references/checklist.md，由父读盘后注入。
         assert "references/checklist.md" in doc
+
+    def test_lens_enum_matches_checklist_headings(self, doc: str) -> None:
+        checklist = _read(SKILL_DIR / "references" / "checklist.md")
+        checklist_headings = [line for line in checklist.splitlines() if line.startswith("## ")]
+        for lens in (
+            "验收矩阵完备性",
+            "可测性拆分可实现性 + 触发时序",
+            "部署/执行路径真实性",
+            "契约与边界",
+            "命令与命名可追溯",
+        ):
+            assert f'"{lens}"' in doc, lens
+            assert any(lens in heading for heading in checklist_headings), lens
+
+    def test_lens_item_fields_and_verdict_enum(self, doc: str) -> None:
+        for field in ("lens", "verdict", "findingIds", "converged", "summary"):
+            assert f'"{field}"' in doc, field
+        assert "核对通过" in doc
+        assert "有发现" in doc
 
 
 class TestSkillStructure:

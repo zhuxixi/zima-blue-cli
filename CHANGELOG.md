@@ -27,8 +27,9 @@
 
 ### Features
 
-- **skill**: new `spec-cross-review` — step-4 design-doc cross-review (manual model switch, five
-  lenses, three-tier findings, convergence gate before user confirmation) (#250)
+- **skill**: new `spec-cross-review` — step-4 design-doc cross-review (five lenses, three-tier
+  findings, convergence gate before user confirmation) (#250; manual model switch superseded
+  by #254 below)
 
 ### Changed
 
