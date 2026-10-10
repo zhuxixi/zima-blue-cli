@@ -5,6 +5,7 @@
   "description": "Zima Blue CLI — pi skills package: GitHub issue-driven dev loop (issue → research → design → implement → dual-bot CR → merge).",
   "keywords": ["pi-package", "skills", "github-issue", "code-review", "zima"],
   "pi": {
-    "skills": ["./pi"]
+    "skills": ["./pi"],
+    "subagents": { "agents": ["./pi/agents"] }
   }
 }
