@@ -11,6 +11,7 @@ child 结构化输出的 verbatim JSON。
 - Round k: <k>
 - Reviewer: spec-reviewer `<effective-model>` (selected) · `<run-model>` (physical from run artifact) (fresh context)
 - Drafter: `<provider>/<model>`
+- Parent physical: `<provider>/<model>`（来自 `PI_SESSION_FILE`；ephemeral session 记 `(unavailable, ephemeral session)`）
 - Reviewed spec sha256: `<sha256sum <spec 绝对路径> 的输出>`
 - Mode: `cross-model (preflight verified)` | `cross-model (post-hoc same-physical)` | `degraded (same-model, user-confirmed)`
 - 时间：<ISO8601>
@@ -87,6 +88,7 @@ child 结构化输出的 verbatim JSON。
 | 1 | spec-reviewer (<effective-model>) | cross-model (preflight verified) | 2 | 3 | 未收敛 → 起草者修订 |
 
 Open findings：<编号列表或"无">
+已拒绝裁定：<编号 + 一句话证据 + 轮次，逐条；或「无」>
 
 每轮成本：tokens <n> / 时长 <s>（U1 回收数据时填）
 ```

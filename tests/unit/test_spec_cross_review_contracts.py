@@ -255,6 +255,7 @@ class TestReportTemplate:
             "## 修订摘要",
             "当前状态",
             "Open findings",
+            "已拒绝裁定",
         ),
     )
     def test_template_fields(self, template: str, field: str) -> None:
