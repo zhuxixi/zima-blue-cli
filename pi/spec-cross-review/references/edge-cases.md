@@ -16,3 +16,6 @@
 | 用户显式要求同模型**降级复核** | 停在派发前，输出定稿降级提示；仅在明确回复「降级复核」后，同会话按降级轮执行并在报告头标注 |
 | 虚拟模型（`PI_MODEL` 是 router） | preflight 按 selected 保守比对；child run 的 model 与主会话 physical 事后记录；撞真身则 `Mode` 记 `cross-model (post-hoc same-physical)` 并按降级轮对待 |
 | 报告 / state / 评论写入失败 | 停循环、报错、不重派 |
+| 显式触发落在**已收敛** / 已批准状态 | 报告已收敛，进入 ⏸ 等用户确认设计，不重开轮次 |
+| `{action:"models"}` 返回 `(unresolved)` | 视同无法判定异构，preflight fail-closed |
+| `PI_SESSION_FILE` 未设置（ephemeral session） | 报告头 physical 记 `(unavailable, ephemeral session)`，本轮跳过撞真身判定 |

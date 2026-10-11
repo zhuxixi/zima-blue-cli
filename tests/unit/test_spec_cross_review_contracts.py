@@ -304,6 +304,8 @@ class TestEdgeCaseCoverage:
             "降级复核",
             "轮次上限",
             "复核零发现",
+            "已收敛",
+            "(unresolved)",
         ),
     )
     def test_edge_case_documented(self, edge: str, marker: str) -> None:

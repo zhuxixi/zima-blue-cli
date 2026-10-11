@@ -36,11 +36,15 @@ description: |
    override file / current session model。
 3. **fail-closed**：评审者 effective model 与起草记录的 selected / physical 任一相等 →
    不进循环，输出部署指引（见「部署前置」），等用户处理后重新触发。不自动降级。
+   评审者 effective model 为 `(unresolved)` / 空，或起草记录缺失 → 视同无法证明异构，
+   同样 fail-closed。
 4. 异构 → 输出一行 preflight 结论（起草模型 / 评审模型 / 异构确认 / 轮次上限 4 /
    每轮 1 个 fresh-context child），进入循环。
 5. 事后审计：每轮报告头记录 child run 的 `model`（来自 run 产物）与主会话该轮 physical
    （`PI_SESSION_FILE` JSONL 最后一条 assistant message 的 `model`）。撞真身则 `Mode` 记
-   `cross-model (post-hoc same-physical)`，该轮按降级轮对待。
+   `cross-model (post-hoc same-physical)`，该轮按降级轮对待。`PI_SESSION_FILE` 在 ephemeral
+   session 下可能未设置；读不到时报告头 physical 记 `(unavailable, ephemeral session)`，
+   本轮跳过撞真身判定并在报告头注明。
 
 ## 每轮编排（父逐轮，至收敛或上限）
 
@@ -85,6 +89,11 @@ description: |
   不允许自动继续或假装收敛。
 - 修订处置：父对每条发现三选一——接受并改 / 部分接受并说明边界 / 拒绝并给证据；
   全部写入当轮修订摘要。真缺口不得静默跳过；用户明确说跳过时记录「用户决定跳过」及理由。
+- **拒绝的生命周期**：被「拒绝并给证据」的发现不进 state 的 Open findings（已裁定闭环），
+  但每轮随 `<PREV_OPEN_FINDINGS>` 注入（编号 + 一句话证据 + 轮次）；child 只有在握有
+  拒绝证据未覆盖的新证据时才可重报，且重报必须写明新证据。
+- **防空转终止**：若本轮全部新真缺口都是对已裁定拒绝项的无新证据重报，停止循环并如实
+  交用户决定（这是起草者与复核者的真实分歧，循环无法收敛）——与到达上限同等处置。
 
 ## 降级（同模型）
 

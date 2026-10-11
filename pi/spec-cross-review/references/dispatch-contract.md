@@ -13,8 +13,10 @@
 派发方计算的 sha256：<EXPECTED_SHA256>——先用 `sha256sum <SPEC_ABS_PATH>` 核对，
 不一致则停止复核，只回报 hash 不一致。
 
-上一轮 open findings（本轮必须逐条核对是否已被修订）：<PREV_OPEN_FINDINGS>
-（第 1 轮为「无」）。
+上一轮待核对的发现与裁定（<PREV_OPEN_FINDINGS>，第 1 轮为「无」），分两类逐条核对：
+- 待复核修订效果：上轮「接受并改 / 部分接受」的发现——核对是否已修订到位。
+- 已拒绝裁定：起草者拒绝并给出证据的发现（编号 + 一句话证据 + 轮次）——你必须先衡量
+  该证据；只有握有该证据未覆盖的**新证据**时才可重报，且重报时必须写明新证据是什么。
 
 五视角清单（逐条核对，每条结论都要能指向被核对材料）：
 <CHECKLIST_CONTENT>
@@ -39,7 +41,7 @@
 | `<ISSUE_N>` | issue 编号 |
 | `<SPEC_ABS_PATH>` | `<issue 目录>/spec.md` 绝对路径 |
 | `<EXPECTED_SHA256>` | 父侧 `sha256sum <SPEC_ABS_PATH>` 的输出 |
-| `<PREV_OPEN_FINDINGS>` | state 的 Open findings（编号 + 一句话）；第 1 轮填「无」 |
+| `<PREV_OPEN_FINDINGS>` | state 的 Open findings（待复核修订效果）+ 已拒绝裁定清单（编号 + 一句话证据 + 轮次）；第 1 轮填「无」 |
 | `<CHECKLIST_CONTENT>` | `references/checklist.md` 全文（父读盘后原样注入） |
 
 ## outputSchema（父在派发时传入）
@@ -105,3 +107,4 @@ const outputSchema = {
 - `reviewedSha256` 必须与父派发时的 `EXPECTED_SHA256` 一致；不一致按 hash 不匹配处理。
 - 父据结构化输出写轮次报告第 1–4 段、末尾附 verbatim JSON、更新 state、发 issue 评论。
 - `Mode` 由父判定（preflight 结果 + 事后撞真身检查），不由 child 填。
+- 对已拒绝裁定的**无新证据重报**：父按原证据再拒绝；若本轮全部新真缺口均属此类，停止循环并交用户决定（见 SKILL.md 收敛与轮次上限的防空转终止）。
