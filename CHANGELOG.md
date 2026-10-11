@@ -27,11 +27,18 @@
 
 ### Features
 
-- **skill**: new `spec-cross-review` — step-4 design-doc cross-review (manual model switch, five
-  lenses, three-tier findings, convergence gate before user confirmation) (#250)
+- **skill**: new `spec-cross-review` — step-4 design-doc cross-review (five lenses, three-tier
+  findings, convergence gate before user confirmation) (#250; manual model switch superseded
+  by #254 below)
 
 ### Changed
 
+- **skill (spec-cross-review)**: manual model-switching replaced by a dispatched
+  `spec-reviewer` subagent — new `pi/agents/spec-reviewer.md` profile (fresh context,
+  no write/edit tools, no model field), `pi.subagents.agents` package registration,
+  one-shot preflight model gate (fail-closed), parent-orchestrated auto-converge loop,
+  parent as sole writer of all traces; handoff literal replaced by a per-round
+  progress line; contract tests rewritten (#254)
 - **Behavior change (pi agents)**: pi runs no longer pass `--no-session`; the executor now passes
   `--session-dir <execution temp dir>/pi-sessions`, so the session file is written inside the
   execution's own temporary directory and deleted with it. The global pi session store
