@@ -273,7 +273,9 @@ def assert_merge_scoped_to_auto_tiers(flow: str, monitor: str) -> None:
     """The merge pause is scoped to auto tiers; stepwise keeps today's behaviour."""
     assert "`auto` / `design-only`" in monitor, "merge pause is not tier-scoped"
     assert "gh pr merge" in monitor, "merge command documentation missing"
-    assert "`stepwise`" in monitor, "stepwise carve-out missing from monitor skill"
+    assert (
+        "`stepwise` 档行为不变——收敛 + CI 全绿即合并" in monitor
+    ), "stepwise carve-out wording missing from monitor skill"
     assert "Merge: requires-explicit-user-approval" in flow
 
 
@@ -296,3 +298,24 @@ class TestMergeGate:
         monitor = texts["zima-pr-monitor/SKILL.md"].replace("`auto` / `design-only`", "`stepwise`")
         with pytest.raises(AssertionError):
             assert_merge_scoped_to_auto_tiers(flow, monitor)
+
+
+class TestPortability:
+    """No banned model literal may be hardcoded in any contract document."""
+
+    @pytest.fixture(scope="class")
+    def texts(self) -> dict[str, str]:
+        return load_skill_texts()
+
+    @pytest.mark.parametrize("literal", BANNED_LITERALS)
+    def test_no_hardcoded_banned_literal(self, texts: dict[str, str], literal: str) -> None:
+        for name, text in texts.items():
+            assert literal not in text, f"{literal!r} found in {name}"
+
+    def test_mutation_injecting_banned_literal_breaks_assertion(
+        self, texts: dict[str, str]
+    ) -> None:
+        mutated = texts["github-issue-driven/SKILL.md"] + "\nmodel: zai-coding-cn/glm-5.3\n"
+        with pytest.raises(AssertionError):
+            for literal in BANNED_LITERALS:
+                assert literal not in mutated, f"{literal!r} found in mutated text"
