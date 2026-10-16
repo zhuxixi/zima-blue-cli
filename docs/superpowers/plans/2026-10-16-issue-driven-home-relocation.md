@@ -386,3 +386,21 @@ readlink ~/.claude/github-issue-driven                              # 预期指�
 | U2 | 本机存量迁移集合对账 | Task 6 Step 1 |
 
 无「没有验收归属的实现 task」，也无「无 plan 落点的验收项」。
+
+---
+
+## 验收对账（Task 5 实跑记录，2026-10-16）
+
+| ID | 命令 | 实际结果 | 结论 |
+|----|------|----------|------|
+| A1 | `uv run pytest tests/unit/test_issue_driven_home_contracts.py` | 5 passed in 0.02s | ✅ |
+| A1 | `rg -n --glob '*.md' "~/\.claude" pi/` | 0 行 | ✅ |
+| A2 | `uv run pytest tests/unit/test_migrate_issue_driven_home.py` | 25 passed in 0.03s | ✅ |
+| A3 | `uv run pytest tests/integration/test_migrate_issue_driven_home.py` | 15 passed in 0.05s | ✅ |
+| A4 | `rg -n --glob '*.md' "claude/github-issue-driven" pi/ README.md CLAUDE.md` | 0 行 | ✅ |
+| A5 | 全量套件（`-m "not slow"` + `--cov-fail-under=60`） | 1817 passed, 1 skipped；coverage 75.68%（门槛 60%） | ✅ |
+| A5 | `uv run pytest tests/unit/test_spec_cross_review_contracts.py` | 92 passed（#254 契约不变仍过） | ✅ |
+
+- 分支：`issue-259-issue-driven-home-relocation`；spec 首 commit `14c9380`，plan `15aaf31`。
+- 未执行、留待人工验收（Task 6）：U1（真实会话 + CC 侧兼容，须 PR 合并后从主 checkout 执行）、U2（本机存量迁移，执行前需用户确认）。
+- 复核留痕：`~/.claude/github-issue-driven/zhuxixi/zima-blue-cli/issue-259/research/spec-review-round-{1,2,3}.md` 与 `spec-cross-review-state.md`（三轮交叉复核，收敛轮 0 真缺口）。
