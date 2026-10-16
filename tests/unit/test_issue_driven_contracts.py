@@ -199,3 +199,71 @@ class TestGateRules:
         mutated = flow.replace("口头授权不落盘等于没有授权", "授权可以口头说说")
         with pytest.raises(AssertionError):
             assert_authorization_discipline(mutated)
+
+
+def assert_step4_pause_substring_preserved(text: str) -> None:
+    """The pinned step-4 pause sentence survives, still after the cross-review marker."""
+    marker = "REQUIRED SUB-SKILL: Use spec-cross-review"
+    pinned = "收敛后才 ⏸ 暂停等待用户确认设计"
+    if marker not in text or pinned not in text:
+        raise AssertionError("pinned step-4 strings missing")
+    if text.index(marker) > text.index(pinned):
+        raise AssertionError("cross-review marker no longer precedes the pause sentence")
+
+
+def assert_step9_gate_tier_qualified(text: str) -> None:
+    """Step 9 keeps both the pause fallback and the tier-qualified phrasing."""
+    for fragment in ("按授权档位判定", "未授权 = 暂停等许可", "zima:needs-review", "前台阻塞等待"):
+        if fragment not in text:
+            raise AssertionError(f"step-9 fragment missing: {fragment}")
+
+
+class TestStepWiring:
+    @pytest.fixture(scope="class")
+    def texts(self) -> dict[str, str]:
+        return load_skill_texts()
+
+    def test_step4_pinned_substring_preserved(self, texts: dict[str, str]) -> None:
+        assert_step4_pause_substring_preserved(texts["github-issue-driven/SKILL.md"])
+
+    def test_step9_gate_tier_qualified(self, texts: dict[str, str]) -> None:
+        assert_step9_gate_tier_qualified(texts["github-issue-driven/SKILL.md"])
+
+    def test_step4_no_unconditional_pause_left(self, texts: dict[str, str]) -> None:
+        flow = texts["github-issue-driven/SKILL.md"]
+        assert "收敛后才进入本步的 ⏸。" not in flow
+
+    def test_cross_review_pause_lines_are_tier_qualified(self, texts: dict[str, str]) -> None:
+        cross = texts["spec-cross-review/SKILL.md"]
+        assert "收敛后输出并进入 ⏸（`auto` 档不停" in cross
+        assert "细化项改完即进 ⏸（`auto` 档不停" in cross
+
+    def test_cross_review_pinned_lines_untouched(self, texts: dict[str, str]) -> None:
+        cross = texts["spec-cross-review/SKILL.md"]
+        assert (
+            "[spec-cross-review] 收敛：第 <k> 轮无真缺口。待用户确认设计后进入步 5（worktree）。"
+            in cross
+        )
+
+    def test_mutation_stripping_step9_pause_breaks_assertion(self, texts: dict[str, str]) -> None:
+        mutated = texts["github-issue-driven/SKILL.md"].replace(
+            "未授权 = 暂停等许可", "未授权 = 继续"
+        )
+        with pytest.raises(AssertionError):
+            assert_step9_gate_tier_qualified(mutated)
+
+    def test_mutation_reordering_pinned_strings_breaks_assertion(
+        self, texts: dict[str, str]
+    ) -> None:
+        flow = texts["github-issue-driven/SKILL.md"]
+        marker = "REQUIRED SUB-SKILL: Use spec-cross-review"
+        pinned = "收敛后才 ⏸ 暂停等待用户确认设计"
+        mstart = flow.index(marker)
+        mend = mstart + len(marker)
+        pstart = flow.index(pinned)
+        pend = pstart + len(pinned)
+        reordered = (
+            flow[:mstart] + flow[pstart:pend] + flow[mend:pstart] + flow[mstart:mend] + flow[pend:]
+        )
+        with pytest.raises(AssertionError):
+            assert_step4_pause_substring_preserved(reordered)
