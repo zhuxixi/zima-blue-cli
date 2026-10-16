@@ -172,6 +172,9 @@ class TestGateRules:
     def test_precedence_clause_documented(self, flow: str) -> None:
         assert_precedence_clause(flow)
 
+    def test_authorization_discipline_documented(self, flow: str) -> None:
+        assert_authorization_discipline(flow)
+
     def test_mutation_dropping_schema_key_breaks_assertion(self, flow: str) -> None:
         mutated = flow.replace("Merge: requires-explicit-user-approval", "Merge: auto")
         with pytest.raises(AssertionError):
@@ -191,3 +194,8 @@ class TestGateRules:
         mutated = flow.replace("edge-cases.md:19", "")
         with pytest.raises(AssertionError):
             assert_precedence_clause(mutated)
+
+    def test_mutation_dropping_discipline_breaks_assertion(self, flow: str) -> None:
+        mutated = flow.replace("口头授权不落盘等于没有授权", "授权可以口头说说")
+        with pytest.raises(AssertionError):
+            assert_authorization_discipline(mutated)
