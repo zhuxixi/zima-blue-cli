@@ -267,3 +267,32 @@ class TestStepWiring:
         )
         with pytest.raises(AssertionError):
             assert_step4_pause_substring_preserved(reordered)
+
+
+def assert_merge_scoped_to_auto_tiers(flow: str, monitor: str) -> None:
+    """The merge pause is scoped to auto tiers; stepwise keeps today's behaviour."""
+    assert "`auto` / `design-only`" in monitor, "merge pause is not tier-scoped"
+    assert "gh pr merge" in monitor, "merge command documentation missing"
+    assert "`stepwise`" in monitor, "stepwise carve-out missing from monitor skill"
+    assert "Merge: requires-explicit-user-approval" in flow
+
+
+class TestMergeGate:
+    @pytest.fixture(scope="class")
+    def texts(self) -> dict[str, str]:
+        return load_skill_texts()
+
+    def test_merge_pause_scoped_to_auto_tiers(self, texts: dict[str, str]) -> None:
+        assert_merge_scoped_to_auto_tiers(
+            texts["github-issue-driven/SKILL.md"], texts["zima-pr-monitor/SKILL.md"]
+        )
+
+    def test_monitor_keeps_existing_merge_semantics(self, texts: dict[str, str]) -> None:
+        monitor = texts["zima-pr-monitor/SKILL.md"]
+        assert "`gh pr merge <N> --squash --delete-branch`" in monitor
+
+    def test_mutation_inverting_scope_breaks_assertion(self, texts: dict[str, str]) -> None:
+        flow = texts["github-issue-driven/SKILL.md"]
+        monitor = texts["zima-pr-monitor/SKILL.md"].replace("`auto` / `design-only`", "`stepwise`")
+        with pytest.raises(AssertionError):
+            assert_merge_scoped_to_auto_tiers(flow, monitor)
