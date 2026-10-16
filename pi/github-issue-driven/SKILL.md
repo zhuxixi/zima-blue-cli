@@ -62,6 +62,19 @@ description: Use when starting work on a GitHub issue — scanning or claiming a
 ## 为什么高度可自动化
 调研（步 3）做细 + JFox KB permanent 笔记够厚 → 步 4 brainstorming/system-debugging 基本已有答案（少澄清）→ 步 6-10 近乎自动。**瓶颈是调研质量 + KB 厚度，不是流程本身**——平时往 JFox 沉淀 permanent note = 给未来自动化攒燃料。
 
+## 授权与档位（步 4 / 步 9 的许可闸门）
+
+用户在会话里给出**一次**明确授权，流程就按档位放行；授权落盘后可跨 session / 跨 harness 查证。
+
+| 档位 | 标识 | step 4 设计 gate | step 9 push/开 PR gate | 覆盖动作 | 上限 |
+|---|---|---|---|---|---|
+| 逐步确认（默认） | `stepwise` | ⏸ 停 | 🚪 停 | 无（每次都要许可） | 与现状一致（含合并步骤不变） |
+| 设计后停一次 | `design-only` | ⏸ 停 | 自动 | push、开 PR、打 `zima:needs-review`、修复重推 | 到「可合并判定」（合并前停） |
+| 全自动 | `auto` | 不停 | 自动 | 同上 | 到「可合并判定」（合并前停） |
+
+- `stepwise` 是默认值，也是**任何异常情况的兜底值**：授权文件缺失、档位值非法、文件不可读 → 一律按 `stepwise`（fail-closed）。
+- 两档自动档的差别只在步 4 是否暂停；步 9 之后的行为完全一致。
+
 ## 关键纪律
 - **main 永远干净**：所有仓库产物（spec/plan/code）**从 Step 5 起在 worktree 内产生并提交**。Step 4 的 spec draft 在 `~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/`（同 research 纪律），不落 main。该目录是全局约定目录，pi 与 Claude Code 会话共用同一份调研（跨 harness 可复用）。
 - **spec ≠ plan（不可混淆）**：spec = 设计（决策表/数据流/组件契约/降级/非目标）；plan = 任务拆解（有序 task、文件级改动、每步验证）。**spec 再详也不算 plan，Step 6 不可跳。**
