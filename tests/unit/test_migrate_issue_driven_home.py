@@ -28,6 +28,15 @@ class TestResolveHome:
     def test_three_states(self, env, expected):
         assert resolve_home(env, HOME) == expected
 
+    @pytest.mark.parametrize("env", ["custom", "./x", "../x", "a/b"])
+    def test_relative_env_raises_value_error(self, env):
+        # 相对路径会把数据搬到 cwd 且生成坏链接 → 纯函数层直接拒绝
+        with pytest.raises(ValueError, match="must be an absolute path"):
+            resolve_home(env, HOME)
+
+    def test_absolute_env_still_returned_verbatim(self):
+        assert resolve_home("/opt/data", HOME) == Path("/opt/data")
+
 
 EXPECTED = {
     ("absent", "absent"): "noop_fresh",
@@ -62,7 +71,7 @@ class TestDescribeAction:
     @pytest.mark.parametrize("action", ["migrate", "noop_migrated", "noop_fresh", "conflict"])
     def test_first_line_contract(self, action: Action):
         line = describe_action(action, Path("/old"), Path("/new")).splitlines()[0]
-        assert line.startswith(f"{action}:")
+        assert line == f"{action}: {Path('/old')} -> {Path('/new')}"
 
     def test_migrate_warns_about_unlink(self):
         out = describe_action("migrate", Path("/old"), Path("/new"))

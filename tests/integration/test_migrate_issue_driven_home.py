@@ -216,6 +216,26 @@ class TestMainEnvOverride:
         assert first_line.startswith("migrate: ")
 
 
+class TestMainRelativeEnvRejected:
+    """review fix：env 覆盖为相对路径必须拒绝（rc=2、stderr 提示、零写操作）。"""
+
+    def test_relative_env_exit_2_without_writes(self, tmp_home, monkeypatch, capsys):
+        make_legacy()
+        run_cwd = tmp_home / "run-cwd"
+        run_cwd.mkdir()
+        monkeypatch.chdir(run_cwd)  # 圈定相对路径的潜在落点，防止误写真实 cwd
+        monkeypatch.setenv(ENV_VAR, "custom")
+        home_before = tree_snapshot(tmp_home)
+
+        assert main([]) == 2
+
+        err = capsys.readouterr().err
+        assert "must be an absolute path" in err
+        assert "GITHUB_ISSUE_DRIVEN_HOME" in err
+        assert tree_snapshot(tmp_home) == home_before  # tmp HOME 零新增目录/符号链接
+        assert list(run_cwd.iterdir()) == []  # cwd 下也无 custom/ 目录
+
+
 class TestHelpSubprocess:
     """用例 7：--help 子进程（真实脚本进程，--help 不做任何 IO）。"""
 

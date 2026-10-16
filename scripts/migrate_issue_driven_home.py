@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import sys
 from pathlib import Path
 from typing import Literal
 
@@ -42,9 +43,12 @@ _TABLE: dict[tuple[str, str], Action] = {
 
 
 def resolve_home(env_value: str | None, home: Path) -> Path:
-    """env 非空 → 该路径；否则 home/DEFAULT_DIRNAME（纯函数）。"""
+    """env 非空 → 该绝对路径（相对值抛 ValueError）；否则 home/DEFAULT_DIRNAME（纯函数）。"""
     if env_value:
-        return Path(env_value).expanduser()
+        resolved = Path(env_value).expanduser()
+        if not resolved.is_absolute():
+            raise ValueError(f"{ENV_VAR} must be an absolute path: {env_value!r}")
+        return resolved
     return home / DEFAULT_DIRNAME
 
 
@@ -146,7 +150,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true", help="只打印决策，不做任何写操作")
     args = parser.parse_args(argv)
 
-    new = resolve_home(os.environ.get(ENV_VAR), Path.home())
+    try:
+        new = resolve_home(os.environ.get(ENV_VAR), Path.home())
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2  # 与 conflict 同级的非零语义；未做任何写操作
     legacy = LEGACY_HOME
     legacy_state, new_state = inspect_paths(legacy, new)
     action = resolve_action(legacy_state, new_state)
