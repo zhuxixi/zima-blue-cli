@@ -30,6 +30,9 @@ def load_skill_texts(repo_root: Path = _REPO_ROOT) -> dict[str, str]:
         "github-issue-driven/SKILL.md": repo_root / "pi" / "github-issue-driven" / "SKILL.md",
         "zima-pr-monitor/SKILL.md": repo_root / "pi" / "zima-pr-monitor" / "SKILL.md",
         "spec-cross-review/SKILL.md": repo_root / "pi" / "spec-cross-review" / "SKILL.md",
+        "spec-cross-review/references/edge-cases.md": (
+            repo_root / "pi" / "spec-cross-review" / "references" / "edge-cases.md"
+        ),
     }
     texts: dict[str, str] = {}
     for name, path in paths.items():
@@ -54,6 +57,14 @@ def assert_three_tiers(text: str) -> None:
         rows = [line for line in text.splitlines() if line.startswith("|") and token in line]
         if not rows:
             raise AssertionError(f"tier token {token} is not in a table row")
+    row_prefixes = (
+        "| 逐步确认（默认） | `stepwise` | ⏸ 停 | 🚪 停 |",
+        "| 设计后停一次 | `design-only` | ⏸ 停 | 自动 |",
+        "| 全自动 | `auto` | 不停 | 自动 |",
+    )
+    for prefix in row_prefixes:
+        if prefix not in text:
+            raise AssertionError(f"tier table row drifted: {prefix}")
     default_row = [line for line in text.splitlines() if "`stepwise`" in line]
     assert default_row, "`stepwise` tier row missing"
 
@@ -154,6 +165,16 @@ class TestThreeTiers:
         with pytest.raises(AssertionError):
             assert_three_tiers(mutated)
 
+    def test_mutation_flipping_design_only_step4_cell_breaks_assertion(self) -> None:
+        flow = load_skill_texts()["github-issue-driven/SKILL.md"]
+        mutated = flow.replace(
+            "| 设计后停一次 | `design-only` | ⏸ 停 | 自动 |",
+            "| 设计后停一次 | `design-only` | 不停 | 自动 |",
+        )
+        assert mutated != flow, "mutation must actually change the document"
+        with pytest.raises(AssertionError):
+            assert_three_tiers(mutated)
+
 
 class TestGateRules:
     @pytest.fixture(scope="class")
@@ -244,6 +265,10 @@ class TestStepWiring:
             "[spec-cross-review] 收敛：第 <k> 轮无真缺口。待用户确认设计后进入步 5（worktree）。"
             in cross
         )
+
+    def test_precedence_citations_are_anchored_by_content(self, texts: dict[str, str]) -> None:
+        assert "人只在收敛后的 ⏸ 出现" in texts["spec-cross-review/SKILL.md"]
+        assert "进入 ⏸ 等用户" in texts["spec-cross-review/references/edge-cases.md"]
 
     def test_mutation_stripping_step9_pause_breaks_assertion(self, texts: dict[str, str]) -> None:
         mutated = texts["github-issue-driven/SKILL.md"].replace(
