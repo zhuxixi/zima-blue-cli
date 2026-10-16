@@ -84,7 +84,7 @@ Effective blocking fallback 必须统一：finding 的 `blocking` 是 JSON boole
 
 ## 合并
 
-CR bot 0 actionable open blocking findings + `blocking_new_count == 0` + CI 全绿 + **多流收敛确认与 in-flight 检查通过**（见上节）→ `gh pr merge <N> --squash --delete-branch`。Advisory / non-blocking findings 可保持 `status: open`，不影响该判定。
+CR bot 0 actionable open blocking findings + `blocking_new_count == 0` + CI 全绿 + **多流收敛确认与 in-flight 检查通过**（见上节）→ `gh pr merge <N> --squash --delete-branch`。**档位限定**：授权档位为 `auto` / `design-only` 时，合并前需用户明确许可（两档授权的上限是「可合并判定」）；`stepwise` 档行为不变——收敛 + CI 全绿即合并。Advisory / non-blocking findings 可保持 `status: open`，不影响该判定。
 
 ## CR 验证纪律
 
