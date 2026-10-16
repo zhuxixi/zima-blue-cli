@@ -58,6 +58,71 @@ def assert_three_tiers(text: str) -> None:
     assert default_row, "`stepwise` tier row missing"
 
 
+def assert_gate_branching(text: str) -> None:
+    """Gate decision rules + the audit marker + prose (non-question) confirmation."""
+    assert "[auth] gate=" in text, "audit marker missing"
+    for fragment in ("读本 issue 的 `authorization.md`", "**不停**", "暂停等许可", "落盘"):
+        if fragment not in text:
+            raise AssertionError(f"gate branching fragment missing: {fragment}")
+    for fragment in ("散文", "不默认弹结构化 `question`"):
+        if fragment not in text:
+            raise AssertionError(f"confirmation-style fragment missing: {fragment}")
+
+
+def assert_authorization_schema(text: str) -> None:
+    """Record path template, schema keys, and the lifecycle rules."""
+    assert (
+        "~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/authorization.md" in text
+    ), "authorization record path missing"
+    for key in (
+        "Gate:",
+        "Granted-by-user-quote:",
+        "Granted-at:",
+        "Session:",
+        "Scope:",
+        "Merge: requires-explicit-user-approval",
+    ):
+        if key not in text:
+            raise AssertionError(f"authorization schema key missing: {key}")
+    for fragment in ("文件不存在 = 未授权", "Amended-at:", "视为 `stepwise`"):
+        if fragment not in text:
+            raise AssertionError(f"lifecycle rule missing: {fragment}")
+
+
+def assert_failure_branches(text: str) -> None:
+    """The three failure branches that guard against silent authorization."""
+    for fragment in (
+        "issue 号与当前 issue 不一致",
+        "停下报告",
+        "非交互宿主",
+    ):
+        if fragment not in text:
+            raise AssertionError(f"failure branch missing: {fragment}")
+
+
+def assert_precedence_clause(text: str) -> None:
+    """Tier rules outrank every ⏸ statement inside spec-cross-review."""
+    for fragment in (
+        "唯一权威",
+        "`pi/spec-cross-review/SKILL.md`",
+        ":16",
+        ":62",
+        ":64",
+        ":86",
+        "edge-cases.md:19",
+        "进度提示",
+    ):
+        if fragment not in text:
+            raise AssertionError(f"precedence clause fragment missing: {fragment}")
+
+
+def assert_authorization_discipline(text: str) -> None:
+    """The 关键纪律 entry: authorization must be written down to count."""
+    for fragment in ("授权落盘", "口头授权不落盘等于没有授权"):
+        if fragment not in text:
+            raise AssertionError(f"discipline entry missing: {fragment}")
+
+
 class TestThreeTiers:
     @pytest.fixture(scope="class")
     def flow(self) -> str:
@@ -88,3 +153,41 @@ class TestThreeTiers:
         mutated = flow.replace("`stepwise`", "stepwise")
         with pytest.raises(AssertionError):
             assert_three_tiers(mutated)
+
+
+class TestGateRules:
+    @pytest.fixture(scope="class")
+    def flow(self) -> str:
+        return load_skill_texts()["github-issue-driven/SKILL.md"]
+
+    def test_gate_branching_documented(self, flow: str) -> None:
+        assert_gate_branching(flow)
+
+    def test_authorization_schema_documented(self, flow: str) -> None:
+        assert_authorization_schema(flow)
+
+    def test_failure_branches_documented(self, flow: str) -> None:
+        assert_failure_branches(flow)
+
+    def test_precedence_clause_documented(self, flow: str) -> None:
+        assert_precedence_clause(flow)
+
+    def test_mutation_dropping_schema_key_breaks_assertion(self, flow: str) -> None:
+        mutated = flow.replace("Merge: requires-explicit-user-approval", "Merge: auto")
+        with pytest.raises(AssertionError):
+            assert_authorization_schema(mutated)
+
+    def test_mutation_dropping_audit_marker_breaks_assertion(self, flow: str) -> None:
+        mutated = flow.replace("[auth] gate=", "")
+        with pytest.raises(AssertionError):
+            assert_gate_branching(mutated)
+
+    def test_mutation_dropping_failure_branch_breaks_assertion(self, flow: str) -> None:
+        mutated = flow.replace("停下报告", "继续")
+        with pytest.raises(AssertionError):
+            assert_failure_branches(mutated)
+
+    def test_mutation_dropping_precedence_scope_breaks_assertion(self, flow: str) -> None:
+        mutated = flow.replace("edge-cases.md:19", "")
+        with pytest.raises(AssertionError):
+            assert_precedence_clause(mutated)

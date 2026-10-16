@@ -75,6 +75,59 @@ description: Use when starting work on a GitHub issue — scanning or claiming a
 - `stepwise` 是默认值，也是**任何异常情况的兜底值**：授权文件缺失、档位值非法、文件不可读 → 一律按 `stepwise`（fail-closed）。
 - 两档自动档的差别只在步 4 是否暂停；步 9 之后的行为完全一致。
 
+### 授权记录
+
+路径（与 research/spec 同目录纪律，跨 harness 共读，不清理）：
+
+```
+~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/authorization.md
+```
+
+字段（固定键名，便于 grep 与契约测试）：
+
+```
+# Authorization — issue <N>
+Gate: auto
+Granted-by-user-quote: "全自动跑完，不用问我"
+Granted-at: 2026-10-16T08:40:00+08:00
+Session: pi/<session-id>
+Scope: spec-gate, push, pr-create, label-trigger, fix-loop-push
+Merge: requires-explicit-user-approval
+```
+
+生命周期规则：
+
+1. **文件不存在 = 未授权** = `stepwise`。
+2. 用户中途改口径（例：「停下等我」）→ 覆写 `Gate:` 行并追加 `Amended-at:` + 原话，不删除文件。
+3. 档位值不在 `{stepwise, design-only, auto}` 内 → 视为 `stepwise`，并在报告中提示档位非法。
+4. 读取时校验路径中的 `<owner>/<repo>/issue-<N>`；**issue 号与当前 issue 不一致**时视为未授权（不跨 issue 复用）。
+5. 该文件随 issue 目录留档，流程结束后不清理。
+
+### gate 判定（步 4 / 步 9 共用）
+
+1. 读本 issue 的 `authorization.md`（按上节规则 1/3/4 归一化档位）。
+2. 本步骤被该档位覆盖 → **不停**，直接执行；报告（含每条 issue 评论）首行标注依据：`[auth] gate=<档位> · 依据 <授权文件绝对路径>`。
+3. 未被覆盖 → 按现行方式**暂停等许可**。
+4. 用户给出的任何许可都要**落盘**（新建或更新 `authorization.md`）：让「每次都要问」收敛为「只问一次」；口头许可不落盘 = 下次仍会问。
+
+### 授权从哪来
+
+- 起手已说明（如「全自动跑完 #N」）→ 直接落盘对应档位，不再发问。
+- 否则在第一次 gate 触发时按**散文**风格问一次：「本次流程的授权档位？逐步确认（默认）/ 设计后停一次 / 全自动（合并前仍停）」。
+- **不默认弹结构化 `question`** 工具（项目确认风格为散文；非交互 session 下 `question` 返回 error）。
+
+### 失败处理
+
+| 情形 | 行为 |
+|---|---|
+| 授权目录不存在 / 不可写 | 尝试 `mkdir -p`；仍失败则**停下报告**，不得以「我记得被授权了」继续 |
+| 档位值非法 / 文件不可读 | 视为 `stepwise`（fail-closed） |
+| **非交互宿主**（PJob 等） | 无用户在场时必须预先落盘授权文件，否则按 `stepwise` 暂停——非交互下不做隐式授权 |
+
+### 与 spec-cross-review 收敛提示的关系（判定优先级）
+
+**档位判定以本节为唯一权威**；`pi/spec-cross-review/SKILL.md` 内的 ⏸ / 「待用户确认设计」表述一律视为**进度提示**，不构成独立暂停指令。覆盖范围：`:16`、`:62`、`:64`（pinned 收敛行，不改写）、`:86`，外加 `references/edge-cases.md:19`；其中 `:62` / `:86` 已按档位限定改写。`auto` 档照常输出收敛行，随后不停顿、直接进入步 5，并输出 `[auth] gate=auto · 依据 <路径>`。
+
 ## 关键纪律
 - **main 永远干净**：所有仓库产物（spec/plan/code）**从 Step 5 起在 worktree 内产生并提交**。Step 4 的 spec draft 在 `~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/`（同 research 纪律），不落 main。该目录是全局约定目录，pi 与 Claude Code 会话共用同一份调研（跨 harness 可复用）。
 - **spec ≠ plan（不可混淆）**：spec = 设计（决策表/数据流/组件契约/降级/非目标）；plan = 任务拆解（有序 task、文件级改动、每步验证）。**spec 再详也不算 plan，Step 6 不可跳。**
@@ -83,3 +136,4 @@ description: Use when starting work on a GitHub issue — scanning or claiming a
 - 调研/spec draft **不进项目目录**（会污染 commit），放 `~/.claude/github-issue-driven/...`。
 - issue 的调研结论要评论回 issue 区（留轨迹）。
 - **spec 草稿的模型记录不得省略**（`Drafted:` / `Revised:` 行）：异模型判据依赖它，缺了只能按降级复核。
+- **授权落盘**：任何许可（起手授权或临时许可）都要写进 `authorization.md`，执行时在报告首行注明依据路径；**口头授权不落盘等于没有授权**。
