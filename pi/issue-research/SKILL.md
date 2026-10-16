@@ -22,7 +22,7 @@ gh issue comment <N> --body "## 调研：<主题>
 ## 调研文件布局（不进项目目录！）
 临时调研产物（摘录、对比表、草稿）放全局约定目录，**绝不放项目目录**（会被误 commit 污染）：
 ```
-~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/research/<主题>.md
+~/.github-issue-driven/<owner>/<repo>/issue-<N>/research/<主题>.md
 ```
 全局集中、跨 session/项目可复用。该目录 pi 与 Claude Code 会话共用（跨 harness 可互读调研结论）。
 
@@ -30,6 +30,6 @@ gh issue comment <N> --body "## 调研：<主题>
 信息够回答"这 issue 要怎么处理"→ 进路由（详见 github-issue-driven 步 4）：bug → `systematic-debugging`；新需求 → `brainstorming`（均为 superpowers 包技能）。
 
 ## 常见坑
-- 调研文件放项目目录 → 被 `git add -A` 误 commit。**一定放 `~/.claude/...`**。
+- 调研文件放项目目录 → 被 `git add -A` 误 commit。**一定放留档目录**（解析规则见 github-issue-driven 步 3）。
 - 只读 issue 正文 → 漏掉过往 issue/PR 里的上下文。三个源都扫。
 - 调研不留痕 → 下次/别人重踩。结论评论回 issue。

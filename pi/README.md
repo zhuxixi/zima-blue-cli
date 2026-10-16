@@ -37,3 +37,4 @@ zima-blue-cli 仓库的 pi 技能包：GitHub issue-driven 研发闭环（issue 
 
 - 若全局 `~/.agents/skills/`（或 `~/.pi/agent/skills/`）下还有同名旧技能，pi 会优先加载全局版、本包版本被遮蔽——迁移完成后应移除旧版，让本包成为唯一来源。
 - worktree 路径约定为 `<repo>/.pi/worktrees/`（已加入本仓库 .gitignore；其他仓库需自行 ignore）。
+- 留档目录默认 `~/.github-issue-driven/`（可用 `GITHUB_ISSUE_DRIVEN_HOME` 覆盖；迁移用 `scripts/migrate_issue_driven_home.py`）。

@@ -26,7 +26,7 @@ description: |
   `Drafted: <provider>/<model> (selected) · <provider>/<model> (physical) @ <ISO8601>`；
   每次修订追加同格式的 `Revised:` 行。缺该行：询问用户起草模型；答「未知」则停在
   preflight 前，不得自动降级。
-- 留痕目录：`~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/`；轮次文件与 state 放其
+- 留痕目录：`~/.github-issue-driven/<owner>/<repo>/issue-<N>/`；轮次文件与 state 放其
   `research/` 下。
 
 ## Preflight 门禁（循环开始前，一次）
@@ -120,7 +120,7 @@ description: |
 ## 留痕纪律
 
 ```
-~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/
+~/.github-issue-driven/<owner>/<repo>/issue-<N>/
 ├── spec.md
 └── research/
     ├── spec-cross-review-state.md
