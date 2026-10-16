@@ -78,6 +78,11 @@ def assert_gate_branching(text: str) -> None:
     for fragment in ("散文", "不默认弹结构化 `question`"):
         if fragment not in text:
             raise AssertionError(f"confirmation-style fragment missing: {fragment}")
+    # CR round 1 (blocking): a one-off permission must never be widened into a
+    # standing tier, and Scope: must stay audit-only.
+    for fragment in ("单点许可不升档", "整档授权才写档位", "判定逻辑不消费"):
+        if fragment not in text:
+            raise AssertionError(f"permission-scope rule missing: {fragment}")
 
 
 def assert_authorization_schema(text: str) -> None:
@@ -215,6 +220,12 @@ class TestGateRules:
         mutated = flow.replace("edge-cases.md:19", "")
         with pytest.raises(AssertionError):
             assert_precedence_clause(mutated)
+
+    def test_mutation_dropping_single_action_rule_breaks_assertion(self, flow: str) -> None:
+        mutated = flow.replace("单点许可不升档", "单点许可可升档")
+        assert mutated != flow, "mutation must actually change the document"
+        with pytest.raises(AssertionError):
+            assert_gate_branching(mutated)
 
     def test_mutation_dropping_discipline_breaks_assertion(self, flow: str) -> None:
         mutated = flow.replace("口头授权不落盘等于没有授权", "授权可以口头说说")

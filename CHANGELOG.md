@@ -29,7 +29,7 @@
 
 - **skill**: `github-issue-driven` 支持启动时一次性授权（`stepwise` / `design-only` /
   `auto` 三档）——授权落盘 `authorization.md`，step 4 设计 gate 与 step 9 push/开 PR
-  gate 按档位放行；`auto` 两档合并前仍停一次（issue #258）
+  gate 按档位放行；两档自动档（`auto` / `design-only`）合并前仍停一次（issue #258）
 - **skill**: new `spec-cross-review` — step-4 design-doc cross-review (five lenses, three-tier
   findings, convergence gate before user confirmation) (#250; manual model switch superseded
   by #254 below)
