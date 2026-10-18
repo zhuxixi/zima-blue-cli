@@ -17,25 +17,21 @@ HOME = Path("/home/tester")
 
 
 class TestResolveHome:
-    @pytest.mark.parametrize(
-        "env,expected",
-        [
-            ("/tmp/custom", Path("/tmp/custom")),  # env 有值 → 用它
-            ("", HOME / DEFAULT_DIRNAME),  # 空串 → 默认
-            (None, HOME / DEFAULT_DIRNAME),  # None → 默认
-        ],
-    )
-    def test_three_states(self, env, expected):
-        assert resolve_home(env, HOME) == expected
+    @pytest.mark.parametrize("env", ["", None])
+    def test_empty_or_none_returns_default(self, env):
+        assert resolve_home(env, HOME) == HOME / DEFAULT_DIRNAME
+
+    # 绝对路径必须用当前平台的 tmp_path 构造：字面量 `/tmp/custom` 在 Windows 上
+    # （ntpath.isabs → False）不是绝对路径，会被新校验拒绕。
+    def test_absolute_env_returned_verbatim(self, tmp_path):
+        target = tmp_path / "custom"
+        assert resolve_home(str(target), HOME) == target
 
     @pytest.mark.parametrize("env", ["custom", "./x", "../x", "a/b"])
     def test_relative_env_raises_value_error(self, env):
         # 相对路径会把数据搬到 cwd 且生成坏链接 → 纯函数层直接拒绝
         with pytest.raises(ValueError, match="must be an absolute path"):
             resolve_home(env, HOME)
-
-    def test_absolute_env_still_returned_verbatim(self):
-        assert resolve_home("/opt/data", HOME) == Path("/opt/data")
 
 
 EXPECTED = {
