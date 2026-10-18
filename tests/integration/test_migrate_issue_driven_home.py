@@ -24,8 +24,14 @@ DEFAULT_NEW_NAME = ".github-issue-driven"
 
 @pytest.fixture
 def tmp_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """隔离 HOME：$HOME 环境变量 + 模块常量 LEGACY_HOME（import 时已固化）。"""
+    """隔离 HOME：posix 的 $HOME + Windows 的 USERPROFILE/HOMEDRIVE/HOMEPATH
+    （`Path.home()` 在 ntpath 下只认后三者，从不读 $HOME）+ 模块常量 LEGACY_HOME
+    （import 时已固化）。不隔离 Windows 变量会让测试逃逸沙箱，把 tmp 里的旧目录
+    搬进真实用户主目录（CR #261 issue-1）。"""
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.delenv("HOMEDRIVE", raising=False)
+    monkeypatch.delenv("HOMEPATH", raising=False)
     monkeypatch.delenv(ENV_VAR, raising=False)
     monkeypatch.setattr(mig, "LEGACY_HOME", tmp_path / ".claude" / "github-issue-driven")
     return tmp_path
@@ -249,3 +255,36 @@ class TestHelpSubprocess:
         assert proc.returncode == 0
         assert "unlink" in proc.stdout
         assert "rm -rf" in proc.stdout
+
+
+class TestTmpHomeIsolation:
+    """CR #261 issue-1：Windows 上 `Path.home()`（ntpath.expanduser）只认
+    USERPROFILE / HOMEDRIVE+HOMEPATH，从不读 $HOME——不隔离就会逃逸沙箱。"""
+
+    def test_home_env_vars_are_isolated(self, tmp_home):
+        assert os.environ["HOME"] == str(tmp_home)
+        assert os.environ["USERPROFILE"] == str(tmp_home)
+        assert "HOMEDRIVE" not in os.environ
+        assert "HOMEPATH" not in os.environ
+
+
+class TestSymlinkFailure:
+    """CR #261 issue-2：rename 成功但 os.symlink 失败（如 Windows 未开开发者模式的 EPERM）
+    → 非 0 退出 + 补救指引，数据已在新位置，不静默假成功。"""
+
+    def test_symlink_failure_returns_nonzero_with_guidance(self, tmp_home, monkeypatch, capsys):
+        legacy = make_legacy()
+
+        def boom(*args, **kwargs):
+            raise OSError(1, "operation not permitted")
+
+        monkeypatch.setattr(mig.os, "symlink", boom)
+        rc = mig.main([])
+
+        assert rc != 0
+        err = capsys.readouterr().err
+        assert "could not be created" in err
+        assert "create it manually" in err
+        new = tmp_home / DEFAULT_NEW_NAME
+        assert (new / "issue-1.md").read_text(encoding="utf-8") == "data"  # 数据已迁到位
+        assert not legacy.exists() and not legacy.is_symlink()  # 但链接未建成

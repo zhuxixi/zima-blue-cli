@@ -118,7 +118,16 @@ def apply_action(action: Action, legacy: Path, new: Path) -> int:
             legacy.rename(new)
         except OSError:
             shutil.move(str(legacy), str(new))
-        os.symlink(new, legacy)
+        try:
+            os.symlink(new, legacy)
+        except OSError as exc:
+            print(
+                f"error: data moved to {new}, but the compatibility symlink at {legacy} "
+                f"could not be created ({exc}). Re-running is a no-op; create it manually "
+                f"(e.g. `ln -s {new} {legacy}`, or enable Developer Mode on Windows).",
+                file=sys.stderr,
+            )
+            return 2
         return 0
     if action == "conflict":
         legacy_state, new_state = inspect_paths(legacy, new)
