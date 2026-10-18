@@ -19,14 +19,14 @@ description: Use when starting work on a GitHub issue — scanning or claiming a
 3. **纯调研** → **REQUIRED SUB-SKILL: Use issue-research**（JFox KB + git + 过往 issue/PR；多轮，每轮一主题，结论评论到 issue；调研文件放 `~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/research/`）
 4. **路由**：bug → `systematic-debugging`；新需求/功能 → `brainstorming`（均为 superpowers 包技能）。产 **spec / 根因报告**，draft 在 `~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/spec.md`（和 research 一样**不进 main**）。
    **REQUIRED SUB-SKILL: Use spec-cross-review**——spec / 根因报告草稿完成后先执行交叉复核，
-   **收敛后才 ⏸ 暂停等待用户确认设计**。交接方式：
+   **收敛后按授权档位决定是否 ⏸——未授权时与现行一致：收敛后才 ⏸ 暂停等待用户确认设计；已授权 `auto` 则直接进入步 5（见「授权与档位」节，含优先级条款）。** 交接方式：
    - 草稿头部必须写 `Drafted: <provider>/<model> (selected) · <provider>/<model> (physical) @ <ISO8601>`；
      每次修订追加同格式的 `Revised:` 行。
    - 草稿落盘后**自动进入**交叉复核循环：preflight 校验复核者模型与起草者异构（fail-closed），
      然后派发 fresh-context 的 spec-reviewer subagent 逐轮复核，起草者（主 session）逐条修订，
      **收敛（无真缺口）或到达轮次上限（默认 4）**为止；全程无需手动切换模型、无需手动触发。
    - 复核留痕在 `~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/research/`（父统一写入），
-     轮次结论评论回 issue；收敛后才进入本步的 ⏸。
+     轮次结论评论回 issue；收敛后按档位进入本步的 ⏸（`auto` 档直接进入步 5）。
    - **验收方式分层（必答）**：对本次改动的每个功能点建立验收矩阵，标记为 `自动化验证` 或 `用户实测`，并为每项分配稳定 ID（如 `A1`、`U1`）。自动化验证必须注明具体层级（`unit`、`integration`、`static`、`build`、`automated E2E` 等）、验证命令和通过标准；用户实测必须注明操作步骤、观察结果和通过标准。
    - **可测性拆分设计（必答，自动化验证类功能点）**：spec 对每个可自动化验证的功能点必须给出可测性拆分设计——拆成哪些独立的方法/函数（纯函数优先、副作用隔离）、每个怎么测，并写明由此形成的测试边界。这是设计约束，不是可选建议。
    - 自动化验证优先选择足以证明行为的最低成本层级：能用 `unit` 验证的不要升级为 `integration`；必须跨组件时使用 `integration`；类型、格式或依赖约束使用 `static`/`build`；能稳定脚本化的完整流程使用 `automated E2E`。`用户实测` 不是自动化验证暂时没写出来时的兜底分类。
@@ -53,7 +53,7 @@ description: Use when starting work on a GitHub issue — scanning or claiming a
 7. **实现** → **REQUIRED SUB-SKILL: Use subagent-driven-development**（worktree 内，**禁碰 main**）。**🚪 Gate：Step 6 的 plan 文档必须存在才能开始实现——spec 不算 plan。** 派 implementer/reviewer 时**显式传 `cwd: <worktree 绝对路径>`**（subagent 工具原生参数，机制强制），并在 task 里保留 `Work from: <worktree 绝对路径>` 作双保险——别让 subagent 回主仓库作业。
    - **硬约束**：spec 里定义的可测性拆分设计（独立方法/函数、纯函数优先、副作用隔离、测试边界）是实现阶段的硬约束；plan 的每个 task 必须保留这些测试边界，实现不得把已拆分的纯函数/副作用隔离逻辑重新耦合回去。
 8. **本地快速 CR** → `requesting-code-review`（superpowers）或 pi 原生 `workflow` 工具的 `code-review` 模式（agent 按问题复杂度自选深度；**必做**，深度自定）
-9. **PR + Zima 单 Bot CR + 前台阻塞等待** → **REQUIRED SUB-SKILL: Use zima-pr-monitor**（**🚪 push/开 PR 前暂停，等用户明确许可**——用户 AGENTS.md 硬规则"不自动 commit/push 除非明确许可"；开 PR、打 `zima:needs-review`、**同 turn 立即前台阻塞等待 CR job 完成（禁止结束 turn，helper 见 zima-pr-monitor）**、解析 review meta（`cc-cr-meta` / `pi-cr-meta` 前缀区分；`kimi-cr-meta` 忽略）、worktree 修、重打标签、收敛判定、合并）。**zima 缺席降级**：个人 fork / 无 bot 仓库（无 zima CR 环境）时，降级为人工 CR 或 pi 原生 `workflow` 工具 `code-review` 模式，并在 issue 评论说明降级原因。
+9. **PR + Zima 单 Bot CR + 前台阻塞等待** → **REQUIRED SUB-SKILL: Use zima-pr-monitor**（**🚪 push/开 PR 前按授权档位判定（见「授权与档位」节；未授权 = 暂停等许可，用户 AGENTS.md 硬规则不变）**；开 PR、打 `zima:needs-review`、**同 turn 立即前台阻塞等待 CR job 完成（禁止结束 turn，helper 见 zima-pr-monitor）**、解析 review meta（`cc-cr-meta` / `pi-cr-meta` 前缀区分；`kimi-cr-meta` 忽略）、worktree 修、重打标签、收敛判定、合并）。**zima 缺席降级**：个人 fork / 无 bot 仓库（无 zima CR 环境）时，降级为人工 CR 或 pi 原生 `workflow` 工具 `code-review` 模式，并在 issue 评论说明降级原因。
 
    **验收逐项对账**：本地 CR 和合并前检查必须按 spec 验收矩阵逐项核对。自动化项记录实际执行的命令及结果；用户实测项按清单实际执行并记录观察结果。单测或其他自动化命令通过，不能替代尚未执行的用户实测；用户实测暂时无法执行时标记为 `pending`，不能宣称全部验收完成。自动化验证失败必须修复或明确记录阻塞原因，用户实测失败或 `pending` 状态必须在最终报告中如实呈现。
 
@@ -61,6 +61,74 @@ description: Use when starting work on a GitHub issue — scanning or claiming a
 
 ## 为什么高度可自动化
 调研（步 3）做细 + JFox KB permanent 笔记够厚 → 步 4 brainstorming/system-debugging 基本已有答案（少澄清）→ 步 6-10 近乎自动。**瓶颈是调研质量 + KB 厚度，不是流程本身**——平时往 JFox 沉淀 permanent note = 给未来自动化攒燃料。
+
+## 授权与档位（步 4 / 步 9 的许可闸门）
+
+用户在会话里给出**一次**明确授权，流程就按档位放行；授权落盘后可跨 session / 跨 harness 查证。
+
+| 档位 | 标识 | step 4 设计 gate | step 9 push/开 PR gate | 覆盖动作 | 上限 |
+|---|---|---|---|---|---|
+| 逐步确认（默认） | `stepwise` | ⏸ 停 | 🚪 停 | 无（每次都要许可） | 与现状一致（含合并步骤不变） |
+| 设计后停一次 | `design-only` | ⏸ 停 | 自动 | push、开 PR、打 `zima:needs-review`、修复重推 | 到「可合并判定」（合并前停） |
+| 全自动 | `auto` | 不停 | 自动 | 同上 | 到「可合并判定」（合并前停） |
+
+- `stepwise` 是默认值，也是**任何异常情况的兜底值**：授权文件缺失、档位值非法、文件不可读 → 一律按 `stepwise`（fail-closed）。
+- 两档自动档的差别只在步 4 是否暂停；步 9 之后的行为完全一致。
+
+### 授权记录
+
+路径（与 research/spec 同目录纪律，跨 harness 共读，不清理）：
+
+```
+~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/authorization.md
+```
+
+字段（固定键名，便于 grep 与契约测试）：
+
+```
+# Authorization — issue <N>
+Gate: auto
+Granted-by-user-quote: "全自动跑完，不用问我"
+Granted-at: 2026-10-16T08:40:00+08:00
+Session: pi/<session-id>
+Scope: spec-gate, push, pr-create, label-trigger, fix-loop-push
+Merge: requires-explicit-user-approval
+```
+
+生命周期规则：
+
+1. **文件不存在 = 未授权** = `stepwise`。
+2. 用户中途改口径（例：「停下等我」）→ 覆写 `Gate:` 行并追加 `Amended-at:` + 原话，不删除文件。
+3. 档位值不在 `{stepwise, design-only, auto}` 内 → 视为 `stepwise`，并在报告中提示档位非法。
+4. 读取时校验路径中的 `<owner>/<repo>/issue-<N>`；**issue 号与当前 issue 不一致**时视为未授权（不跨 issue 复用）。
+5. `Scope:` 是**审计字段**：只记录已发生的动作，**判定逻辑不消费它**——放行与否只看 `Gate:`。
+6. 该文件随 issue 目录留档，流程结束后不清理。
+
+### gate 判定（步 4 / 步 9 共用）
+
+1. 读本 issue 的 `authorization.md`（按上节规则 1/3/4 归一化档位）。
+2. 本步骤被该档位覆盖 → **不停**，直接执行；报告（含每条 issue 评论）首行标注依据：`[auth] gate=<档位> · 依据 <授权文件绝对路径>`。
+3. 未被覆盖 → 按现行方式**暂停等许可**。
+4. **单点许可不升档**：用户对**单次动作**的许可（如步 4 的「设计可以，继续」）只在当次 turn 生效——**不写、不改 `Gate:` 档位**（文件不存在时可创建，但 `Gate:` 只写 `stepwise`），需要留痕时只追加一行 `Scope: <动作> @ <ISO8601>`，且**判定逻辑不消费该行**：下一个 gate 照常发问。禁止把单点许可记成更宽的档位（那会把用户从未许可的动作变成常设授权）。
+5. **整档授权才写档位**：只有用户明确选定档位（如「全自动跑完 #N」「设计后停一次」）时才新建或覆写 `Gate:`；此后各 gate 按该档自动放行，不再逐次发问。
+
+### 授权从哪来
+
+- 起手已说明（如「全自动跑完 #N」）→ 直接落盘对应档位，不再发问。
+- 否则在第一次 gate 触发时按**散文**风格问一次：「本次流程的授权档位？逐步确认（默认）/ 设计后停一次 / 全自动（合并前仍停）」。用户选定后落盘对应档位（含 `stepwise` 这一档），后续不再问。
+- **不默认弹结构化 `question`** 工具（项目确认风格为散文；非交互 session 下 `question` 返回 error）。
+
+### 失败处理
+
+| 情形 | 行为 |
+|---|---|
+| 授权目录不存在 / 不可写 | 尝试 `mkdir -p`；仍失败则**停下报告**，不得以「我记得被授权了」继续 |
+| 档位值非法 / 文件不可读 | 视为 `stepwise`（fail-closed） |
+| **非交互宿主**（PJob 等） | 无用户在场时必须预先落盘授权文件，否则按 `stepwise` 暂停——非交互下不做隐式授权 |
+
+### 与 spec-cross-review 收敛提示的关系（判定优先级）
+
+**档位判定以本节为唯一权威**；`pi/spec-cross-review/SKILL.md` 内的 ⏸ / 「待用户确认设计」表述一律视为**进度提示**，不构成独立暂停指令。覆盖范围：`:16`、`:62`、`:64`（pinned 收敛行，不改写）、`:86`，外加 `references/edge-cases.md:19`；其中 `:62` / `:86` 已按档位限定改写。`auto` 档照常输出收敛行，随后不停顿、直接进入步 5，并输出 `[auth] gate=auto · 依据 <路径>`。
 
 ## 关键纪律
 - **main 永远干净**：所有仓库产物（spec/plan/code）**从 Step 5 起在 worktree 内产生并提交**。Step 4 的 spec draft 在 `~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/`（同 research 纪律），不落 main。该目录是全局约定目录，pi 与 Claude Code 会话共用同一份调研（跨 harness 可复用）。
@@ -70,3 +138,4 @@ description: Use when starting work on a GitHub issue — scanning or claiming a
 - 调研/spec draft **不进项目目录**（会污染 commit），放 `~/.claude/github-issue-driven/...`。
 - issue 的调研结论要评论回 issue 区（留轨迹）。
 - **spec 草稿的模型记录不得省略**（`Drafted:` / `Revised:` 行）：异模型判据依赖它，缺了只能按降级复核。
+- **授权落盘**：任何许可（起手授权或临时许可）都要写进 `authorization.md`，执行时在报告首行注明依据路径；**口头授权不落盘等于没有授权**。
