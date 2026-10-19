@@ -88,7 +88,7 @@ def assert_gate_branching(text: str) -> None:
 def assert_authorization_schema(text: str) -> None:
     """Record path template, schema keys, and the lifecycle rules."""
     assert (
-        "~/.claude/github-issue-driven/<owner>/<repo>/issue-<N>/authorization.md" in text
+        "~/.github-issue-driven/<owner>/<repo>/issue-<N>/authorization.md" in text
     ), "authorization record path missing"
     for key in (
         "Gate:",
