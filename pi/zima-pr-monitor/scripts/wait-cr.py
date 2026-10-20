@@ -90,7 +90,7 @@ def parse_pr_ref(text: str) -> tuple[str, str, int]:
     raw = (text or "").strip()
     slug, sep, number = raw.rpartition("#")
     owner, slash, repo = slug.partition("/")
-    if not sep or not owner or not slash or not repo or "/" in repo:
+    if not sep or not owner or not slash or not repo or "/" in repo or "#" in owner or "#" in repo:
         raise ValueError(f"expected owner/repo#number, got {text!r}")
     if not number.isdigit() or int(number) <= 0:
         raise ValueError(f"expected a positive PR number, got {number!r}")
@@ -125,9 +125,7 @@ def parse_meta_json(body: str) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-def select_meta_review(
-    reviews: list[dict], head_sha: str, not_before: datetime
-) -> dict | None:
+def select_meta_review(reviews: list[dict], head_sha: str, not_before: datetime) -> dict | None:
     """Newest metadata review written against ``head_sha`` after ``not_before``.
 
     ``not_before`` is what keeps a review from an earlier round on the same
@@ -200,6 +198,8 @@ def _gh_runner(argv: list[str]) -> str:
             ["gh", *argv],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=GH_TIMEOUT,
         )
     except (OSError, subprocess.SubprocessError) as exc:
@@ -293,8 +293,7 @@ def run_pr_loop(
             state = str(snapshot.get("state") or "OPEN").upper()
             if state != "OPEN":
                 print(
-                    f"wait-cr: PR {owner}/{repo}#{number} is {state}; "
-                    "nothing left to wait for",
+                    f"wait-cr: PR {owner}/{repo}#{number} is {state}; " "nothing left to wait for",
                     file=sys.stderr,
                 )
                 return 5
@@ -306,9 +305,7 @@ def run_pr_loop(
                     file=sys.stderr,
                 )
                 return 4
-            review = select_meta_review(
-                snapshot.get("reviews") or [], head_sha, not_before
-            )
+            review = select_meta_review(snapshot.get("reviews") or [], head_sha, not_before)
             if review is not None:
                 print(format_review_summary(review), file=out)
                 return 0

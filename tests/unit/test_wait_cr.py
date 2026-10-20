@@ -341,7 +341,7 @@ class TestParsePrRef:
 
     @pytest.mark.parametrize(
         "bad",
-        ["a/b", "a#1", "/b#1", "a/#1", "a/b/c#1", "a/b#x", "a/b#0", ""],
+        ["a/b", "a#1", "/b#1", "a/#1", "a/b/c#1", "a/b#x", "a/b#0", "a/b#1#2", ""],
     )
     def test_rejects_malformed(self, bad):
         with pytest.raises(ValueError):
@@ -556,12 +556,15 @@ class TestRunPrLoop:
         assert "MERGED" in capsys.readouterr().err
 
     def test_head_change_wins_over_matching_review(self, capsys):
-        stale = meta_review(self.HEAD, 1)
+        stale = meta_review(self.HEAD, 1, now=datetime.now(timezone.utc))
         rc = self.drive([self.snap(), self.snap([stale], head="b" * 40)])
         assert rc == 4
 
     def test_startup_gh_failure_is_six(self, capsys):
+        attempts = {"n": 0}
+
         def fetch():
+            attempts["n"] += 1
             raise wait_cr.GhQueryError("boom")
 
         rc = wait_cr.run_pr_loop(
@@ -573,6 +576,7 @@ class TestRunPrLoop:
             monotonic=lambda: 1000.0,
         )
         assert rc == 6
+        assert attempts["n"] == wait_cr.GH_START_ATTEMPTS
         assert "gh query failed" in capsys.readouterr().err
 
     def test_loop_gh_failure_recovers(self, capsys):

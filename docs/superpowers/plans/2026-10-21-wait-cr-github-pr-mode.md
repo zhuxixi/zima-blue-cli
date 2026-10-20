@@ -1,5 +1,7 @@
 # wait-cr GitHub-native wait mode Implementation Plan
 
+> **Status:** 已执行（2026-10-21）。Task 2 与 Task 3 合并为一个 commit（`982110f`），Task 4 文档在 `6c333c8`；spec 在 `8eaff99`。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 给 `pi/zima-pr-monitor/scripts/wait-cr.py` 增加 `--pr owner/repo#N` 远程等待模式，并让本地模式在无 zima 运行态时立即以 exit 3 说明原因。
@@ -46,7 +48,7 @@
   - `format_review_summary(review: dict) -> str`
   - 常量 `META_MARKERS`, `META_JSON_RE`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 在 `tests/unit/test_wait_cr.py` 末尾追加：
 
@@ -174,12 +176,12 @@ class TestFormatReviewSummary:
         )
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `uv run pytest tests/unit/test_wait_cr.py -q -k "ParsePrRef or MetaMarker or ParseMetaJson or SelectMetaReview or FormatReviewSummary"`
 Expected: FAIL（`AttributeError: module 'wait_cr' has no attribute 'parse_pr_ref'`）
 
-- [ ] **Step 3: 写实现**
+- [x] **Step 3: 写实现**
 
 在 `wait-cr.py` 的 import 区加 `import re`、`import subprocess`，在常量区加：
 
@@ -298,12 +300,12 @@ def format_review_summary(review: dict) -> str:
     return "wait-cr: converged: " + " ".join(parts)
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `uv run pytest tests/unit/test_wait_cr.py -q -k "ParsePrRef or MetaMarker or ParseMetaJson or SelectMetaReview or FormatReviewSummary"`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add pi/zima-pr-monitor/scripts/wait-cr.py tests/unit/test_wait_cr.py
@@ -326,7 +328,7 @@ git commit -m "feat(skill): pure helpers for wait-cr PR mode (#264)"
   - `fetch_pr_state(owner, repo, number, runner=_gh_runner) -> dict`
   - `run_pr_loop(pr, *, timeout=DEFAULT_TIMEOUT, poll=DEFAULT_POLL, since_minutes=DEFAULT_SINCE_MINUTES, fetch=None, sleep=time.sleep, monotonic=time.monotonic, out=None) -> int`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 class TestHasLocalRuntime:
@@ -479,12 +481,12 @@ class TestRunPrLoop:
         assert "retrying" in err
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `uv run pytest tests/unit/test_wait_cr.py -q -k "HasLocalRuntime or FetchPrState or RunPrLoop"`
 Expected: FAIL（`AttributeError: ... has_local_runtime`）
 
-- [ ] **Step 3: 写实现**
+- [x] **Step 3: 写实现**
 
 在 `format_review_summary` 之后加：
 
@@ -643,12 +645,12 @@ def run_pr_loop(
 
 同时把常量区补上 `REVIEW_JSON_FIELDS = "reviews,headRefOid,state"`。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `uv run pytest tests/unit/test_wait_cr.py -q -k "HasLocalRuntime or FetchPrState or RunPrLoop"`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add pi/zima-pr-monitor/scripts/wait-cr.py tests/unit/test_wait_cr.py
@@ -667,7 +669,7 @@ git commit -m "feat(skill): remote wait loop for wait-cr --pr (#264)"
 - Consumes: Task 1/2 的全部函数与 `DEFAULT_GRACE`
 - Produces: `main(argv=None) -> int`，`_Parser`（argparse 用法错误 → 64）
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 class TestMainLocal:
@@ -740,12 +742,12 @@ class TestUsage:
         assert excinfo.value.code == 64
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `uv run pytest tests/unit/test_wait_cr.py -q -k "TestMainLocal or TestMainRemote or TestUsage"`
 Expected: FAIL（`--pr` 未定义 / 无 `_Parser`）
 
-- [ ] **Step 3: 写实现**
+- [x] **Step 3: 写实现**
 
 把 `main()` 整体替换为：
 
@@ -839,12 +841,12 @@ def main(argv: list[str] | None = None) -> int:
 
 模块 docstring 换成 spec §4 的两种模式说明 + 退出码表（0/1/2/3/4/5/6/64），保留原有"strictly read-only"表述。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `uv run pytest tests/unit/test_wait_cr.py -q`
 Expected: PASS（既有 328 行用例 + 新增用例全绿）
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add pi/zima-pr-monitor/scripts/wait-cr.py tests/unit/test_wait_cr.py
@@ -864,7 +866,7 @@ git commit -m "feat(skill): wait-cr --pr mode and local fail-fast exit 3 (#264)"
 - Consumes: Task 3 定稿的退出码与命令形态
 - Produces: 无代码接口；SKILL.md 的 `--pr 'owner/repo#N'` 与 exit 3/4/5/6 表格
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```python
 SKILL_PATH = Path(__file__).resolve().parents[2] / "pi" / "zima-pr-monitor" / "SKILL.md"
@@ -901,12 +903,12 @@ class TestSkillDocContract:
         assert "reviews" in text
 ```
 
-- [ ] **Step 2: 跑测试确认失败**
+- [x] **Step 2: 跑测试确认失败**
 
 Run: `uv run pytest tests/unit/test_wait_cr.py -q -k TestSkillDocContract`
 Expected: FAIL（`--pr 'owner/repo#N'` 未出现在 SKILL.md）
 
-- [ ] **Step 3: 改文档**
+- [x] **Step 3: 改文档**
 
 `SKILL.md` §等待节律替换为「先选模式 → 本地/远程两块 → 退出码表 → 时长表」：模式选择表按 `$ZIMA_HOME/history/pjobs` 是否存在分叉，并写明这是**启发式**、已知 CR 在别处触发时直接用 `--pr`；本地块保留现有步骤 1-4 并把 `zima pjob ps` 标为本地模式专属；远程块给出命令与「目标 head 上出现带 meta 的 review」判据；退出码表列出 0/1/3/4/5/6 及各自处置；时长表原样保留并说明两模式通用。
 
@@ -916,12 +918,12 @@ Expected: FAIL（`--pr 'owner/repo#N'` 未出现在 SKILL.md）
 
 `CLAUDE.md:9` 把「block-waits read-only on `~/.zima/history/pjobs/<code>/<execution_id>.json`」改写为双通道：本地模式读 state 文件；远程 `--pr` 模式轮询 PR reviews（`pi-cr-meta` / `cc-cr-meta`）。
 
-- [ ] **Step 4: 跑测试确认通过**
+- [x] **Step 4: 跑测试确认通过**
 
 Run: `uv run pytest tests/unit/test_wait_cr.py tests/unit/test_issue_driven_contracts.py tests/unit/test_cr_batch_contracts.py -q`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add pi/zima-pr-monitor/SKILL.md CLAUDE.md tests/unit/test_wait_cr.py

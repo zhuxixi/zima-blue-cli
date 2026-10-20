@@ -56,6 +56,8 @@ python3 pi/zima-pr-monitor/scripts/wait-cr.py --pr 'owner/repo#N' --since-minute
 
 - 收敛信号：目标 head 上出现带 `pi-cr-meta` / `cc-cr-meta` 的 review（`reviews[].commit.oid == headRefOid`），且 `submittedAt` 不早于「等待开始 − `--since-minutes`」。`kimi-cr-meta` 不计（已废弃）。
 - 本机没有 zima runtime，因此**没有** spawn 确认、也没有执行状态可见性：等不到时它只能说「超时」，说不了「卡在哪」。确诊仍需去执行机查 `zima pjob ps` / 日志。
+- CR 在等待开始前就已结束、且距今超过 `--since-minutes` 时，helper 会把它当旧轮次并等到超时（exit 1）：这时直接 `gh pr view <N> --json reviews` 读结果，或调大 `--since-minutes` 重跑。
+- 同一 head 上重打标签（没有 push）时，上一轮的 review 可能仍在窗口内，helper 会立刻返回 0：看 summary 行的 `round=` 是否前进，没前进说明新流还没出结果，别把它当本轮结论。
 
 ### helper 退出码与处置
 
