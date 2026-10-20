@@ -581,6 +581,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    if args.timeout <= 0 or args.poll <= 0 or args.since_minutes < 0:
+        print(
+            "wait-cr: usage error: --timeout and --poll must be positive, "
+            "--since-minutes must be >= 0",
+            file=sys.stderr,
+        )
+        return 64
+
     if bool(args.pjob_code) == bool(args.pr):
         print(
             "wait-cr: usage error: give exactly one of <pjob_code> or --pr owner/repo#N",

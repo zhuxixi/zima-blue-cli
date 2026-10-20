@@ -679,6 +679,19 @@ class TestUsage:
     def test_bad_pr_ref_is_64(self, capsys):
         assert wait_cr.main(["--pr", "o/r"]) == 64
 
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            ["--pr", "o/r#7", "--poll", "0"],
+            ["--pr", "o/r#7", "--poll", "-5"],
+            ["--pr", "o/r#7", "--since-minutes", "-1"],
+            ["--pr", "o/r#7", "--timeout", "0"],
+        ],
+    )
+    def test_non_positive_numbers_are_64(self, argv, capsys):
+        assert wait_cr.main(argv) == 64
+        assert "must be positive" in capsys.readouterr().err
+
     def test_argparse_error_is_64(self):
         with pytest.raises(SystemExit) as excinfo:
             wait_cr.main(["--pr", "o/r#7", "--timeout", "abc"])
