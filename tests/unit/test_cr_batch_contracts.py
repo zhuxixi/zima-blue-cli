@@ -1803,7 +1803,13 @@ class TestMergeStrategyDisambiguation:
         step4 = self._step4_section(texts["flow"])
         assert "{merge_strategy}" in step4
         assert "{pr_title}" in step4
-        assert "gh pr view <PR> --json commits" in step4
+        # Full command pinned: the REST endpoint returns the untruncated first
+        # line, unlike `gh pr view --json commits` (70-char messageHeadline).
+        assert (
+            "gh api repos/<owner>/<repo>/pulls/<PR>/commits --jq "
+            "'.[].commit.message | split(\"\\n\")[0]'" in step4
+        )
+        assert "--json commits" not in step4
 
     def test_pi_step5_validator_input_carries_merge_form(self, texts):
         step5 = self._section(texts["flow"], "## Step 5", "## Step 6")
@@ -1825,6 +1831,10 @@ class TestMergeStrategyDisambiguation:
         assert "merge_strategy" in section
         assert "squash" in section
         assert "valid: false" in section
+        # Squash only invalidates branch-subject findings; PR-title findings
+        # still go through the normal rule check (the title is the landing subject).
+        assert "分支 commit subject" in section
+        assert "PR 标题 type token" in section
 
     # --- A5: edge-cases class 7 ---
 
@@ -1841,4 +1851,5 @@ class TestMergeStrategyDisambiguation:
         assert "references/flow.md#step-2-5" in texts["skill"]
 
     def test_pi_skill_constraint_pins_parent_injected_variable(self, texts):
-        assert "父流程注入" in texts["skill"]
+        constraint = self._section(texts["skill"], "## 关键约束", "## 输出契约")
+        assert "合并形态是父流程注入的变量" in constraint

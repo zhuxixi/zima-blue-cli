@@ -230,10 +230,14 @@ class TestCcCheckerMergeDocs:
         return self._section(flow_text, "派发结构：", "task 的 prompt 模板见")
 
     @staticmethod
-    def _checker_section(prompts_text: str) -> str:
-        return prompts_text.split("## claude-compliance-checker", 1)[1].split(
-            "## agents-compliance-checker", 1
-        )[0]
+    def _checker_section(prompts_text: str, name: str = "claude-compliance-checker") -> str:
+        if name == "claude-compliance-checker":
+            return prompts_text.split("## claude-compliance-checker", 1)[1].split(
+                "## agents-compliance-checker", 1
+            )[0]
+        return prompts_text.split("## agents-compliance-checker", 1)[1].split("## bug-scanner", 1)[
+            0
+        ]
 
     # --- A3: four agents in the cc Agent-tool dispatch list ---
 
@@ -324,13 +328,36 @@ class TestCcMergeStrategyMirror:
 
     # --- Script parity (verbatim copy, no harness literals) ---
 
-    def test_merge_strategy_script_is_byte_identical(self):
-        pi_script = self.PI_ROOT / "scripts" / "merge_strategy.py"
-        cc_script = _script("merge_strategy.py")
-        assert cc_script.is_file(), "plugin copy must ship scripts/merge_strategy.py"
+    @pytest.mark.parametrize("script_name", ("merge_strategy.py", "issue_policy.py"))
+    def test_shared_scripts_are_byte_identical(self, script_name):
+        pi_script = self.PI_ROOT / "scripts" / script_name
+        cc_script = _script(script_name)
+        assert cc_script.is_file(), f"plugin copy must ship scripts/{script_name}"
         assert (
             cc_script.read_bytes() == pi_script.read_bytes()
-        ), "merge_strategy.py is copied verbatim — no pi-cr/cc-cr literals inside"
+        ), f"{script_name} is copied verbatim — no pi-cr/cc-cr literals inside"
+
+    @staticmethod
+    def _checker_section(prompts_text: str, name: str) -> str:
+        if name == "claude-compliance-checker":
+            return prompts_text.split("## claude-compliance-checker", 1)[1].split(
+                "## agents-compliance-checker", 1
+            )[0]
+        return prompts_text.split("## agents-compliance-checker", 1)[1].split("## bug-scanner", 1)[
+            0
+        ]
+
+    def test_both_checker_sections_are_byte_identical(self):
+        pi_prompts = (self.PI_ROOT / "references" / "subagent-prompts.md").read_text(
+            encoding="utf-8"
+        )
+        cc_prompts = (PLUGIN_ROOT / "references" / "subagent-prompts.md").read_text(
+            encoding="utf-8"
+        )
+        for name in ("claude-compliance-checker", "agents-compliance-checker"):
+            assert self._checker_section(pi_prompts, name) == self._checker_section(
+                cc_prompts, name
+            ), f"{name} section drifted between pi and cc"
 
     # --- Step 2.5 probe section (cc temp path, same classification rules) ---
 

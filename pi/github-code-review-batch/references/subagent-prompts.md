@@ -259,7 +259,7 @@
    - `bug` / `logic` / `security`：保持宽松——只有明显误读代码、问题在变更前已存在且 PR 未触及、或完全假设性场景，才标记 `valid: false`（不要因不够"确定性"过滤掉真实缺陷）
    - `CLAUDE.md` / `AGENTS.md`（规范类）：收紧——issue 必须能在规范文件中**定位到具体规则**（原文片段或文件:章节）。无法定位到具体规则表述的（如纯主观"命名不够好"、规则未在规范中写明），标记 `valid: false`
    - 规范类中的元数据类 finding（commit subject 格式、`(#N)` 尾号等）：按 `{merge_strategy}` 分流（读 [flow.md Step 2.5](flow.md#step-2-5) 的 JSON，不重复探测）
-     - `squash` → `valid: false`（分支 subject 在合并时被重写、不落地），explanation 写 `merge_strategy=squash: branch subjects are rewritten on squash merge`
+     - `squash` → **仅当 finding 针对分支 commit subject 时** `valid: false`（分支 subject 在合并时被重写、不落地），explanation 写 `merge_strategy=squash: branch subjects are rewritten on squash merge`；针对 **PR 标题 type token** 的 finding 按既有规范类规则校验（标题就是落地 subject，`(#N)` 由 GitHub 自动追加，不要求手写）
      - `unknown` → 保留，强制 `severity: low` 与 `blocking: false`
      - `rebase` / `merge` → 按既有规范类规则校验（必须能定位规则原文/章节）
 4. 返回验证结果和解释；规范类 issue 的 `explanation` 须包含 `rule_quote`（规则原文片段）或 `rule_location`（文件:章节）
@@ -284,7 +284,7 @@
 2. 按 reason 分类（#124）：
    - reason=bug/logic/security：只有明显误读、变更前已存在且 PR 未触及、或完全假设性场景才标记 `"valid": false`
    - reason=CLAUDE.md/AGENTS.md：必须能定位到具体规则；无法定位（主观、规则未写明）则标记 `"valid": false`
-   - 规范类中的元数据类 finding（commit subject 格式、`(#N)` 尾号等）按合并形态分流：merge_strategy=squash → valid: false（分支 subject 被重写、不落地），explanation 写 `merge_strategy=squash: branch subjects are rewritten on squash merge`；merge_strategy=unknown → 保留，强制 severity: low 与 blocking: false；merge_strategy=rebase/merge → 按既有规范类规则校验
+   - 规范类中的元数据类 finding（commit subject 格式、`(#N)` 尾号等）按合并形态分流：merge_strategy=squash 且 finding 针对**分支 commit subject** → valid: false（分支 subject 被重写、不落地），explanation 写 `merge_strategy=squash: branch subjects are rewritten on squash merge`；merge_strategy=squash 且 finding 针对 **PR 标题 type token** → 按既有规范类规则校验（标题即落地 subject）；merge_strategy=unknown → 保留，强制 severity: low 与 blocking: false；merge_strategy=rebase/merge → 按既有规范类规则校验
 3. 规范类 issue 的 explanation 须含 rule_quote（规则原文片段）或 rule_location（文件:章节）
 4. 输出 JSON：{"valid": boolean, "explanation": "string"}
 ```

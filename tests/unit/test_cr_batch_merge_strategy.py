@@ -265,6 +265,24 @@ class TestProbe:
         payload = merge_strategy.probe("o/r", 251, run=bad_json)
         assert (payload["strategy"], payload["basis"]) == ("unknown", "probe-failed")
 
+    def test_payload_always_carries_all_flag_keys(self):
+        payload = merge_strategy.decide("o/r", 1, {}, None)
+        assert payload["strategy"] == "unknown"
+        assert payload["evidence"]["flags"] == {"squash": False, "merge": False, "rebase": False}
+
+    def test_main_survives_unwritable_json_out(self, tmp_path, capsys, monkeypatch):
+        def fake_run(argv, **kwargs):
+            return _ok(argv, json.dumps({"squash": True, "merge": False, "rebase": False}))
+
+        monkeypatch.setattr(merge_strategy.subprocess, "run", fake_run)
+        rc = merge_strategy.main(
+            ["--repo", "o/r", "--pr", "1", "--json-out", str(tmp_path / "missing-dir" / "x.json")]
+        )
+        out = capsys.readouterr()
+        assert rc == 0
+        assert out.out.strip() == "merge_strategy=squash basis=flags"
+        assert "could not write" in out.err
+
     def test_probe_swallows_invalid_repo(self):
         calls: list[list[str]] = []
 

@@ -312,7 +312,7 @@ task 的 prompt 模板见 [subagent-prompts.md](subagent-prompts.md) 对应小�
 `inject_branch_subjects=true`（rebase / merge）时，父流程额外执行：
 
 ```bash
-gh pr view <PR> --json commits --jq '.commits[].messageHeadline'
+gh api repos/<owner>/<repo>/pulls/<PR>/commits --jq '.[].commit.message | split("\n")[0]'
 ```
 
 结果作为「分支 commit subject 列表」注入 checker 输入包（rebase 不追加 `(#N)`，该列表就是落地 subject）。`inject_branch_subjects=false` 时不注入：squash 的输入包注明「本仓库按 squash 落地，分支 subject 被重写」，unknown 注明形态未知——squash 下分支 subject 不会落地，注入只会制造误报。

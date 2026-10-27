@@ -123,7 +123,9 @@ def decide(
     """
     flags_res = classify_flags(flags)
     evidence: dict = {
-        "flags": {key: bool(flags.get(key)) for key in FLAG_KEYS if key in flags},
+        # Always emit all three keys so consumers can index the payload on the
+        # degradation path too (missing source fields are reported as False).
+        "flags": {key: bool(flags.get(key)) for key in FLAG_KEYS},
         "merged_sampled": 0,
         "buckets": {"squash": 0, "rebase": 0, "merge": 0},
         "sample_prs": [],
@@ -233,9 +235,14 @@ def main(argv: list[str] | None = None) -> int:
     payload = probe(args.repo, args.pr, run=subprocess.run)
 
     if args.json_out:
-        Path(args.json_out).write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
+        try:
+            Path(args.json_out).write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            )
+        except OSError as exc:
+            # The probe contract is "degrade, never fail the review flow": an
+            # unwritable --json-out must not turn Step 2.5 into a blocker.
+            print(f"merge_strategy: could not write {args.json_out}: {exc}", file=sys.stderr)
     print(f"merge_strategy={payload['strategy']} basis={payload['basis']}")
     return 0
 

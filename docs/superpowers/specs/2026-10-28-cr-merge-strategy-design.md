@@ -89,7 +89,7 @@ Step 3–5，Step 2.5 一并跳过（不探测、不写 JSON），因此 delta-r
   "strategy": "squash | rebase | merge | unknown",
   "basis": "flags | history | history-ambiguous | probe-failed",
   "evidence": {
-    "flags": {"squash": true, "merge": true, "rebase": true},
+    "flags": {"squash": true, "merge": true, "rebase": true},  // 始终三个键，缺省 false
     "merged_sampled": 10,
     "buckets": {"squash": 9, "rebase": 0, "merge": 1},
     "sample_prs": [249, 248, 247]
@@ -132,7 +132,10 @@ Step 3–5，Step 2.5 一并跳过（不探测、不写 JSON），因此 delta-r
 
 - Step 4：checker 输入包增加 `- 合并形态：{merge_strategy}（basis={basis}）` 与 `- PR 标题：{pr_title}`。
 - `inject_branch_subjects=true`（rebase / merge）时，父额外执行
-  `gh pr view <PR> --json commits --jq '.commits[].messageHeadline'`，结果作为「分支 commit subject 列表」注入；为 false 时不注入，并注明「本仓库按 squash 落地，分支 subject 被重写」。
+  `gh api repos/<owner>/<repo>/pulls/<PR>/commits --jq '.[].commit.message | split("\n")[0]'`，
+  结果作为「分支 commit subject 列表」注入。**不得用 `gh pr view --json commits`**：它的
+  `messageHeadline` 与 GraphQL 同样截断到 70 字符，长 subject 的尾号会丢，等于给 checker
+  喂一份假的「缺 `(#N)`」。为 false 时不注入，并注明「本仓库按 squash 落地，分支 subject 被重写」。
 - Step 5：issue-validator 输入包增加 `{merge_strategy}`（读 Step 2.5 的 JSON，不重复探测）。
 - 探测失败不阻塞流程：按 `unknown` 继续，stdout 已给出降级行。
 
@@ -150,7 +153,11 @@ Step 3–5，Step 2.5 一并跳过（不探测、不写 JSON），因此 delta-r
 
 ### 4.5 validator 契约变更（Step 5）
 
-- 元数据类 finding 且 `{merge_strategy}=squash` → `valid: false`（subject 不落地），explanation 写 `merge_strategy=squash: branch subjects are rewritten on squash merge`。
+- 元数据类 finding 且 `{merge_strategy}=squash`：
+  - 针对**分支 commit subject** → `valid: false`（subject 不落地），explanation 写
+    `merge_strategy=squash: branch subjects are rewritten on squash merge`；
+  - 针对 **PR 标题 type token** → 按既有规范类规则校验（标题就是落地 subject，`(#N)` 由
+    GitHub 自动追加）。否则 squash 形态下唯一合法的元数据检查会被 validator 全部丢弃。
 - `unknown` → 保留，强制 `severity: low` 与 `blocking: false`。
 - `rebase` / `merge` → 按既有规则校验（必须能定位规则原文）。
 
@@ -227,7 +234,7 @@ checker prompt 输入区新增 `PR 标题：{pr_title}`，并追加段落：
 | `classify_headline(pr, headline)` | 三种落地形态判别 | 纯函数；输入必须是 `message` 首行；含「自定义 squash message 无尾号 → 误判 rebase」与「`messageHeadline` 截断形态（尾部 `…`）不得进入分类器」两条边界 |
 | `classify_flags(flags)` | 单开方式定论 | 纯 dict 入出 |
 | `classify_history(rows)` | 多数判定 + 样本不足/模糊 | 纯 list 入出；阈值语义钉为 `ceil(0.8n)`，覆盖 n=4 / 5 / 9 / 10 |
-| `decide(flags_res, hist_res)` | 信号合成、fail-safe 优先级 | 覆盖 4 种 basis |
+| `decide(repo, pr, flags, rows)` | 信号合成、fail-safe 优先级 | 覆盖 4 种 basis；`rows=None` 且无单开 flag → `probe-failed` |
 | `render_policy(strategy)` | 派生注入策略 | 4 种 strategy |
 | `probe(repo, pr, run=…)` | 取数与写 JSON、失败降级 | stub `gh`，验证命令形态、写盘、exit 0 |
 | `issue_policy.is_blocking` | guideline 锚点钳制 | 纯 dict 入出，含逃生口 |
@@ -284,7 +291,8 @@ finding（含 advisory）；U2 两次运行结论一致。
 | 提示词仍被模型无视（自取 commit） | validator + §4.6 确定性钳制双兜底 |
 | squash 使用了自定义 commit message（无 `(#N)` 尾号）→ 被历史分类器判成 rebase | 后果仅为「多检查一遍 subject 且 finding 为 low 非阻断」；在 `classify_headline` 单测里钉住该边界行为 |
 | 混合仓库判成多数桶，恰好本 PR 用了少数形态 | 最坏是多一条 low finding（rebase/merge 桶）或不检查（squash 桶），不再产生 blocking |
-| GraphQL 字段截断（`messageHeadline` 70 字符 + `…`） | 只用 `mergeCommit.message` 首行；`classify_headline` 单测钉住「含尾部 `…` 的输入」边界 |
+| GraphQL 字段截断（`messageHeadline` 70 字符 + `…`） | 只用 `mergeCommit.message` 首行；分支 subject 注入走 REST `pulls/<PR>/commits` 的 `commit.message` 首行；两处都有契约断言 |
+| squash 形态下 validator 把 PR 标题类 finding 一并丢弃 | validator 按**被审对象**分流：只有分支 subject 判 `valid: false`，PR 标题照常校验 |
 | guideline 锚点钳制误伤「PR 修改 AGENTS.md 且违规」 | 逃生口：显式 `blocking: true` 优先级最高；单测覆盖 |
 | 两副本漂移 | 脚本逐字拷贝；文档按 harness 移植，checker 段 byte-identical 由既有契约测试锁 |
 | 无 gh 认证 / 离线 | `probe-failed → unknown`，exit 0，流程继续 |
