@@ -241,12 +241,12 @@ checker prompt 输入区新增 `PR 标题：{pr_title}`，并追加段落：
 
 | ID | 功能点 | 验收方式 | 具体验证 | 通过标准 |
 |----|--------|----------|----------|----------|
-| A1 | 单开方式定论 | 自动化（unit） | `uv run pytest tests/unit/test_cr_batch_merge_strategy.py -k classify_flags` | squash/rebase/merge 单开各 1 例 + 多开 1 例 |
-| A2 | 历史分桶（三形态） | 自动化（unit） | `... -k classify_history` | n=10 时 9 squash + 1 merge→squash；rebase 桶→rebase；n=4→unknown；n=5 全 squash→squash（`ceil(0.8×5)=4`）；n=10 分裂 5/5→unknown |
-| A3 | 信号合成 fail-safe | 自动化（unit） | `... -k decide` | probe-failed / ambiguous 一律 unknown |
-| A4 | 策略派生 | 自动化（unit） | `... -k render_policy` | squash 不注入、rebase/merge 注入并检查 subject、全部 metadata_max_severity=low |
-| A5 | 探测脚本正常路径 | 自动化（unit，subprocess + stub gh） | `... -k probe_ok` | exit 0、JSON schema 完整、stdout 恰一行 |
-| A6 | 探测脚本失败降级 | 自动化（unit，stub gh 非零/未认证） | `... -k probe_failed` | exit 0、JSON `strategy=unknown basis=probe-failed`、stdout 一行降级说明 |
+| A1 | 单开方式定论 | 自动化（unit） | `uv run pytest tests/unit/test_cr_batch_merge_strategy.py -k ClassifyFlags` | squash/rebase/merge 单开各 1 例 + 多开 1 例 |
+| A2 | 历史分桶（三形态） | 自动化（unit） | `... -k "ClassifyHeadline or ClassifyHistory"` | n=10 时 9 squash + 1 merge→squash；rebase 桶→rebase；n=4→unknown；n=5 全 squash→squash（`ceil(0.8×5)=4`）；n=10 分裂 5/5→unknown |
+| A3 | 信号合成 fail-safe | 自动化（unit） | `... -k Decide` | probe-failed / ambiguous 一律 unknown |
+| A4 | 策略派生 | 自动化（unit） | `... -k RenderPolicy` | squash 不注入、rebase/merge 注入并检查 subject、全部 metadata_max_severity=low |
+| A5 | 探测脚本正常路径 | 自动化（unit，subprocess + stub gh） | `... -k "TestProbe and happy_path"` | exit 0、JSON schema 完整、stdout 恰一行 |
+| A6 | 探测脚本失败降级 | 自动化（unit，stub gh 非零/未认证） | `... -k "TestProbe and (failure or swallows)"` | exit 0、JSON `strategy=unknown basis=probe-failed`、stdout 一行降级说明 |
 | A7 | blocking 钳制 | 自动化（unit） | `uv run pytest tests/unit/test_cr_batch_issue_policy.py -k guideline_anchor` | guideline 锚点 spec finding → False；非 canonical reason（如 `AGENTS.md 规范`，子串匹配）→ False；显式 `blocking:true` → True；代码锚点不改原派生 |
 | A8 | pi 文档契约 | 自动化（unit） | `uv run pytest tests/unit/test_cr_batch_contracts.py -k MergeStrategy` | Step 2.5（含「仅完整轮执行」句）、输入边界、锚点、四形态策略、`{pr_title}`、edge-cases 第 7 类、SKILL 总览行、SCRIPT_NAMES 均通过 |
 | A9 | cc 插件镜像 | 自动化（unit） | `uv run pytest tests/unit/test_cr_batch_plugin_contracts.py -k MergeStrategy` | cc 侧镜像类名钉为 `TestCcMergeStrategyMirror`；同 token 断言 + `/tmp/cc-cr-merge-strategy.json` |

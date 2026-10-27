@@ -161,7 +161,7 @@ if any(name in reason for name in ("CLAUDE.md", "AGENTS.md")):
 
 | Spec ID | Plan task | Verification |
 |---|---|---|
-| A1, A2, A3, A4, A5, A6 | Task 1 | `pytest -k "classify_flags or classify_history or decide or render_policy or probe"` |
+| A1, A2, A3, A4, A5, A6 | Task 1 | `pytest tests/unit/test_cr_batch_merge_strategy.py -k "ClassifyFlags or ClassifyHeadline or ClassifyHistory or Decide or RenderPolicy or TestProbe"` |
 | A7 | Task 2 | `pytest tests/unit/test_cr_batch_issue_policy.py -k guideline_anchor` |
 | A8 | Task 3 | `pytest tests/unit/test_cr_batch_contracts.py -k MergeStrategy` |
 | A9 | Task 4 | `pytest tests/unit/test_cr_batch_plugin_contracts.py -k MergeStrategy` |
