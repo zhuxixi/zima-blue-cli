@@ -61,6 +61,7 @@ PR 编号提取规则（依次尝试）：
 | Step 0.2a | 解析 committer 对历史 issues 的回应（wontfix / resolved / clarified） | [flow.md#step-0-2a](references/flow.md#step-0-2a) |
 | Step 1 | PR 资格审查（closed/draft/trivial 检查） | [flow.md#step-1](references/flow.md#step-1) |
 | Step 2 | 收集 CLAUDE.md / AGENTS.md（含子目录） | [flow.md#step-2](references/flow.md#step-2) |
+| Step 2.5 | 合并形态探测 | [flow.md#step-2-5](references/flow.md#step-2-5) |
 | Step 3 | summarizer 生成变更摘要 | [flow.md#step-3](references/flow.md#step-3), [subagent-prompts.md#summarizer](references/subagent-prompts.md#summarizer) |
 | Step 3.5 | diff 预处理（过滤测试文件 + 长度兜底） | `scripts/compress_diff.py` |
 | Step 4 | 4 个并行审查 Agent | [subagent-prompts.md](references/subagent-prompts.md) |
@@ -81,6 +82,7 @@ PR 编号提取规则（依次尝试）：
 - **每轮发布新评论，不编辑旧评论**：metadata 是审查历史的事实记录，覆写会丢失中间状态——下游 fix agent 与人类 reviewer 都依赖完整的轮次链
 - **Acknowledged issues 不计入 active open**：尊重 committer 决策，避免跨轮反复打扰；调度器只对未 acknowledged/wontfix、`status: open` 且 effective `blocking=true` 的 findings 调度 fix agent
 - **Low 默认 advisory**：下游确定性规范化 `severity=low` → `blocking=false`，其余 severity → `blocking=true`；只有显式 JSON boolean `blocking` 可覆盖，旧 metadata 缺字段时按 severity 派生（缺失/非法 severity 按 medium，因此 blocking）
+- **合并形态是父流程注入的变量（#253）**：`squash` / `rebase` / `merge` / `unknown` 由 [Step 2.5](references/flow.md#step-2-5) 的 `scripts/merge_strategy.py` 每完整轮探测一次，随输入包注入 checker 与 validator；各 checker **不得自行**运行 `git log` / `gh pr view --json commits` 反推落地形态，元数据类 finding 一律 `severity: low`、不派生 blocking
 
 ## 输出契约
 
@@ -116,7 +118,7 @@ PJob 调度器（zima daemon 或 webhook-server）通过 grep `Status: <state>` 
 
 ## 边界情况与故障排除
 
-完整边界情况表（22 条）+ 故障排除（4 类）+ 常见误报类型（6 种）见 [edge-cases.md](references/edge-cases.md)。
+完整边界情况表（22 条）+ 故障排除（4 类）+ 常见误报类型（7 种）见 [edge-cases.md](references/edge-cases.md)。
 
 几条最容易遇到的：
 - 无新 commit 时：Step 0 直接输出状态报告 `NO_NEW_COMMITS` 退出

@@ -83,6 +83,7 @@
 4. **假设性问题**：基于某种假设场景（如极端输入）提出的问题
 5. **规范误用**：将不适用于当前代码类型的规范规则强加于此
 6. **上下文缺失**：由于未读取完整上下文而做出的错误判断
+7. **合并策略相关规则**：`(#N)` 尾号、单 commit 假设等规则依赖落地形态——squash 会重写分支 subject 并由 GitHub 自动追加 `(#N)`，分支 subject 本身并不落地；rebase/merge 下 subject 原样落地（rebase 无自动尾号）。父流程在 [Step 2.5](flow.md#step-2-5) 探测形态并注入，validator 按 `{merge_strategy}` 分流；脱离形态适用这两类规则的 finding 属于误报
 
 ### 有效 issue 示例
 

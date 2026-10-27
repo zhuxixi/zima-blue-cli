@@ -283,3 +283,96 @@ class TestCcCheckerMergeDocs:
             "pi and cc checker sections must be byte-identical "
             "(dispatch headers live outside the section)"
         )
+
+
+class TestCcMergeStrategyMirror:
+    """Issue #253: the plugin copy mirrors the pi merge-strategy contract.
+
+    Scripts are copied verbatim (no harness literals inside, so the two copies
+    stay byte-identical), while the docs keep cc wording — `cc-cr` temp paths
+    and Agent-tool prose — except the checker prompt sections, which stay
+    byte-identical to the pi copy (locked by
+    ``TestCcCheckerMergeDocs::test_pi_and_cc_checker_prompt_sections_are_identical``).
+    """
+
+    CHECKER_NAMES = ("claude-compliance-checker", "agents-compliance-checker")
+    PI_ROOT = _REPO_ROOT / "pi" / "github-code-review-batch"
+
+    @pytest.fixture(scope="class")
+    def texts(self) -> dict[str, str]:
+        references = PLUGIN_ROOT / "references"
+        return {
+            "skill": (PLUGIN_ROOT / "SKILL.md").read_text(encoding="utf-8"),
+            "flow": (references / "flow.md").read_text(encoding="utf-8"),
+            "prompts": (references / "subagent-prompts.md").read_text(encoding="utf-8"),
+            "edge": (references / "edge-cases.md").read_text(encoding="utf-8"),
+        }
+
+    @staticmethod
+    def _section(text: str, start: str, end: str) -> str:
+        assert start in text, f"missing section start {start!r}"
+        return text.split(start, 1)[1].split(end, 1)[0]
+
+    @staticmethod
+    def _named_section(text: str, name: str) -> str:
+        match = re.search(rf"^## {re.escape(name)}\b.*?(?=^## |\Z)", text, re.DOTALL | re.MULTILINE)
+        assert match is not None, f"missing section for {name!r}"
+        return match.group(0)
+
+    def _probe_section(self, flow_text: str) -> str:
+        return self._section(flow_text, "## Step 2.5", "## Step 3")
+
+    # --- Script parity (verbatim copy, no harness literals) ---
+
+    def test_merge_strategy_script_is_byte_identical(self):
+        pi_script = self.PI_ROOT / "scripts" / "merge_strategy.py"
+        cc_script = _script("merge_strategy.py")
+        assert cc_script.is_file(), "plugin copy must ship scripts/merge_strategy.py"
+        assert (
+            cc_script.read_bytes() == pi_script.read_bytes()
+        ), "merge_strategy.py is copied verbatim — no pi-cr/cc-cr literals inside"
+
+    # --- Step 2.5 probe section (cc temp path, same classification rules) ---
+
+    def test_cc_flow_has_step_2_5_probe(self, texts):
+        probe = self._probe_section(texts["flow"])
+        assert "merge_strategy.py" in probe
+        assert "--json-out /tmp/cc-cr-merge-strategy.json" in probe
+
+    def test_cc_step_2_5_reads_message_first_line(self, texts):
+        """Classification uses the merge commit message first line, never the
+        truncated GraphQL headline field."""
+        probe = self._probe_section(texts["flow"])
+        assert re.search(r"mergeCommit\{\s*message\s*\}", probe)
+        assert "messageHeadline" not in probe
+
+    def test_cc_step_2_5_threshold_and_round_scope(self, texts):
+        probe = self._probe_section(texts["flow"])
+        assert "ceil(0.8" in probe
+        assert "仅完整轮执行" in probe
+
+    # --- Checker contract (both checkers, pi-identical wording) ---
+
+    @pytest.mark.parametrize("name", CHECKER_NAMES)
+    def test_cc_checker_sections_carry_merge_form_contract(self, texts, name):
+        section = self._named_section(texts["prompts"], name)
+        for token in ("输入边界", "不得自行", "severity=low", "blocking: true", "{pr_title}"):
+            assert token in section, f"cc {name} section missing {token!r}"
+
+    # --- Validator branch ---
+
+    def test_cc_validator_section_branches_on_merge_strategy(self, texts):
+        section = self._named_section(texts["prompts"], "issue-validator")
+        assert "merge_strategy" in section
+
+    # --- Edge-cases class 7 + SKILL.md wiring ---
+
+    def test_cc_edge_cases_gains_seventh_false_positive_class(self, texts):
+        section = self._section(texts["edge"], "## 常见误报类型", "### 有效 issue 示例")
+        items = re.findall(r"^\d+\. .+$", section, re.MULTILINE)
+        assert len(items) == 7, f"expected 7 false-positive classes: {items}"
+        assert "合并策略" in items[-1]
+
+    def test_cc_skill_overview_lists_step_2_5(self, texts):
+        assert "| Step 2.5 |" in texts["skill"]
+        assert "references/flow.md#step-2-5" in texts["skill"]
