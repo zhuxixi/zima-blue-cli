@@ -292,6 +292,11 @@
 ---
 
 ## delta-reviewer {#delta-reviewer}
+> **输入边界（#253）**：增量轮不跑 Step 2.5，输入包里没有 `{merge_strategy}`，也没有分支
+> commit subject 列表。**不得**自行执行 `git log` / `gh pr view --json commits` 取 commit 元数据；
+> commit/PR 元数据类规则（subject 格式、`(#N)` 尾号）不在增量审查范围内——只审代码 diff 与
+> 既有 issue 的解决状态。
+
 
 **输入**：PR 完整 diff、`previous_issues` 列表（含 `resolution` 和 `committer_note` 字段）、`previous_head_sha`、`current_head_sha`、相关规范文件
 **输出**：JSON `{resolved_issues, acknowledged_issues, new_issues, unresolved_issues, pass}`

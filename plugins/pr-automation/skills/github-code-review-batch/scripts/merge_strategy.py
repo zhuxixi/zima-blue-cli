@@ -42,7 +42,7 @@ MERGE_SUBJECT_PREFIX = "Merge pull request #"
 HISTORY_QUERY = """
 query($owner: String!, $name: String!) {
   repository(owner: $owner, name: $name) {
-    pullRequests(states: MERGED, first: %d, orderBy: {field: UPDATED_AT, direction: DESC}) {
+    pullRequests(states: MERGED, first: %d, orderBy: {field: MERGED_AT, direction: DESC}) {
       nodes { number mergeCommit { message } }
     }
   }

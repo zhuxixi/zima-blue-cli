@@ -347,6 +347,11 @@ class TestCcMergeStrategyMirror:
             0
         ]
 
+    def test_cc_delta_rounds_carry_the_input_boundary(self):
+        delta_doc = (PLUGIN_ROOT / "references" / "delta-review.md").read_text(encoding="utf-8")
+        assert "输入边界（#253）" in delta_doc
+        assert "元数据" in delta_doc
+
     def test_both_checker_sections_are_byte_identical(self):
         pi_prompts = (self.PI_ROOT / "references" / "subagent-prompts.md").read_text(
             encoding="utf-8"

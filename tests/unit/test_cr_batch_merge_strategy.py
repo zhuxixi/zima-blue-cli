@@ -213,6 +213,8 @@ class TestProbe:
         assert "message" in joined
         assert "messageHeadline" not in joined
         assert "first: 10" in joined
+        assert "MERGED_AT" in joined
+        assert "UPDATED_AT" not in joined
         assert "last:" not in joined
 
     def test_single_flag_skips_history_query(self, tmp_path, capsys, monkeypatch):

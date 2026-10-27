@@ -1850,6 +1850,11 @@ class TestMergeStrategyDisambiguation:
         assert "| Step 2.5 |" in texts["skill"]
         assert "references/flow.md#step-2-5" in texts["skill"]
 
+    def test_pi_delta_rounds_carry_the_input_boundary(self, texts):
+        delta = self._named_section(texts["prompts"], "delta-reviewer")
+        assert "输入边界（#253）" in delta
+        assert "不得" in delta and "元数据" in delta
+
     def test_pi_skill_constraint_pins_parent_injected_variable(self, texts):
         constraint = self._section(texts["skill"], "## 关键约束", "## 输出契约")
         assert "合并形态是父流程注入的变量" in constraint
