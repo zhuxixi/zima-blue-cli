@@ -158,6 +158,43 @@ trivial 判定权完全属于 `scripts/trivial_check.py`（v1 规则：OPEN + �
 
 ---
 
+## Step 2.5: 合并形态探测 {#step-2-5}
+
+在派发 checker 之前先确定本仓库的 PR 落地形态（`squash` / `rebase` / `merge` / `unknown`）。元数据类规则（commit subject 格式、`(#N)` 尾号）是否成立完全取决于这个形态：squash 下分支 subject 被重写，rebase/merge 下原样落地。checker 不得自行猜测（见 [Step 4](#step-4) 输入边界）。
+
+**执行范围**：Step 2.5 仅完整轮执行（Round-1 全量审查）；增量轮按 [Step 0](#step-0) 分支跳过 Step 3-5，Step 2.5 一并跳过（不探测、不写 JSON），因此 delta-review 路径零改动。
+
+使用 `bash` 执行：
+
+```bash
+python scripts/merge_strategy.py --repo <owner>/<repo> --pr <PR> \
+    --json-out /tmp/pi-cr-merge-strategy.json
+```
+
+stdout 恰一行：`merge_strategy=<strategy> basis=<basis>`；完整 payload（`evidence` / `policy`）写入 `--json-out`，供 [Step 4](#step-4) / [Step 5](#step-5) 读取（**不重复探测**）。脚本细节见 [scripts/merge_strategy.py](../scripts/merge_strategy.py)。
+
+**分类规则**（脚本内 `classify_flags` / `classify_headline` / `classify_history` + `decide()`）：
+
+1. 仓库 flags 只有一种 merge 方式为 true → 直接定论（`basis=flags`）。
+2. 否则一次 GraphQL 取最近 10 个已合并 PR：`nodes{ number mergeCommit{ message } }`，只取 `message` 首行（`split("\n")[0]`）交给分类器。GraphQL 的 headline 简写字段**不可用**：实测对长 subject 截断到 70 字符并追加 `…`，`(#N)` 尾号丢失，会把 squash 误判成 rebase。
+3. 首行分桶：以 `Merge pull request #` 开头 → `merge`；以 ` (#<该 PR 号>)` 收尾 → `squash`（GitHub 自动追加）；其余 → `rebase`（subject 原样落地、无自动尾号）。
+4. 多数判定：样本 n ∈ [5,10] 且某桶计数 ≥ `ceil(0.8 × n)` → 该形态（`basis=history`）；n < 5 或无一桶达标 → `unknown`（`basis=history-ambiguous`）。
+
+**策略表**（脚本 `policy` 字段派生，按 `merge_strategy` 注入 checker）：
+
+| strategy | 注入分支 commit subject | 校验 PR 标题 | 元数据类 finding 上限 |
+|---|---|---|---|
+| `squash` | 否（subject 被重写） | 是（只查 type token；`(#N)` 由 GitHub 自动追加） | `severity: low` |
+| `rebase` | 是（subject 原样落地、无自动 `(#N)`） | 否 | `severity: low` |
+| `merge` | 是 | 否 | `severity: low` |
+| `unknown` | 否 | 是（只查 type token） | `severity: low` |
+
+所有形态下元数据类 finding 都是 `severity: low`（advisory，不派生 blocking）；确需阻断时必须显式 `blocking: true` 并在 description 说明理由。
+
+**失败不阻塞**：`gh` 未认证 / 离线 / payload 异常 → `strategy=unknown`、`basis=probe-failed`，脚本 exit 0，stdout 已是降级行，流程按 `unknown` 继续（只校验 PR 标题 type token，元数据类 finding 一律 `low`）。
+
+---
+
 ## Step 3: 获取 PR 摘要 {#step-3}
 
 使用 `bash` 执行：
@@ -264,8 +301,21 @@ spread 对象在 preflight 通过时持有 registry 确认过的 canonical `prov
 
 task 的 prompt 模板见 [subagent-prompts.md](subagent-prompts.md) 对应小节，输入包（diff 文件路径、摘要、规范文本）以模板变量方式填入。4 个 subagent 职责：
 
-- **CLAUDE.md checker、AGENTS.md checker**：完整 diff（或截断后的）+ 变更摘要 + PR 标题和描述 + 相关规范文件内容
+- **CLAUDE.md checker、AGENTS.md checker**：完整 diff（或截断后的）+ 变更摘要 + PR 标题和描述 + 相关规范文件内容 + 合并形态与分支 commit subject（见下）
 - **Bug scanner、Logic analyzer**：过滤掉测试文件的 diff（或截断后的）+ 变更摘要 + PR 标题和描述
+
+两个 checker 的输入包在 [Step 2.5](#step-2-5) 结论上再补两条（父流程注入，checker 不自行探测）：
+
+- 合并形态：{merge_strategy}（basis={basis}）
+- PR 标题：{pr_title}
+
+`inject_branch_subjects=true`（rebase / merge）时，父流程额外执行：
+
+```bash
+gh pr view <PR> --json commits --jq '.commits[].messageHeadline'
+```
+
+结果作为「分支 commit subject 列表」注入 checker 输入包（rebase 不追加 `(#N)`，该列表就是落地 subject）。`inject_branch_subjects=false` 时不注入：squash 的输入包注明「本仓库按 squash 落地，分支 subject 被重写」，unknown 注明形态未知——squash 下分支 subject 不会落地，注入只会制造误报。
 
 4 个 agent 的具体职责、输入输出契约、prompt 模板见 [subagent-prompts.md](subagent-prompts.md)：
 
@@ -318,8 +368,11 @@ issue-validator 使用 fast profile（`PI_CR_FAST_MODEL`）：派发项复用本
 - 单个 issue 的完整信息
 - PR diff
 - 相关规范文件内容
+- 合并形态：{merge_strategy}（读 [Step 2.5](#step-2-5) 的 JSON，不重复探测；`basis` 一并传入）
 
 验证 agent 输出 JSON `{valid: boolean, explanation: string}`。只有 `valid: true` 的 issue 才会进入下一步。`valid: false` 的 issue 被直接丢弃。
+
+**元数据类 finding 按合并形态分流**（#253）：`{merge_strategy}=squash` 时 subject 不落地 → `valid: false`；`unknown` 时保留但强制 `severity: low` + `blocking: false`；`rebase` / `merge` 时按下方既有规则校验。细节见 [subagent-prompts.md#issue-validator](subagent-prompts.md#issue-validator)。
 
 **核心原则（#124：按 reason 差异化精度）**：验证 agent 确认问题不是明显误读。对 `bug`/`logic`/`security` 保持宽松（宁纵不枉，只有明显误读/变更前已存在/完全假设性才标 `valid: false`）；对 `CLAUDE.md`/`AGENTS.md`（规范类，主观误报高发区）收紧——必须能在规范中**定位到具体规则**，否则标 `valid: false`，且 explanation 含 `rule_quote`/`rule_location`。这样在不损失真实缺陷召回的前提下降低喂给 fix-agent 的噪声。
 
