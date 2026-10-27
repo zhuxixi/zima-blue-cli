@@ -37,6 +37,37 @@ def test_non_boolean_override_falls_back_to_severity():
         assert issue_policy.is_blocking({"severity": "medium", "blocking": value}) is True
 
 
+def test_guideline_anchor_is_not_blocking():
+    issue = {"reason": "AGENTS.md", "file": "AGENTS.md", "severity": "medium"}
+
+    assert issue_policy.is_blocking(issue) is False
+
+
+def test_guideline_anchor_non_canonical_reason_is_not_blocking():
+    issue = {"reason": "AGENTS.md 规范", "file": "AGENTS.md", "severity": "high"}
+
+    assert issue_policy.is_blocking(issue) is False
+
+
+def test_explicit_blocking_override_wins_for_guideline_anchor():
+    issue = {"reason": "AGENTS.md", "file": "AGENTS.md", "severity": "low", "blocking": True}
+
+    assert issue_policy.is_blocking(issue) is True
+
+
+def test_code_anchor_keeps_severity_policy():
+    issue = {"reason": "AGENTS.md", "file": "src/a.py", "severity": "medium"}
+
+    assert issue_policy.is_blocking(issue) is True
+    assert issue_policy.is_blocking({**issue, "severity": "low"}) is False
+
+
+def test_nested_guideline_path_is_clamped():
+    issue = {"reason": "CLAUDE.md", "file": "src/CLAUDE.md", "severity": "medium"}
+
+    assert issue_policy.is_blocking(issue) is False
+
+
 def test_normalize_issue_does_not_mutate_input_and_adds_boolean():
     issue = {"severity": "low", "description": "advisory"}
 

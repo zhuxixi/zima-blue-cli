@@ -1,5 +1,6 @@
 """Shared severity, blocking, and count policy for code-review issues."""
 
+from pathlib import PurePosixPath
 from typing import Any, Iterable, Mapping
 
 _VALID_SEVERITIES = ("critical", "high", "medium", "low")
@@ -15,10 +16,21 @@ def normalize_severity(issue: Mapping[str, Any]) -> str:
 
 
 def is_blocking(issue: Mapping[str, Any]) -> bool:
-    """Return an explicit boolean override or the severity-based default."""
+    """Return an explicit boolean override or the severity-based default.
+
+    Guideline-anchored metadata findings are advisory unless the checker sets an
+    explicit boolean, so metadata rules can never block a merge by default.
+    """
     blocking = issue.get("blocking")
     if isinstance(blocking, bool):
         return blocking
+
+    reason = str(issue.get("reason", ""))
+    if any(name in reason for name in ("CLAUDE.md", "AGENTS.md")):
+        anchor = PurePosixPath(str(issue.get("file", ""))).name
+        if anchor in {"CLAUDE.md", "AGENTS.md"}:
+            return False
+
     return normalize_severity(issue) != "low"
 
 
