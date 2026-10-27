@@ -212,7 +212,8 @@ class TestProbe:
         assert "mergeCommit" in joined
         assert "message" in joined
         assert "messageHeadline" not in joined
-        assert "last: 10" in joined
+        assert "first: 10" in joined
+        assert "last:" not in joined
 
     def test_single_flag_skips_history_query(self, tmp_path, capsys, monkeypatch):
         calls: list[list[str]] = []
@@ -285,3 +286,7 @@ class TestScriptPortability:
     def test_history_query_never_requests_truncated_headline(self):
         assert "messageHeadline" not in merge_strategy.HISTORY_QUERY
         assert "mergeCommit { message }" in merge_strategy.HISTORY_QUERY
+        # `last` with a DESC order returns the OLDEST N rows; the probe must
+        # sample the newest merged PRs, so the connection uses `first`.
+        assert f"first: {merge_strategy.HISTORY_SAMPLE}" in merge_strategy.HISTORY_QUERY
+        assert "last:" not in merge_strategy.HISTORY_QUERY
