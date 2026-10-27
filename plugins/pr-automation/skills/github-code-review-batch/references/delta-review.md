@@ -11,6 +11,11 @@
 ---
 
 ## 输入
+> **输入边界（#253）**：增量轮不跑 Step 2.5，输入包里没有 `{merge_strategy}`，也没有分支
+> commit subject 列表。**不得**自行执行 `git log` / `gh pr view --json commits` 取 commit 元数据；
+> commit/PR 元数据类规则（subject 格式、`(#N)` 尾号）不在增量审查范围内——只审代码 diff 与
+> 既有 issue 的解决状态。
+
 
 - `previous_issues`：从上一轮 metadata 提取的问题列表（含 `id`, `description`, `reason`, `file`, `lines`, `status`, `first_round`, `severity`），新 metadata 含 boolean `blocking`；旧 metadata 缺少时按 severity 派生。列表还可能含 `resolution` 和 `committer_note` 字段（由 [Step 0.2a](flow.md#step-0-2a) 填充）
 - `previous_head_sha`：上一轮 review 时的 head SHA

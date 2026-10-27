@@ -1261,6 +1261,7 @@ class TestPortability:
     SCRIPT_NAMES = [
         "build_review_body.py",
         "compress_diff.py",
+        "merge_strategy.py",
         "parse_metadata.py",
         "render_status_report.py",
         "trivial_check.py",
@@ -1728,3 +1729,132 @@ class TestCheckerMergeDocs:
         for name, text in texts.items():
             for token in self.LEGACY_TOKENS:
                 assert token not in text, f"legacy dual-checker token {token!r} remains in {name}"
+
+
+class TestMergeStrategyDisambiguation:
+    """Issue #253: judge metadata rules against the repo's real merge form.
+
+    The parent flow probes the merge form once per full round (Step 2.5) and
+    injects the verdict into the compliance checkers, so checkers stop guessing
+    whether branch subjects land verbatim (rebase / merge) or are rewritten with
+    an automatic ``(#N)`` suffix (squash).
+    """
+
+    CHECKER_NAMES = ("claude-compliance-checker", "agents-compliance-checker")
+
+    @pytest.fixture(scope="class")
+    def texts(self) -> dict[str, str]:
+        references = SKILL_DIR / "references"
+        return {
+            "skill": (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8"),
+            "flow": (references / "flow.md").read_text(encoding="utf-8"),
+            "prompts": (references / "subagent-prompts.md").read_text(encoding="utf-8"),
+            "edge": (references / "edge-cases.md").read_text(encoding="utf-8"),
+        }
+
+    @staticmethod
+    def _section(text: str, start: str, end: str) -> str:
+        assert start in text, f"missing section start {start!r}"
+        return text.split(start, 1)[1].split(end, 1)[0]
+
+    @staticmethod
+    def _named_section(text: str, name: str) -> str:
+        match = re.search(rf"^## {re.escape(name)}\b.*?(?=^## |\Z)", text, re.DOTALL | re.MULTILINE)
+        assert match is not None, f"missing section for {name!r}"
+        return match.group(0)
+
+    def _probe_section(self, flow_text: str) -> str:
+        return self._section(flow_text, "## Step 2.5", "## Step 3")
+
+    def _step4_section(self, flow_text: str) -> str:
+        return self._section(flow_text, "## Step 4", "## Step 5")
+
+    # --- A1: Step 2.5 probe section ---
+
+    def test_pi_flow_has_step_2_5_probe(self, texts):
+        probe = self._probe_section(texts["flow"])
+        assert "merge_strategy.py" in probe
+        assert "--json-out /tmp/pi-cr-merge-strategy.json" in probe
+        assert "stdout" in probe and "merge_strategy=" in probe and "basis=" in probe
+
+    def test_pi_step_2_5_reads_message_first_line(self, texts):
+        """Classification uses the merge commit message first line, never the
+        truncated GraphQL headline field."""
+        probe = self._probe_section(texts["flow"])
+        assert re.search(r"mergeCommit\{\s*message\s*\}", probe)
+        assert "messageHeadline" not in probe
+
+    def test_pi_step_2_5_classification_and_threshold(self, texts):
+        probe = self._probe_section(texts["flow"])
+        assert "Merge pull request #" in probe  # merge bucket
+        assert "(#N)" in probe  # squash bucket (trailing PR number)
+        assert "rebase" in probe
+        assert "ceil(0.8" in probe
+        assert "仅完整轮执行" in probe
+
+    def test_pi_step_2_5_failure_degrades_to_unknown(self, texts):
+        probe = self._probe_section(texts["flow"])
+        assert "probe-failed" in probe
+        assert "exit 0" in probe
+
+    # --- A2: Step 4 / Step 5 injection contract ---
+
+    def test_pi_step4_input_package_carries_merge_form(self, texts):
+        step4 = self._step4_section(texts["flow"])
+        assert "{merge_strategy}" in step4
+        assert "{pr_title}" in step4
+        # Full command pinned: the REST endpoint returns the untruncated first
+        # line, unlike `gh pr view --json commits` (70-char messageHeadline).
+        assert (
+            "gh api repos/<owner>/<repo>/pulls/<PR>/commits --jq "
+            "'.[].commit.message | split(\"\\n\")[0]'" in step4
+        )
+        assert "--json commits" not in step4
+
+    def test_pi_step5_validator_input_carries_merge_form(self, texts):
+        step5 = self._section(texts["flow"], "## Step 5", "## Step 6")
+        assert "{merge_strategy}" in step5
+        assert "Step 2.5" in step5
+
+    # --- A3: checker contract (both checkers, identical wording) ---
+
+    @pytest.mark.parametrize("name", CHECKER_NAMES)
+    def test_pi_checker_sections_carry_merge_form_contract(self, texts, name):
+        section = self._named_section(texts["prompts"], name)
+        for token in ("输入边界", "不得自行", "severity=low", "blocking: true", "{pr_title}"):
+            assert token in section, f"{name} section missing {token!r}"
+
+    # --- A4: validator branch ---
+
+    def test_pi_validator_section_branches_on_merge_strategy(self, texts):
+        section = self._named_section(texts["prompts"], "issue-validator")
+        assert "merge_strategy" in section
+        assert "squash" in section
+        assert "valid: false" in section
+        # Squash only invalidates branch-subject findings; PR-title findings
+        # still go through the normal rule check (the title is the landing subject).
+        assert "分支 commit subject" in section
+        assert "PR 标题 type token" in section
+
+    # --- A5: edge-cases class 7 ---
+
+    def test_pi_edge_cases_gains_seventh_false_positive_class(self, texts):
+        section = self._section(texts["edge"], "## 常见误报类型", "### 有效 issue 示例")
+        items = re.findall(r"^\d+\. .+$", section, re.MULTILINE)
+        assert len(items) == 7, f"expected 7 false-positive classes: {items}"
+        assert "合并策略" in items[-1] or "merge strategy" in items[-1].lower()
+
+    # --- A6: SKILL.md overview row + constraint ---
+
+    def test_pi_skill_overview_lists_step_2_5(self, texts):
+        assert "| Step 2.5 |" in texts["skill"]
+        assert "references/flow.md#step-2-5" in texts["skill"]
+
+    def test_pi_delta_rounds_carry_the_input_boundary(self, texts):
+        delta = self._named_section(texts["prompts"], "delta-reviewer")
+        assert "输入边界（#253）" in delta
+        assert "不得" in delta and "元数据" in delta
+
+    def test_pi_skill_constraint_pins_parent_injected_variable(self, texts):
+        constraint = self._section(texts["skill"], "## 关键约束", "## 输出契约")
+        assert "合并形态是父流程注入的变量" in constraint

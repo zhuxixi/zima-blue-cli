@@ -52,6 +52,13 @@
 5. 仅关注 PR 修改的内容，忽略原有代码
 6. 如果没有发现违规，返回空列表
 7. 不报告纯主观判断
+8. **输入边界**：只使用输入包提供的材料；**不得**自行执行 `git log`、`gh pr view --json commits` 等命令获取输入包之外的 commit 信息
+9. **落地形态维度**：规则作用对象分三类——代码行 / commit 元数据 / PR 元数据；元数据类规则只在「该元数据会成为落地 subject」时成立：
+   - `squash`：分支 subject 被重写、`(#N)` 由 GitHub 自动追加 → 只校验 `{pr_title}` 的 type token（单值、合法），不要求标题含 `(#N)`，不检查分支 commit subject
+   - `rebase` / `merge`：逐条核对注入的「分支 commit subject 列表」（rebase 不追加 `(#N)`，规则真实适用）
+   - `unknown`：只校验 `{pr_title}` type token，元数据类 finding 必须 `severity: low`
+   - **所有形态**：元数据类 finding 给 `severity: low`，需要阻断时必须显式 `blocking: true` 并在 description 说明理由
+10. **锚点规则**：元数据类 finding 的 `file` 填规范文件相对路径（`CLAUDE.md` / `AGENTS.md`），`lines` 填规则行号或章节；**禁止**填任意代码位置
 
 `reason` 字段应包含 "CLAUDE.md"。
 
@@ -70,9 +77,22 @@
 你是一个代码规范审查员。请使用同一份输入执行两个连续但视角不同的审查阶段，最后把两阶段发现合并为一个 JSON 数组。
 
 输入：
+- PR 标题：{pr_title}
 - PR 摘要：{summary}
 - PR diff：{diff}
 - 相关 CLAUDE.md 内容：{claude_md_content}
+- 分支 commit subject 列表：{branch_subjects}（仅 rebase / merge 注入；squash / unknown 为「未注入」）
+
+输入边界（必须遵守）：
+- 只使用上面给出的材料。不得自行运行 git log / gh pr view --json commits 获取额外 commit 信息。
+- 合并形态：{merge_strategy}（basis={basis}）
+  · squash：分支 commit subject 在合并时被重写，(#N) 由 GitHub 自动追加 → 只校验 PR 标题的 type token
+    是否为单一合法 type，不要求标题包含 (#N)，不检查分支 commit subject。
+  · rebase / merge：分支 subject 原样进入默认分支（rebase 不追加 (#N)）→ 逐条核对下方
+    「分支 commit subject 列表」。
+  · unknown：无法确定落地形态 → 只校验 PR 标题 type token。
+- 元数据类 finding 一律 severity=low；确需阻断时显式给 blocking: true 并说明理由。
+- 元数据类 finding 的 file 填规范文件路径、lines 填规则行号/章节；没有代码行可锚时不要编造位置。
 
 阶段 1：显式规则违反
 1. 通读相关 CLAUDE.md，识别其中适用于本次变更的明文规则。
@@ -111,6 +131,13 @@
 5. 尽量引用规则原文，但不要求一字不差；对于逻辑/安全问题，无需强制引用规范
 6. 仅关注 PR 修改的内容，忽略原有代码
 7. 如果没有发现违规，返回空列表
+8. **输入边界**：只使用输入包提供的材料；**不得**自行执行 `git log`、`gh pr view --json commits` 等命令获取输入包之外的 commit 信息
+9. **落地形态维度**：规则作用对象分三类——代码行 / commit 元数据 / PR 元数据；元数据类规则只在「该元数据会成为落地 subject」时成立：
+   - `squash`：分支 subject 被重写、`(#N)` 由 GitHub 自动追加 → 只校验 `{pr_title}` 的 type token（单值、合法），不要求标题含 `(#N)`，不检查分支 commit subject
+   - `rebase` / `merge`：逐条核对注入的「分支 commit subject 列表」（rebase 不追加 `(#N)`，规则真实适用）
+   - `unknown`：只校验 `{pr_title}` type token，元数据类 finding 必须 `severity: low`
+   - **所有形态**：元数据类 finding 给 `severity: low`，需要阻断时必须显式 `blocking: true` 并在 description 说明理由
+10. **锚点规则**：元数据类 finding 的 `file` 填规范文件相对路径（`CLAUDE.md` / `AGENTS.md`），`lines` 填规则行号或章节；**禁止**填任意代码位置
 
 `reason` 字段应包含 "AGENTS.md"。
 
@@ -120,9 +147,22 @@
 你是一个代码规范审查员。你的任务是检查 PR 变更是否违反了 AGENTS.md 中的规则。
 
 输入：
+- PR 标题：{pr_title}
 - PR 摘要：{summary}
 - PR diff：{diff}
 - 相关 AGENTS.md 内容：{agents_md_content}
+- 分支 commit subject 列表：{branch_subjects}（仅 rebase / merge 注入；squash / unknown 为「未注入」）
+
+输入边界（必须遵守）：
+- 只使用上面给出的材料。不得自行运行 git log / gh pr view --json commits 获取额外 commit 信息。
+- 合并形态：{merge_strategy}（basis={basis}）
+  · squash：分支 commit subject 在合并时被重写，(#N) 由 GitHub 自动追加 → 只校验 PR 标题的 type token
+    是否为单一合法 type，不要求标题包含 (#N)，不检查分支 commit subject。
+  · rebase / merge：分支 subject 原样进入默认分支（rebase 不追加 (#N)）→ 逐条核对下方
+    「分支 commit subject 列表」。
+  · unknown：无法确定落地形态 → 只校验 PR 标题 type token。
+- 元数据类 finding 一律 severity=low；确需阻断时显式给 blocking: true 并说明理由。
+- 元数据类 finding 的 file 填规范文件路径、lines 填规则行号/章节；没有代码行可锚时不要编造位置。
 
 要求：
 1. 只关注 PR 修改的代码，忽略原有代码
@@ -218,6 +258,10 @@
 3. **按 reason 分类采用不同精度（#124）**：
    - `bug` / `logic` / `security`：保持宽松——只有明显误读代码、问题在变更前已存在且 PR 未触及、或完全假设性场景，才标记 `valid: false`（不要因不够"确定性"过滤掉真实缺陷）
    - `CLAUDE.md` / `AGENTS.md`（规范类）：收紧——issue 必须能在规范文件中**定位到具体规则**（原文片段或文件:章节）。无法定位到具体规则表述的（如纯主观"命名不够好"、规则未在规范中写明），标记 `valid: false`
+   - 规范类中的元数据类 finding（commit subject 格式、`(#N)` 尾号等）：按 `{merge_strategy}` 分流（读 [flow.md Step 2.5](flow.md#step-2-5) 的 JSON，不重复探测）
+     - `squash` → **仅当 finding 针对分支 commit subject 时** `valid: false`（分支 subject 在合并时被重写、不落地），explanation 写 `merge_strategy=squash: branch subjects are rewritten on squash merge`；针对 **PR 标题 type token** 的 finding 按既有规范类规则校验（标题就是落地 subject，`(#N)` 由 GitHub 自动追加，不要求手写）
+     - `unknown` → 保留，强制 `severity: low` 与 `blocking: false`
+     - `rebase` / `merge` → 按既有规范类规则校验（必须能定位规则原文/章节）
 4. 返回验证结果和解释；规范类 issue 的 `explanation` 须包含 `rule_quote`（规则原文片段）或 `rule_location`（文件:章节）
 
 ### 核心原则
@@ -233,12 +277,14 @@
 - 待验证 issue：{issue_json}
 - PR diff：{diff}
 - 相关规范文件内容：{guidelines}
+- 合并形态：{merge_strategy}（basis={basis}）
 
 要求：
 1. 重新审视 issue 对应的目标代码
 2. 按 reason 分类（#124）：
    - reason=bug/logic/security：只有明显误读、变更前已存在且 PR 未触及、或完全假设性场景才标记 `"valid": false`
    - reason=CLAUDE.md/AGENTS.md：必须能定位到具体规则；无法定位（主观、规则未写明）则标记 `"valid": false`
+   - 规范类中的元数据类 finding（commit subject 格式、`(#N)` 尾号等）按合并形态分流：merge_strategy=squash 且 finding 针对**分支 commit subject** → valid: false（分支 subject 被重写、不落地），explanation 写 `merge_strategy=squash: branch subjects are rewritten on squash merge`；merge_strategy=squash 且 finding 针对 **PR 标题 type token** → 按既有规范类规则校验（标题即落地 subject）；merge_strategy=unknown → 保留，强制 severity: low 与 blocking: false；merge_strategy=rebase/merge → 按既有规范类规则校验
 3. 规范类 issue 的 explanation 须含 rule_quote（规则原文片段）或 rule_location（文件:章节）
 4. 输出 JSON：{"valid": boolean, "explanation": "string"}
 ```
@@ -246,6 +292,11 @@
 ---
 
 ## delta-reviewer {#delta-reviewer}
+> **输入边界（#253）**：增量轮不跑 Step 2.5，输入包里没有 `{merge_strategy}`，也没有分支
+> commit subject 列表。**不得**自行执行 `git log` / `gh pr view --json commits` 取 commit 元数据；
+> commit/PR 元数据类规则（subject 格式、`(#N)` 尾号）不在增量审查范围内——只审代码 diff 与
+> 既有 issue 的解决状态。
+
 
 **输入**：PR 完整 diff、`previous_issues` 列表（含 `resolution` 和 `committer_note` 字段）、`previous_head_sha`、`current_head_sha`、相关规范文件
 **输出**：JSON `{resolved_issues, acknowledged_issues, new_issues, unresolved_issues, pass}`
