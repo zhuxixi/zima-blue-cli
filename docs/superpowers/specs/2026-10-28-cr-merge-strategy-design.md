@@ -73,8 +73,10 @@ Step 3–5，Step 2.5 一并跳过（不探测、不写 JSON），因此 delta-r
 
 1. `gh api repos/<owner>/<repo> --jq '{squash:.allow_squash_merge, merge:.allow_merge_commit, rebase:.allow_rebase_merge}'`
 2. 仅一种为 true → 直接定论（`basis: flags`）。
-3. 否则一次 GraphQL 取最近 10 个已合并 PR：`nodes{ number mergeCommit{ message } }`，
-   脚本取 `message` 首行（`split("\n")[0]`）再交给分类器。
+3. 否则一次 GraphQL 取最近 **30** 个已合并 PR（`first: 30, orderBy: {field: UPDATED_AT, direction: DESC}`）：
+   `nodes{ number mergedAt mergeCommit{ message } }`。`PullRequestOrderField` 只有 `CREATED_AT` / `UPDATED_AT`
+   （**无 `MERGED_AT`**，用了会整条查询失败并降级成 `probe-failed`），因此窗口按 `UPDATED_AT` 取、
+   脚本内按 `mergedAt` 客户端降序排序后取前 10；再取 `message` 首行（`split("\n")[0]`）交给分类器。
    **禁止用 `messageHeadline`**：实测它对长 subject 截断到 70 字符并追加 `…`
    （pi-agent-board #249/#247 均被截尾，`(#N)` 后缀丢失，会把 squash 误判成 rebase）。
 4. 分类写 JSON，stdout 打印一行 `merge_strategy=<...> basis=<...>`。

@@ -176,7 +176,9 @@ stdout 恰一行：`merge_strategy=<strategy> basis=<basis>`；完整 payload（
 **分类规则**（脚本内 `classify_flags` / `classify_headline` / `classify_history` + `decide()`）：
 
 1. 仓库 flags 只有一种 merge 方式为 true → 直接定论（`basis=flags`）。
-2. 否则一次 GraphQL 取最近 10 个已合并 PR：`nodes{ number mergeCommit{ message } }`，只取 `message` 首行（`split("\n")[0]`）交给分类器。GraphQL 的 headline 简写字段**不可用**：实测对长 subject 截断到 70 字符并追加 `…`，`(#N)` 尾号丢失，会把 squash 误判成 rebase。
+2. 否则一次 GraphQL 取最近 **30** 个已合并 PR（`first: 30, orderBy: {field: UPDATED_AT, direction: DESC}`）：
+   `nodes{ number mergedAt mergeCommit{ message } }`。`PullRequestOrderField` **没有 MERGED_AT**，所以窗口按
+   `UPDATED_AT` 取、再按 `mergedAt` 客户端降序排序取前 10；只取 `message` 首行（`split("\n")[0]`）交给分类器。GraphQL 的 headline 简写字段**不可用**：实测对长 subject 截断到 70 字符并追加 `…`，`(#N)` 尾号丢失，会把 squash 误判成 rebase。
 3. 首行分桶：以 `Merge pull request #` 开头 → `merge`；以 ` (#<该 PR 号>)` 收尾 → `squash`（GitHub 自动追加）；其余 → `rebase`（subject 原样落地、无自动尾号）。
 4. 多数判定：样本 n ∈ [5,10] 且某桶计数 ≥ `ceil(0.8 × n)` → 该形态（`basis=history`）；n < 5 或无一桶达标 → `unknown`（`basis=history-ambiguous`）。
 

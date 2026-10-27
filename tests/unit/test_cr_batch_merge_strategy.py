@@ -212,9 +212,12 @@ class TestProbe:
         assert "mergeCommit" in joined
         assert "message" in joined
         assert "messageHeadline" not in joined
-        assert "first: 10" in joined
-        assert "MERGED_AT" in joined
-        assert "UPDATED_AT" not in joined
+        assert "first: 30" in joined
+        # PullRequestOrderField has no MERGED_AT: the window is UPDATED_AT-ordered
+        # and re-sorted client-side by mergedAt (see test_history_is_resorted_by_merged_at).
+        assert "UPDATED_AT" in joined
+        assert "mergedAt" in joined
+        assert "MERGED_AT" not in joined
         assert "last:" not in joined
 
     def test_single_flag_skips_history_query(self, tmp_path, capsys, monkeypatch):
@@ -285,6 +288,35 @@ class TestProbe:
         assert out.out.strip() == "merge_strategy=squash basis=flags"
         assert "could not write" in out.err
 
+    def test_history_is_resorted_by_merged_at_and_sliced(self, monkeypatch, capsys):
+        nodes = []
+        # 30 nodes in UPDATED_AT order, but merging order is reversed: node i was
+        # merged at day (30 - i). Only the 10 newest merges must be kept.
+        for i in range(30):
+            nodes.append(
+                {
+                    "number": 100 + i,
+                    "mergedAt": f"2026-01-{30 - i:02d}T00:00:00Z",
+                    "mergeCommit": {"message": f"feat: pr {100 + i} (#{100 + i})\n\nbody"},
+                }
+            )
+        graphql_payload = {"data": {"repository": {"pullRequests": {"nodes": nodes}}}}
+        calls = []
+
+        def fake_run(argv, **kwargs):
+            calls.append(list(argv))
+            if "repos/" in " ".join(argv) and "--jq" in argv:
+                return _ok(argv, json.dumps({"squash": True, "merge": True, "rebase": True}))
+            return _ok(argv, json.dumps(graphql_payload))
+
+        monkeypatch.setattr(merge_strategy.subprocess, "run", fake_run)
+        rows = merge_strategy._fetch_history(fake_run, "o/r")
+        assert len(rows) == 10
+        assert [number for number, _ in rows] == list(range(100, 110))
+        assert rows[0][1].endswith("(#100)")
+        merge_strategy.probe("o/r", 1)
+        capsys.readouterr()
+
     def test_probe_swallows_invalid_repo(self):
         calls: list[list[str]] = []
 
@@ -308,5 +340,5 @@ class TestScriptPortability:
         assert "mergeCommit { message }" in merge_strategy.HISTORY_QUERY
         # `last` with a DESC order returns the OLDEST N rows; the probe must
         # sample the newest merged PRs, so the connection uses `first`.
-        assert f"first: {merge_strategy.HISTORY_SAMPLE}" in merge_strategy.HISTORY_QUERY
+        assert f"first: {merge_strategy.HISTORY_WINDOW}" in merge_strategy.HISTORY_QUERY
         assert "last:" not in merge_strategy.HISTORY_QUERY

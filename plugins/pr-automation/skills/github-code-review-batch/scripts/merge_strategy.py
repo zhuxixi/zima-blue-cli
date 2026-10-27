@@ -35,6 +35,8 @@ SCHEMA_VERSION = 1
 FLAG_KEYS = ("squash", "merge", "rebase")
 FLAGS_JQ = "{squash:.allow_squash_merge, merge:.allow_merge_commit, rebase:.allow_rebase_merge}"
 HISTORY_SAMPLE = 10
+HISTORY_WINDOW = 30  # PullRequestOrderField only supports CREATED_AT/UPDATED_AT,
+# so the window is over-fetched in UPDATED_AT order and re-sorted by mergedAt.
 HISTORY_MIN_SAMPLE = 5
 HISTORY_MAJORITY = 0.8
 MERGE_SUBJECT_PREFIX = "Merge pull request #"
@@ -42,12 +44,12 @@ MERGE_SUBJECT_PREFIX = "Merge pull request #"
 HISTORY_QUERY = """
 query($owner: String!, $name: String!) {
   repository(owner: $owner, name: $name) {
-    pullRequests(states: MERGED, first: %d, orderBy: {field: MERGED_AT, direction: DESC}) {
-      nodes { number mergeCommit { message } }
+    pullRequests(states: MERGED, first: %d, orderBy: {field: UPDATED_AT, direction: DESC}) {
+      nodes { number mergedAt mergeCommit { message } }
     }
   }
 }
-""" % HISTORY_SAMPLE
+""" % HISTORY_WINDOW
 
 POLICY_TABLE = {
     "squash": {"inject_branch_subjects": False, "check_pr_title": True},
@@ -196,14 +198,19 @@ def _fetch_history(run, repo: str) -> list[tuple[int, str]]:
         ],
     )
     nodes = payload["data"]["repository"]["pullRequests"]["nodes"]
-    rows: list[tuple[int, str]] = []
+    ranked: list[tuple[str, int, str]] = []
     for node in nodes:
         commit = node.get("mergeCommit") or {}
         message = commit.get("message") or ""
         headline = message.split("\n")[0].strip()
-        if headline:
-            rows.append((int(node["number"]), headline))
-    return rows
+        if not headline:
+            continue
+        merged_at = str(node.get("mergedAt") or "")
+        ranked.append((merged_at, int(node["number"]), headline))
+    # UPDATED_AT ordering ranks by last activity, not merge time: re-sort by
+    # mergedAt (ISO-8601, lexicographically sortable) and keep the newest N.
+    ranked.sort(key=lambda row: row[0], reverse=True)
+    return [(number, headline) for _, number, headline in ranked[:HISTORY_SAMPLE]]
 
 
 def probe(repo: str, pr: int, run=subprocess.run) -> dict:
