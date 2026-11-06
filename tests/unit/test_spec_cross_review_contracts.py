@@ -204,6 +204,12 @@ class TestSkillStructure:
     def test_required_sections(self, skill: str, section: str) -> None:
         assert section in skill
 
+    def test_deploy_prerequisite_requires_max_thinking(self, skill: str) -> None:
+        """A3: the reviewer model must declare support for the `max` level."""
+        section = skill.split("## 部署前置", 1)[1].split("## ", 1)[0]
+        assert "max" in section
+        assert "thinking" in section
+
 
 class TestPinnedLiterals:
     """A5 (continued): progress lines, degrade prompt and preflight markers."""
