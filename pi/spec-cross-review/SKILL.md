@@ -152,15 +152,18 @@ description: |
 
 ## 部署前置
 
-1. 在 `subagent({action:"models", agent:"spec-reviewer"})` 返回的 **Override file** 路径
-   （用户级 settings.json）的 `subagents` 块中设置
+1. **先放行白名单**：把复核者模型写进用户级 settings.json 的 `subagents.modelScope.allow`。
+   `modelScope` 为 `enforce + strict` 时这是必做前置，不是可选加固——漏了会在派发前被拒。
+2. **再钉模型**：在 `subagent({action:"models", agent:"spec-reviewer"})` 返回的 **Override file**
+   路径（用户级 settings.json）的 `subagents` 块中设置
    `"agentOverrides": {"spec-reviewer": {"model": "<provider>/<model>"}}`——选一个与常用
-   起草模型异构、且在 `subagents.modelScope.allow` 内的模型。
-2. 可选加固：`subagents.modelScope.agents.spec-reviewer.allow` 钉同一模型，防派发时误传
-   或被显式降级。
-3. 核实生效：再次 `subagent({action:"models", agent:"spec-reviewer"})`，确认 Effective
-   model 与起草模型不同。
-4. 「未注册 / 无法解析」排查：profile 随包经 `package.json` 的 `pi.subagents.agents` 注册
+   起草模型异构的模型。
+3. **复核者模型必须支持 `max` 思考档**：profile 的 `thinking: max` 是硬要求；所选模型的
+   thinkingLevelMap 若不含 `max`，派发会在 child 启动前失败。可选加固：
+   `subagents.modelScope.agents.spec-reviewer.allow` 钉同一模型，防派发时误传或被显式降级。
+4. 核实生效：再次 `subagent({action:"models", agent:"spec-reviewer"})`，同时确认 Effective
+   model 与起草模型不同、Thinking 为 `max`。
+5. 「未注册 / 无法解析」排查：profile 随包经 `package.json` 的 `pi.subagents.agents` 注册
    （`./pi/agents`）。未注册通常是 pi-subagents 版本过旧（需 ≥0.76）或包安装过期——
    重新安装 / 升级包后重试 `{action:"models"}`。
 

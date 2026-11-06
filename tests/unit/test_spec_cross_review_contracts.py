@@ -83,7 +83,7 @@ class TestProfileContract:
         assert "inheritProjectContext: true" in head
         assert "inheritSkills: false" in head
         assert "systemPromptMode: replace" in head
-        assert "thinking: high" in head
+        assert "thinking: max" in head
 
     def test_no_model_field(self, profile: str) -> None:
         head = profile.split("---", 2)[1]
@@ -203,6 +203,12 @@ class TestSkillStructure:
     @pytest.mark.parametrize("section", REQUIRED_SECTIONS)
     def test_required_sections(self, skill: str, section: str) -> None:
         assert section in skill
+
+    def test_deploy_prerequisite_requires_max_thinking(self, skill: str) -> None:
+        """A3: the reviewer model must declare support for the `max` level."""
+        section = skill.split("## 部署前置", 1)[1].split("## ", 1)[0]
+        assert "必须支持 `max`" in section
+        assert "thinkingLevelMap" in section
 
 
 class TestPinnedLiterals:
