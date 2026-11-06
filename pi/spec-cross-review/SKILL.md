@@ -160,7 +160,7 @@ description: |
    起草模型异构的模型。
 3. **复核者模型必须支持 `max` 思考档**：profile 的 `thinking: max` 是硬要求；所选模型的
    thinkingLevelMap 若不含 `max`，派发会在 child 启动前失败。可选加固：
-   `subagents.modelScope.agents.spec-reviewer.allow` 钉同一模型，防派发时被显式降级。
+   `subagents.modelScope.agents.spec-reviewer.allow` 钉同一模型，防派发时误传或被显式降级。
 4. 核实生效：再次 `subagent({action:"models", agent:"spec-reviewer"})`，同时确认 Effective
    model 与起草模型不同、Thinking 为 `max`。
 5. 「未注册 / 无法解析」排查：profile 随包经 `package.json` 的 `pi.subagents.agents` 注册

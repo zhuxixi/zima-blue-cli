@@ -207,8 +207,8 @@ class TestSkillStructure:
     def test_deploy_prerequisite_requires_max_thinking(self, skill: str) -> None:
         """A3: the reviewer model must declare support for the `max` level."""
         section = skill.split("## 部署前置", 1)[1].split("## ", 1)[0]
-        assert "max" in section
-        assert "thinking" in section
+        assert "必须支持 `max`" in section
+        assert "thinkingLevelMap" in section
 
 
 class TestPinnedLiterals:
