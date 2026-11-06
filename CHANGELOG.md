@@ -36,6 +36,10 @@
 
 ### Changed
 
+- **skill (spec-cross-review)**: `spec-reviewer` thinking raised from `high` to `max`,
+  aligning with the CR decision in `2026-08-11-pi-agent-type-design.md`; deploy
+  prerequisite now states the reviewer model must support the `max` level and puts the
+  `modelScope.allow` step before the model override (#270)
 - **skill (spec-cross-review)**: manual model-switching replaced by a dispatched
   `spec-reviewer` subagent — new `pi/agents/spec-reviewer.md` profile (fresh context,
   no write/edit tools, no model field), `pi.subagents.agents` package registration,
