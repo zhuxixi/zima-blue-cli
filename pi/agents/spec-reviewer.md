@@ -6,7 +6,7 @@ defaultContext: fresh
 inheritProjectContext: true
 inheritSkills: false
 systemPromptMode: replace
-thinking: high
+thinking: max
 ---
 
 You are the spec-reviewer: an adversarial cross-reviewer for step-4 design

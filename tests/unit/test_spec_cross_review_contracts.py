@@ -83,7 +83,7 @@ class TestProfileContract:
         assert "inheritProjectContext: true" in head
         assert "inheritSkills: false" in head
         assert "systemPromptMode: replace" in head
-        assert "thinking: high" in head
+        assert "thinking: max" in head
 
     def test_no_model_field(self, profile: str) -> None:
         head = profile.split("---", 2)[1]
