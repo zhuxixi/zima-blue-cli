@@ -21,6 +21,7 @@ by the U1/U2 pilots (issue #254 acceptance matrix).
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -34,6 +35,7 @@ PACKAGE_JSON = _REPO_ROOT / "package.json"
 
 PROFILE = AGENTS_DIR / "spec-reviewer.md"
 DISPATCH = SKILL_DIR / "references" / "dispatch-contract.md"
+SCHEMA = SKILL_DIR / "references" / "output-schema.json"
 
 BANNED_LITERALS = ("deepseek-v4", "zai-coding-cn")
 
@@ -62,6 +64,16 @@ CONVERGED_LINE = (
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _walk_schema(node: object) -> Iterator[dict]:
+    if isinstance(node, dict):
+        yield node
+        for value in node.values():
+            yield from _walk_schema(value)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _walk_schema(item)
 
 
 class TestProfileContract:
@@ -105,6 +117,89 @@ class TestPackageRegistration:
         pkg = json.loads(_read(PACKAGE_JSON))
         agents = pkg["pi"]["subagents"]["agents"]
         assert "./pi/agents" in agents
+
+
+class TestOutputSchema:
+    """A1/A2: the JSON schema is structurally valid and semantically stable."""
+
+    @pytest.fixture(scope="class")
+    def schema(self) -> dict:
+        value = json.loads(_read(SCHEMA))
+        assert isinstance(value, dict)
+        return value
+
+    def test_schema_file_is_json_object(self) -> None:
+        assert SCHEMA.is_file()
+        value = json.loads(_read(SCHEMA))
+        assert isinstance(value, dict)
+
+    def test_required_keys_reference_properties(self, schema: dict) -> None:
+        for node in _walk_schema(schema):
+            if "properties" in node:
+                assert isinstance(node["properties"], dict)
+            if "required" in node:
+                assert isinstance(node["required"], list)
+                assert all(isinstance(key, str) for key in node["required"])
+                assert "properties" in node
+                assert set(node["required"]) <= set(node["properties"])
+
+    def test_all_enum_nodes_have_string_type(self, schema: dict) -> None:
+        enum_nodes = [node for node in _walk_schema(schema) if "enum" in node]
+        assert enum_nodes
+        for node in enum_nodes:
+            assert node["type"] == "string"
+
+    def test_root_contract(self, schema: dict) -> None:
+        assert schema["type"] == "object"
+        assert set(schema["required"]) == {
+            "round",
+            "reviewedSha256",
+            "lenses",
+            "findings",
+            "counts",
+            "convergence",
+        }
+        assert set(schema["properties"]) == set(schema["required"])
+        assert "mode" not in schema["properties"]
+
+    def test_nested_contract(self, schema: dict) -> None:
+        root = schema["properties"]
+        lenses = root["lenses"]
+        assert lenses["type"] == "array"
+        assert lenses["minItems"] == 5
+        assert lenses["maxItems"] == 5
+        lens_item = lenses["items"]
+        assert set(lens_item["required"]) == {"lens", "verdict", "findingIds"}
+        lens_props = lens_item["properties"]
+        assert lens_props["findingIds"]["type"] == "array"
+        assert lens_props["findingIds"]["items"] == {"type": "string"}
+        assert lens_props["lens"]["type"] == "string"
+        assert lens_props["verdict"] == {"type": "string", "enum": ["核对通过", "有发现"]}
+
+        finding = root["findings"]["items"]
+        assert set(finding["required"]) == {
+            "id",
+            "level",
+            "location",
+            "why",
+            "suggestion",
+            "costIfSkipped",
+        }
+        assert finding["properties"]["level"] == {
+            "type": "string",
+            "enum": ["真缺口", "细化", "核对通过"],
+        }
+        assert set(root["counts"]["required"]) == {"gaps", "details", "passes"}
+        assert set(root["convergence"]["required"]) == {"converged", "summary"}
+
+    def test_lens_enum_matches_checklist(self, schema: dict) -> None:
+        checklist = _read(SKILL_DIR / "references" / "checklist.md")
+        headings = [line for line in checklist.splitlines() if line.startswith("## ")]
+        lens = schema["properties"]["lenses"]["items"]["properties"]["lens"]
+        assert lens["type"] == "string"
+        assert len(lens["enum"]) == 5
+        for value in lens["enum"]:
+            assert any(value in heading for heading in headings), value
 
 
 class TestDispatchContract:
