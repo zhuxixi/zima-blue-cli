@@ -114,7 +114,7 @@ description: |
 |---|---|
 | `spec-reviewer` 未注册 / 无法解析 | preflight 报错，给出部署指引，不进循环 |
 | `modelScope` 拒绝（preflight 或运行期） | 停循环，输出报错形态与当前 allow 实况，交用户处置 |
-| `output-schema.json` 缺失或 JSON 不可解析 | 停循环 + 留痕 + 报错；不手写兜底、不静默重派 |
+| `output-schema.json` 缺失、JSON 不可解析或结构契约测试失败 | 停循环 + 留痕 + 报错；不手写兜底、不静默重派 |
 | 派发失败 / 超时 / 结构化输出缺失或不合 schema | 停循环 + 留痕（原因写 state 与 issue 评论）+ 报错；不静默重派 |
 | hash 不匹配（child 复核不一致 / 父回收时与派发时不一致） | 停下要求对齐，不审来历不明的版本 |
 | 报告落盘失败 | 停循环、报错、不重派（防重复扣费） |

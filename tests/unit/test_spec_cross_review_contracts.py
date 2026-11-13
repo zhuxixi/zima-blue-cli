@@ -5,7 +5,8 @@ These tests lock the *external contracts* of the dispatched cross-review loop:
   1. Profile — `pi/agents/spec-reviewer.md` frontmatter (fresh context, no
      write/edit tools, no model field).
   2. Package registration — `pi.subagents.agents` exposes the agent dir.
-  3. Dispatch contract — task-template placeholders + outputSchema fields.
+  3. Task template + JSON outputSchema — placeholders plus machine-readable
+     schema fields.
   4. Skill orchestration — required sections + pinned literals.
   5. Report template — round-report / state-index fields, new Mode enum,
      verbatim JSON appendix.
@@ -14,8 +15,8 @@ These tests lock the *external contracts* of the dispatched cross-review loop:
   8. Portability — no hardcoded model literals or machine-private config.
   9. README registry — skill row updated, profile mentioned.
 
-They assert *documentation contracts* only; real-session behavior is covered
-by the U1/U2 pilots (issue #254 acceptance matrix).
+They assert *documentation and machine-readable schema contracts*; real-session
+behavior is covered by the U1/U2 pilots (issue #254 acceptance matrix).
 """
 
 from __future__ import annotations
@@ -238,6 +239,7 @@ class TestDispatchContract:
 
     def test_output_schema_failure_fails_closed(self, doc: str) -> None:
         assert "不可解析" in doc
+        assert "结构契约测试失败" in doc
         assert "不手写兜底" in doc
         assert "不静默重" in doc
 
@@ -274,6 +276,7 @@ class TestSkillStructure:
 
     def test_output_schema_failure_fails_closed(self, skill: str) -> None:
         assert "不可解析" in skill
+        assert "结构契约测试失败" in skill
         assert "不手写兜底" in skill
         assert "不静默重派" in skill
 
@@ -374,6 +377,7 @@ class TestEdgeCaseCoverage:
             "schema",
             "不手写兜底",
             "不可解析",
+            "结构契约测试失败",
             "重建",
             "hash 不匹配",
             "Drafted:",
