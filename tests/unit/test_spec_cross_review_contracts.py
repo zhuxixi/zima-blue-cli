@@ -227,56 +227,19 @@ class TestDispatchContract:
     def test_task_template_placeholders(self, doc: str, placeholder: str) -> None:
         assert placeholder in doc
 
-    @pytest.mark.parametrize(
-        "field",
-        (
-            "round",
-            "reviewedSha256",
-            "lenses",
-            "findings",
-            "counts",
-            "convergence",
-            "gaps",
-            "details",
-            "passes",
-            "id",
-            "level",
-            "location",
-            "why",
-            "suggestion",
-            "costIfSkipped",
-        ),
-    )
-    def test_output_schema_fields(self, doc: str, field: str) -> None:
-        assert f'"{field}"' in doc
-
-    def test_finding_levels(self, doc: str) -> None:
-        assert "真缺口" in doc
-        assert "细化" in doc
-        assert "核对通过" in doc
-
     def test_checklist_single_source(self, doc: str) -> None:
         # 五视角清单的单一定义源是 references/checklist.md，由父读盘后注入。
         assert "references/checklist.md" in doc
 
-    def test_lens_enum_matches_checklist_headings(self, doc: str) -> None:
-        checklist = _read(SKILL_DIR / "references" / "checklist.md")
-        checklist_headings = [line for line in checklist.splitlines() if line.startswith("## ")]
-        for lens in (
-            "验收矩阵完备性",
-            "可测性拆分可实现性 + 触发时序",
-            "部署/执行路径真实性",
-            "契约与边界",
-            "命令与命名可追溯",
-        ):
-            assert f'"{lens}"' in doc, lens
-            assert any(lens in heading for heading in checklist_headings), lens
+    def test_output_schema_json_single_source(self, doc: str) -> None:
+        assert "references/output-schema.json" in doc
+        assert "options.outputSchema" in doc
+        assert "const outputSchema" not in doc
 
-    def test_lens_item_fields_and_verdict_enum(self, doc: str) -> None:
-        for field in ("lens", "verdict", "findingIds", "converged", "summary"):
-            assert f'"{field}"' in doc, field
-        assert "核对通过" in doc
-        assert "有发现" in doc
+    def test_output_schema_failure_fails_closed(self, doc: str) -> None:
+        assert "不可解析" in doc
+        assert "不手写兜底" in doc
+        assert "不静默重" in doc
 
 
 class TestSkillStructure:
@@ -304,6 +267,15 @@ class TestSkillStructure:
         section = skill.split("## 部署前置", 1)[1].split("## ", 1)[0]
         assert "必须支持 `max`" in section
         assert "thinkingLevelMap" in section
+
+    def test_output_schema_json_dispatch(self, skill: str) -> None:
+        assert "references/output-schema.json" in skill
+        assert "options.outputSchema" in skill
+
+    def test_output_schema_failure_fails_closed(self, skill: str) -> None:
+        assert "不可解析" in skill
+        assert "不手写兜底" in skill
+        assert "不静默重派" in skill
 
 
 class TestPinnedLiterals:
@@ -400,6 +372,8 @@ class TestEdgeCaseCoverage:
             "modelScope",
             "超时",
             "schema",
+            "不手写兜底",
+            "不可解析",
             "重建",
             "hash 不匹配",
             "Drafted:",

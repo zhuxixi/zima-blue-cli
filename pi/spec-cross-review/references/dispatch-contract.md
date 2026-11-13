@@ -2,7 +2,8 @@
 
 父 session（起草者）每轮按本文档渲染任务并派发 `spec-reviewer`；child 只返回结构化输出，
 不写文件。五视角清单的单一定义源是 `references/checklist.md`——父读盘后原样注入
-`<CHECKLIST_CONTENT>`，禁止在任何其他文件里复制第二份全文。
+`<CHECKLIST_CONTENT>`，禁止在任何其他文件里复制第二份全文。outputSchema 的单一定义源是
+`references/output-schema.json`——父读盘并解析后传入 `options.outputSchema`，禁止复制第二份全文。
 
 ## 任务模板（渲染后作为 subagent 的 task 传入）
 
@@ -46,60 +47,11 @@
 
 ## outputSchema（父在派发时传入）
 
-```js
-const outputSchema = {
-  type: "object",
-  required: ["round", "reviewedSha256", "lenses", "findings", "counts", "convergence"],
-  properties: {
-    round: { type: "integer", minimum: 1 },
-    reviewedSha256: { type: "string" },
-    lenses: {
-      type: "array", minItems: 5, maxItems: 5,
-      items: {
-        type: "object",
-        required: ["lens", "verdict", "findingIds"],
-        properties: {
-          lens: { enum: ["验收矩阵完备性", "可测性拆分可实现性 + 触发时序", "部署/执行路径真实性", "契约与边界", "命令与命名可追溯"] },
-          verdict: { enum: ["核对通过", "有发现"] },
-          findingIds: { type: "array", items: { type: "string" } }
-        }
-      }
-    },
-    findings: {
-      type: "array",
-      items: {
-        type: "object",
-        required: ["id", "level", "location", "why", "suggestion", "costIfSkipped"],
-        properties: {
-          id: { type: "string" },
-          level: { enum: ["真缺口", "细化", "核对通过"] },
-          location: { type: "string" },
-          why: { type: "string" },
-          suggestion: { type: "string" },
-          costIfSkipped: { type: "string" }
-        }
-      }
-    },
-    counts: {
-      type: "object",
-      required: ["gaps", "details", "passes"],
-      properties: {
-        gaps: { type: "integer", minimum: 0 },
-        details: { type: "integer", minimum: 0 },
-        passes: { type: "integer", minimum: 0 }
-      }
-    },
-    convergence: {
-      type: "object",
-      required: ["converged", "summary"],
-      properties: {
-        converged: { type: "boolean" },
-        summary: { type: "string" }
-      }
-    }
-  }
-};
-```
+父使用 read 工具读取 `references/output-schema.json`，将文件内容解析为 JSON object，并把同一
+object 传给 subagent 的 `options.outputSchema`。禁止从 Markdown 手工转写、重录字段、增删字段
+或按轮重建 schema。
+
+文件缺失或 JSON 不可解析时，按派发失败处理：停止循环、留痕并报告，不手写兜底、不静默重试。
 
 ## 回报处置（父）
 

@@ -49,10 +49,11 @@ description: |
 ## 每轮编排（父逐轮，至收敛或上限）
 
 1. 父算被审版本 `sha256sum <spec 绝对路径>`，按 `references/dispatch-contract.md` 渲染任务
-   （注入变量 + 从 `references/checklist.md` 读盘注入五视角清单全文），派发
+   （注入变量 + 从 `references/checklist.md` 读盘注入五视角清单全文），读取并解析
+   `references/output-schema.json`，将同一 JSON object 传给 `options.outputSchema`，派发
    `spec-reviewer`（cwd 为目标仓库），等待 native 完成通知，不轮询。
 2. child 核对 hash 一致 → 从磁盘重读 spec + 真实代码 + 仓约定 → 五视角全过 →
-   返回结构化报告（dispatch-contract.md 的 outputSchema）。
+   返回结构化报告（`references/output-schema.json`）。
 3. 父裁定：真缺口 = 0 → 收敛轮；> 0 → 父逐条处置（接受并改 / 部分接受并说明边界 /
    拒绝并给证据），改 spec、写修订摘要，开第 k+1 轮。
 4. 每轮结束输出一行进度，不停下：
@@ -113,6 +114,7 @@ description: |
 |---|---|
 | `spec-reviewer` 未注册 / 无法解析 | preflight 报错，给出部署指引，不进循环 |
 | `modelScope` 拒绝（preflight 或运行期） | 停循环，输出报错形态与当前 allow 实况，交用户处置 |
+| `output-schema.json` 缺失或 JSON 不可解析 | 停循环 + 留痕 + 报错；不手写兜底、不静默重派 |
 | 派发失败 / 超时 / 结构化输出缺失或不合 schema | 停循环 + 留痕（原因写 state 与 issue 评论）+ 报错；不静默重派 |
 | hash 不匹配（child 复核不一致 / 父回收时与派发时不一致） | 停下要求对齐，不审来历不明的版本 |
 | 报告落盘失败 | 停循环、报错、不重派（防重复扣费） |
