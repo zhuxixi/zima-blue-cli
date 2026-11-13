@@ -1,0 +1,57 @@
+{
+  "type": "object",
+  "required": ["round", "reviewedSha256", "lenses", "findings", "counts", "convergence"],
+  "properties": {
+    "round": {"type": "integer", "minimum": 1},
+    "reviewedSha256": {"type": "string"},
+    "lenses": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "required": ["lens", "verdict", "findingIds"],
+        "properties": {
+          "lens": {
+            "type": "string",
+            "enum": ["验收矩阵完备性", "可测性拆分可实现性 + 触发时序", "部署/执行路径真实性", "契约与边界", "命令与命名可追溯"]
+          },
+          "verdict": {"type": "string", "enum": ["核对通过", "有发现"]},
+          "findingIds": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "level", "location", "why", "suggestion", "costIfSkipped"],
+        "properties": {
+          "id": {"type": "string"},
+          "level": {"type": "string", "enum": ["真缺口", "细化", "核对通过"]},
+          "location": {"type": "string"},
+          "why": {"type": "string"},
+          "suggestion": {"type": "string"},
+          "costIfSkipped": {"type": "string"}
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "required": ["gaps", "details", "passes"],
+      "properties": {
+        "gaps": {"type": "integer", "minimum": 0},
+        "details": {"type": "integer", "minimum": 0},
+        "passes": {"type": "integer", "minimum": 0}
+      }
+    },
+    "convergence": {
+      "type": "object",
+      "required": ["converged", "summary"],
+      "properties": {
+        "converged": {"type": "boolean"},
+        "summary": {"type": "string"}
+      }
+    }
+  }
+}

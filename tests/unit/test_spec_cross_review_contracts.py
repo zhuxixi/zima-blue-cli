@@ -5,7 +5,8 @@ These tests lock the *external contracts* of the dispatched cross-review loop:
   1. Profile — `pi/agents/spec-reviewer.md` frontmatter (fresh context, no
      write/edit tools, no model field).
   2. Package registration — `pi.subagents.agents` exposes the agent dir.
-  3. Dispatch contract — task-template placeholders + outputSchema fields.
+  3. Task template + JSON outputSchema — placeholders plus machine-readable
+     schema fields.
   4. Skill orchestration — required sections + pinned literals.
   5. Report template — round-report / state-index fields, new Mode enum,
      verbatim JSON appendix.
@@ -14,13 +15,14 @@ These tests lock the *external contracts* of the dispatched cross-review loop:
   8. Portability — no hardcoded model literals or machine-private config.
   9. README registry — skill row updated, profile mentioned.
 
-They assert *documentation contracts* only; real-session behavior is covered
-by the U1/U2 pilots (issue #254 acceptance matrix).
+They assert *documentation and machine-readable schema contracts*; real-session
+behavior is covered by the U1/U2 pilots (issue #254 acceptance matrix).
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -34,6 +36,7 @@ PACKAGE_JSON = _REPO_ROOT / "package.json"
 
 PROFILE = AGENTS_DIR / "spec-reviewer.md"
 DISPATCH = SKILL_DIR / "references" / "dispatch-contract.md"
+SCHEMA = SKILL_DIR / "references" / "output-schema.json"
 
 BANNED_LITERALS = ("deepseek-v4", "zai-coding-cn")
 
@@ -62,6 +65,16 @@ CONVERGED_LINE = (
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _walk_schema(node: object) -> Iterator[dict]:
+    if isinstance(node, dict):
+        yield node
+        for value in node.values():
+            yield from _walk_schema(value)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _walk_schema(item)
 
 
 class TestProfileContract:
@@ -107,6 +120,89 @@ class TestPackageRegistration:
         assert "./pi/agents" in agents
 
 
+class TestOutputSchema:
+    """A1/A2: the JSON schema is structurally valid and semantically stable."""
+
+    @pytest.fixture(scope="class")
+    def schema(self) -> dict:
+        value = json.loads(_read(SCHEMA))
+        assert isinstance(value, dict)
+        return value
+
+    def test_schema_file_is_json_object(self) -> None:
+        assert SCHEMA.is_file()
+        value = json.loads(_read(SCHEMA))
+        assert isinstance(value, dict)
+
+    def test_required_keys_reference_properties(self, schema: dict) -> None:
+        for node in _walk_schema(schema):
+            if "properties" in node:
+                assert isinstance(node["properties"], dict)
+            if "required" in node:
+                assert isinstance(node["required"], list)
+                assert all(isinstance(key, str) for key in node["required"])
+                assert "properties" in node
+                assert set(node["required"]) <= set(node["properties"])
+
+    def test_all_enum_nodes_have_string_type(self, schema: dict) -> None:
+        enum_nodes = [node for node in _walk_schema(schema) if "enum" in node]
+        assert enum_nodes
+        for node in enum_nodes:
+            assert node["type"] == "string"
+
+    def test_root_contract(self, schema: dict) -> None:
+        assert schema["type"] == "object"
+        assert set(schema["required"]) == {
+            "round",
+            "reviewedSha256",
+            "lenses",
+            "findings",
+            "counts",
+            "convergence",
+        }
+        assert set(schema["properties"]) == set(schema["required"])
+        assert "mode" not in schema["properties"]
+
+    def test_nested_contract(self, schema: dict) -> None:
+        root = schema["properties"]
+        lenses = root["lenses"]
+        assert lenses["type"] == "array"
+        assert lenses["minItems"] == 5
+        assert lenses["maxItems"] == 5
+        lens_item = lenses["items"]
+        assert set(lens_item["required"]) == {"lens", "verdict", "findingIds"}
+        lens_props = lens_item["properties"]
+        assert lens_props["findingIds"]["type"] == "array"
+        assert lens_props["findingIds"]["items"] == {"type": "string"}
+        assert lens_props["lens"]["type"] == "string"
+        assert lens_props["verdict"] == {"type": "string", "enum": ["核对通过", "有发现"]}
+
+        finding = root["findings"]["items"]
+        assert set(finding["required"]) == {
+            "id",
+            "level",
+            "location",
+            "why",
+            "suggestion",
+            "costIfSkipped",
+        }
+        assert finding["properties"]["level"] == {
+            "type": "string",
+            "enum": ["真缺口", "细化", "核对通过"],
+        }
+        assert set(root["counts"]["required"]) == {"gaps", "details", "passes"}
+        assert set(root["convergence"]["required"]) == {"converged", "summary"}
+
+    def test_lens_enum_matches_checklist(self, schema: dict) -> None:
+        checklist = _read(SKILL_DIR / "references" / "checklist.md")
+        headings = [line for line in checklist.splitlines() if line.startswith("## ")]
+        lens = schema["properties"]["lenses"]["items"]["properties"]["lens"]
+        assert lens["type"] == "string"
+        assert len(lens["enum"]) == 5
+        for value in lens["enum"]:
+            assert any(value in heading for heading in headings), value
+
+
 class TestDispatchContract:
     """A4: dispatch contract pins task template, variables and outputSchema."""
 
@@ -132,56 +228,20 @@ class TestDispatchContract:
     def test_task_template_placeholders(self, doc: str, placeholder: str) -> None:
         assert placeholder in doc
 
-    @pytest.mark.parametrize(
-        "field",
-        (
-            "round",
-            "reviewedSha256",
-            "lenses",
-            "findings",
-            "counts",
-            "convergence",
-            "gaps",
-            "details",
-            "passes",
-            "id",
-            "level",
-            "location",
-            "why",
-            "suggestion",
-            "costIfSkipped",
-        ),
-    )
-    def test_output_schema_fields(self, doc: str, field: str) -> None:
-        assert f'"{field}"' in doc
-
-    def test_finding_levels(self, doc: str) -> None:
-        assert "真缺口" in doc
-        assert "细化" in doc
-        assert "核对通过" in doc
-
     def test_checklist_single_source(self, doc: str) -> None:
         # 五视角清单的单一定义源是 references/checklist.md，由父读盘后注入。
         assert "references/checklist.md" in doc
 
-    def test_lens_enum_matches_checklist_headings(self, doc: str) -> None:
-        checklist = _read(SKILL_DIR / "references" / "checklist.md")
-        checklist_headings = [line for line in checklist.splitlines() if line.startswith("## ")]
-        for lens in (
-            "验收矩阵完备性",
-            "可测性拆分可实现性 + 触发时序",
-            "部署/执行路径真实性",
-            "契约与边界",
-            "命令与命名可追溯",
-        ):
-            assert f'"{lens}"' in doc, lens
-            assert any(lens in heading for heading in checklist_headings), lens
+    def test_output_schema_json_single_source(self, doc: str) -> None:
+        assert "references/output-schema.json" in doc
+        assert "options.outputSchema" in doc
+        assert "const outputSchema" not in doc
 
-    def test_lens_item_fields_and_verdict_enum(self, doc: str) -> None:
-        for field in ("lens", "verdict", "findingIds", "converged", "summary"):
-            assert f'"{field}"' in doc, field
-        assert "核对通过" in doc
-        assert "有发现" in doc
+    def test_output_schema_failure_fails_closed(self, doc: str) -> None:
+        assert "不可解析" in doc
+        assert "结构契约测试失败" in doc
+        assert "不手写兜底" in doc
+        assert "不静默重" in doc
 
 
 class TestSkillStructure:
@@ -209,6 +269,16 @@ class TestSkillStructure:
         section = skill.split("## 部署前置", 1)[1].split("## ", 1)[0]
         assert "必须支持 `max`" in section
         assert "thinkingLevelMap" in section
+
+    def test_output_schema_json_dispatch(self, skill: str) -> None:
+        assert "references/output-schema.json" in skill
+        assert "options.outputSchema" in skill
+
+    def test_output_schema_failure_fails_closed(self, skill: str) -> None:
+        assert "不可解析" in skill
+        assert "结构契约测试失败" in skill
+        assert "不手写兜底" in skill
+        assert "不静默重派" in skill
 
 
 class TestPinnedLiterals:
@@ -305,6 +375,9 @@ class TestEdgeCaseCoverage:
             "modelScope",
             "超时",
             "schema",
+            "不手写兜底",
+            "不可解析",
+            "结构契约测试失败",
             "重建",
             "hash 不匹配",
             "Drafted:",
