@@ -36,6 +36,10 @@
 
 ### Changed
 
+- **skill (spec-cross-review)**: reviewer `outputSchema` now has a machine-readable
+  `references/output-schema.json` single source, explicit string enum types, recursive structural
+  contract tests, and fail-closed handling for missing or invalid JSON; the Markdown schema copy
+  and manual transcription path are removed (#274)
 - **skill (spec-cross-review)**: `spec-reviewer` thinking raised from `high` to `max`,
   aligning with the CR decision in `2026-08-11-pi-agent-type-design.md`; deploy
   prerequisite now states the reviewer model must support the `max` level and puts the
