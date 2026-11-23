@@ -124,6 +124,7 @@ zima pjob run <code>
 - On failure/timeout/cancel: `condition: failure` actions fire, `action_errors` recorded
 - Reviewer PJobs: `<zima-review>` XML in stdout is parsed, verdict maps to effective returncode
 - `requireReview: true` on an action skips it unless stdout carried a valid review signal (closed `<zima-review>` XML or full `Status: PASS|NEEDS_FIX|NO_NEW_COMMITS` line — `has_valid_review_signal`); prevents needs-fix mislabeling when no review ever ran, e.g. E2BIG startup failure (#201)
+- CR label lifecycle (#277): a PASS round's success action must clear BOTH `zima:needs-review` and `zima:needs-fix` (a stale needs-fix left after an approving round was #267); the transition set is encoded in two synced places — `zima/scenes.py` builtin code-review scene and `zima/templates/examples.py` `REVIEWER_PJOB` — edit both together
 
 ### Data Layout
 
