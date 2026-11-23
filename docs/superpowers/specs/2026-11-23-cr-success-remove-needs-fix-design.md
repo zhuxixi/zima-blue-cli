@@ -56,6 +56,7 @@ round 1 正是 issue 所称「只有 advisory 也被标上」的反例：它只�
 | `zima/templates/examples.py` | ~226-228 | `REVIEWER_PJOB` 示例的 success 分支 `removeLabels` 追加 `zima:needs-fix`，与 scene 保持同源一致 |
 | `tests/unit/test_scenes.py` | 124 | `success_action.remove_labels` 断言改为两元素 |
 | `tests/unit/test_examples.py` | 303（扩展既有断言） | `REVIEWER_PJOB` 的 success 分支 `remove_labels` 断言改为两元素 |
+| `tests/unit/test_quickstart.py` | 302 | scene → `_create_all_configs` → 落盘 YAML 的 `postExec[0]["removeLabels"]` 断言改为两元素（实现阶段发现，原计划遗漏） |
 | `tests/unit/test_actions_runner.py` | 新增用例 | success 条件下两个 `remove_labels` 都调到 provider |
 | `tests/integration/test_executor_actions.py` | 新增用例 | 用 `BUILTIN_SCENES["code-review"].default_actions` 驱动一次 approved 执行，断言两个标签都被摘 |
 
@@ -69,7 +70,7 @@ round 1 正是 issue 所称「只有 advisory 也被标上」的反例：它只�
 | A2 | ActionsRunner 对多标签摘除逐条调用 provider | 自动化验证（unit） | `uv run pytest tests/unit/test_actions_runner.py -q` | `remove_label` 被调用两次，参数分别为两个标签；无异常、`errors` 为空 |
 | A3 | 从 scene 到 executor 的端到端：approved 执行摘两个标签 | 自动化验证（integration） | `uv run pytest tests/integration/test_executor_actions.py -q` | mock provider 收到 `(repo, pr, "zima:needs-review")` 与 `(repo, pr, "zima:needs-fix")` 两次 `remove_label`，且 `add_label` 未被调用 |
 | A4 | failure 分支行为不回归 | 自动化验证（unit + integration） | 同上两条命令的既有用例 | 既有 failure 用例全绿：仍 `add_label("zima:needs-fix")` + `remove_label("zima:needs-review")` |
-| A5 | 示例模板与 scene 不再分叉 | 自动化验证（unit） | `uv run pytest tests/unit/test_examples.py -q`（扩展现有 `REVIEWER_PJOB` 断言，`tests/unit/test_examples.py:303`） | 解析后 `spec.actions.post_exec[0].remove_labels == ["zima:needs-review", "zima:needs-fix"]` |
+| A5 | 示例模板与 scene 不再分叉 | 自动化验证（unit） | `uv run pytest tests/unit/test_examples.py tests/unit/test_quickstart.py -q`（扩展现有 `REVIEWER_PJOB` 断言，`tests/unit/test_examples.py:303`；并通过 quickstart 落盘路径间接验证 scene，`tests/unit/test_quickstart.py:302`） | 解析后 `spec.actions.post_exec[0].remove_labels == ["zima:needs-review", "zima:needs-fix"]`；quickstart 生成的 YAML 同值 |
 | A6 | 代码风格与静态检查 | 自动化验证（static） | `uv run ruff check zima/ tests/ && uv run black --check zima/ tests/ --line-length 100` | 两条命令退出码 0 |
 | U1 | 现网真实 PR 收敛后标签自动归零，且干净轮次无摘除告警 | 用户实测 | 迁移 16 个 PJob 后，任选一个 PR 先制造 failure 轮再跑到 blocking=0；观察时间线与该轮 PJob 输出 | `needs-fix` 在收敛轮被自动摘除、无需人工 `gh pr edit`；且输出中无 `Failed to remove label 'zima:needs-fix'`（验证「标签未贴」路径的真实 gh 行为，见 §10 第二行） |
 

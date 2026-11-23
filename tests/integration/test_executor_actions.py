@@ -503,6 +503,7 @@ class TestCodeReviewSceneLabelTransitions(TestIsolator):
         result, mock_ops = self._run_scene_pjob(
             isolated_zima_home, config_manager, f"print({approved!r})"
         )
+        assert result.status.value == "success"
         removed = [call.args[2] for call in mock_ops.remove_label.call_args_list]
         assert removed == ["zima:needs-review", "zima:needs-fix"]
         mock_ops.add_label.assert_not_called()

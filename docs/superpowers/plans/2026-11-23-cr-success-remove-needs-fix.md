@@ -278,6 +278,6 @@ git commit -m "test(cr): lock multi-label removal in ActionsRunner (#267)"
 | A2 | Task 3 Step 1–2 |
 | A3 | Task 1 Step 1–2、Task 2 Step 4 |
 | A4 | Task 1 Step 1（失败分支用例）、Task 2 Step 4 |
-| A5 | Task 2 Step 1–4 |
+| A5 | Task 2 Step 1–4（另含 `tests/unit/test_quickstart.py:302`：实现阶段补充的第三个断言点，原 plan 文件清单遗漏） |
 | A6 | Task 3 Step 3 |
 | U1 | 合并后由用户在本机迁移 PJob 后实测（不在本 plan 范围） |
