@@ -435,3 +435,86 @@ def test_large_cjk_env_value_does_not_e2big(isolated_zima_home):
         timeout=30,
     )
     assert returncode == 0
+
+
+class TestCodeReviewSceneLabelTransitions(TestIsolator):
+    """issue #267: the built-in code-review scene must clear zima:needs-fix on
+    an approved round, so a converged PR never keeps the red label."""
+
+    def _run_scene_pjob(self, isolated_zima_home, config_manager, script):
+        """Execute a PJob whose actions come from the builtin code-review scene."""
+        import copy
+
+        from zima.config.manager import ConfigManager
+        from zima.models.variable import VariableConfig
+        from zima.models.workflow import WorkflowConfig
+        from zima.scenes import BUILTIN_SCENES
+
+        agent_data = {
+            "apiVersion": "zima.io/v1",
+            "kind": "Agent",
+            "metadata": {"code": "scene-agent", "name": "Scene Agent"},
+            "spec": {"type": "kimi", "parameters": {"mockCommand": [sys.executable, "-c", script]}},
+        }
+        config_manager.save_config("agent", "scene-agent", agent_data)
+
+        wf = WorkflowConfig.create(
+            code="scene-wf",
+            name="Scene Workflow",
+            template="Review {{repo}}#{{pr_number}}",
+        )
+        config_manager.save_config("workflow", "scene-wf", wf.to_dict())
+
+        var = VariableConfig.create(
+            code="scene-var",
+            name="Scene Variables",
+            values={"repo": "owner/repo", "pr_number": "42"},
+        )
+        config_manager.save_config("variable", "scene-var", var.to_dict())
+
+        pjob = PJobConfig.create(
+            code="scene-pjob",
+            name="Scene PJob",
+            agent="scene-agent",
+            workflow="scene-wf",
+            variable="scene-var",
+        )
+        pjob.spec.actions = copy.deepcopy(BUILTIN_SCENES["code-review"].default_actions)
+        ConfigManager().save_config("pjob", "scene-pjob", pjob.to_dict())
+
+        executor = PJobExecutor()
+        mock_ops = MagicMock()
+        mock_registry = MagicMock()
+        mock_registry.get.return_value = mock_ops
+        # preExec scan_pr must find work, or SkipAction short-circuits before
+        # postExec ever runs (MagicMock scan_prs would look like 0 PRs).
+        mock_ops.scan_prs.return_value = [
+            {"number": 42, "title": "Scene PR", "url": "https://github.com/owner/repo/pull/42"}
+        ]
+        mock_ops.fetch_diff.return_value = "diff --git a/f b/f\n+hello\n"
+        executor._actions_runner._registry = mock_registry
+        return executor.execute("scene-pjob"), mock_ops
+
+    def test_approved_round_removes_both_labels(self, isolated_zima_home, config_manager):
+        approved = (
+            "Review done.\n<zima-review>\n  <verdict>approved</verdict>\n"
+            "  <summary>LGTM</summary>\n</zima-review>"
+        )
+        result, mock_ops = self._run_scene_pjob(
+            isolated_zima_home, config_manager, f"print({approved!r})"
+        )
+        removed = [call.args[2] for call in mock_ops.remove_label.call_args_list]
+        assert removed == ["zima:needs-review", "zima:needs-fix"]
+        mock_ops.add_label.assert_not_called()
+
+    def test_needs_fix_round_only_removes_trigger_label(self, isolated_zima_home, config_manager):
+        needs_fix = (
+            "Review done.\n<zima-review>\n  <verdict>needs_fix</verdict>\n"
+            "  <summary>Found issues</summary>\n</zima-review>"
+        )
+        _, mock_ops = self._run_scene_pjob(
+            isolated_zima_home, config_manager, f"print({needs_fix!r})"
+        )
+        mock_ops.add_label.assert_called_once_with("owner/repo", "42", "zima:needs-fix")
+        removed = [call.args[2] for call in mock_ops.remove_label.call_args_list]
+        assert removed == ["zima:needs-review"]
