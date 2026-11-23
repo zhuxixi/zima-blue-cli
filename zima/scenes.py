@@ -45,7 +45,7 @@ BUILTIN_SCENES: dict[str, Scene] = {
                 PostExecAction(
                     condition="success",
                     type="add_label",
-                    remove_labels=["zima:needs-review"],
+                    remove_labels=["zima:needs-review", "zima:needs-fix"],
                     repo="{{repo}}",
                     issue="{{pr_number}}",
                     require_review=True,

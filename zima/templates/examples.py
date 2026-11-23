@@ -226,6 +226,7 @@ spec:
         requireReview: true
         removeLabels:
           - zima:needs-review
+          - zima:needs-fix
         repo: "{{repo}}"
         issue: "{{pr_number}}"
       - condition: failure
