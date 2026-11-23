@@ -121,7 +121,7 @@ class TestBuiltinScenes:
         success_action = scene.default_actions.post_exec[0]
         assert success_action.condition == "success"
         assert success_action.type == "add_label"
-        assert success_action.remove_labels == ["zima:needs-review"]
+        assert success_action.remove_labels == ["zima:needs-review", "zima:needs-fix"]
         assert success_action.add_labels == []
         assert success_action.repo == "{{repo}}"
         assert success_action.issue == "{{pr_number}}"

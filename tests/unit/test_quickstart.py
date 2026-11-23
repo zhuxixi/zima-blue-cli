@@ -299,7 +299,7 @@ class TestCreateAllConfigs(TestIsolator):
         post_exec = actions.get("postExec", [])
         assert len(post_exec) == 2
         assert post_exec[0]["condition"] == "success"
-        assert post_exec[0]["removeLabels"] == ["zima:needs-review"]
+        assert post_exec[0]["removeLabels"] == ["zima:needs-review", "zima:needs-fix"]
         assert post_exec[1]["condition"] == "failure"
         assert post_exec[1]["addLabels"] == ["zima:needs-fix"]
 
