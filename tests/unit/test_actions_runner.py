@@ -208,6 +208,31 @@ class TestActionsRunner:
             assert "nonexistent" in captured.out
             assert len(errors) == 1
 
+    def test_run_success_action_removes_every_listed_label(self):
+        """Every label in remove_labels is removed, in order; nothing is added."""
+        runner = ActionsRunner()
+        actions = ActionsConfig(
+            post_exec=[
+                PostExecAction(
+                    condition="success",
+                    type="add_label",
+                    remove_labels=["zima:needs-review", "zima:needs-fix"],
+                    repo="owner/repo",
+                    issue="123",
+                )
+            ]
+        )
+        mock_provider = MagicMock()
+        with patch.object(runner._registry, "get", return_value=mock_provider):
+            errors = runner.run(actions, returncode=0, env={})
+
+        assert errors == []
+        assert [call.args[2] for call in mock_provider.remove_label.call_args_list] == [
+            "zima:needs-review",
+            "zima:needs-fix",
+        ]
+        mock_provider.add_label.assert_not_called()
+
 
 class TestActionsRunnerErrorPropagation:
     """Regression tests for #92: postExec action failures must propagate."""
