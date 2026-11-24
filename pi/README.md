@@ -31,6 +31,7 @@ zima-blue-cli 仓库的 pi 技能包：GitHub issue-driven 研发闭环（issue 
 - `gh` CLI（已登录）
 - `jfox` CLI（调研中枢，JFox 知识库）
 - jfox pi 技能包（提供 `jfox-session-to-permanent` / `jfox-session-summary`）
+- `question` 工具（pi 本地扩展；缺失时 `session-finalize` 的主线 gate 与 permanent 审阅降级为文本提问）
 - superpowers pi package（提供 `brainstorming` / `systematic-debugging` / `writing-plans` / `subagent-driven-development` / `requesting-code-review` 技能）
 - 部署前置：`subagents.agentOverrides.spec-reviewer.model` 设为与常用起草模型异构的模型
   （`pi/agents/spec-reviewer.md` 故意不带 model 字段；详见 `pi/spec-cross-review/SKILL.md` 部署前置节）

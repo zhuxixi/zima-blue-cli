@@ -2,6 +2,7 @@
 
 Drafted: deepseek/deepseek-flash (selected) · deepseek/deepseek-flash (physical) @ 2026-11-24T08:12:00+08:00
 Revised: deepseek/deepseek-flash (selected) · deepseek/deepseek-flash (physical) @ 2026-11-24T08:22:00+08:00
+Revised: deepseek/deepseek-flash (selected) · deepseek/deepseek-flash (physical) @ 2026-11-24T08:50:00+08:00 — 实现期按 PR #280 CR advisory 调整 §3.1 幂等检查上限与兜底
 
 ## 1. 摘要
 
@@ -95,7 +96,7 @@ Revised: deepseek/deepseek-flash (selected) · deepseek/deepseek-flash (physical
 #### 3.1 幂等检查
 
 ```bash
-jfox list --type session --limit 50 --format json --include-archived
+jfox list --type session --limit 200 --format json --include-archived
 ```
 
 按 `$PI_SESSION_FILE` 匹配 `session_file`：
@@ -104,8 +105,10 @@ jfox list --type session --limit 50 --format json --include-archived
 |------|------|
 | 命中（活跃） | `question`：更新已有笔记（`jfox edit`）/ 跳过 session 笔记 / 另建一条 |
 | 命中（已归档） | 同样三选一，并提示「该笔记已归档」——不加 `--include-archived` 会漏掉这条 |
-| 未命中 | 直接继续 |
+| 未命中 | 按标题 `jfox search "Session: <topic>" --type session` 二次匹配；仍无 → 直接继续 |
 | 老笔记无 `session_file` 字段 | 退化为标题匹配 `Session: <topic>`；仍无结论则继续 |
+
+活跃 + 归档超过 200 条时明确提示「可能漏检」，不得静默新建。
 
 #### 3.2 permanent
 

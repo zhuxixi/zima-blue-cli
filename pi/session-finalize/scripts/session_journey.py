@@ -49,7 +49,7 @@ def load_records(path: Path) -> tuple[list[dict], int]:
     skipped = 0
     if not path.is_file():
         return [], 0
-    with path.open(encoding="utf-8") as handle:
+    with path.open(encoding="utf-8", errors="replace") as handle:
         for line in handle:
             line = line.strip()
             if not line:

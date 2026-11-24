@@ -24,7 +24,8 @@ description: |
 
 1. `jfox kb current --json` 必须成功；失败 → 提示先用 `/skill:jfox-common` 初始化知识库。
 2. 可用技能列表里必须同时有 `jfox-session-to-permanent` 与 `jfox-session-summary`；缺任一 → 提示安装 jfox pi 技能包。
-3. 读 `$PI_SESSION_FILE`；为空或文件不存在 → **不停止**，第 1 段降级（见「失败与降级」）。
+3. `question` 工具可用（由 pi 本地扩展提供）；不可用时**不停止**，本次所有选择题降级为文本提问，并在报告首行注明 `question 不可用，已降级为文本提问`。
+4. 读 `$PI_SESSION_FILE`；为空或文件不存在 → **不停止**，第 1 段降级（见「失败与降级」）。
 
 ## 第 1 段：旅程回放
 
@@ -82,7 +83,7 @@ python3 <skill-dir>/scripts/session_journey.py --file "$PI_SESSION_FILE" --json
 ### 3.1 幂等检查
 
 ```bash
-jfox list --type session --limit 50 --format json --include-archived
+jfox list --type session --limit 200 --format json --include-archived
 ```
 
 按 `$PI_SESSION_FILE` 匹配 `session_file`：
@@ -91,8 +92,10 @@ jfox list --type session --limit 50 --format json --include-archived
 |------|------|
 | 命中（活跃） | `question`：更新已有笔记 / 跳过 session 笔记 / 另建一条 |
 | 命中（已归档） | 同样三选一，并提示该笔记已归档 |
-| 未命中 | 直接继续 |
+| 未命中 | 按标题 `jfox search "Session: <topic>" --type session` 二次匹配；仍无 → 直接继续 |
 | 老笔记无 `session_file` | 退化为标题匹配 `Session: <topic>`；仍无结论则继续 |
+
+扫最近 200 条；活跃 + 归档超过 200 条时明确提示「可能漏检」，不得静默新建。
 
 ### 3.2 permanent
 

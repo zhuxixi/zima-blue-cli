@@ -62,7 +62,14 @@ def test_jfox_skills_are_named_in_order():
 
 def test_state_and_degradation_tokens():
     text = _text(SKILL)
-    for token in ("PI_SESSION_FILE", "session_file", "--include-archived", "--session-path"):
+    for token in (
+        "PI_SESSION_FILE",
+        "session_file",
+        "--include-archived",
+        "--session-path",
+        "question",
+        "--limit 200",
+    ):
         assert token in text
     assert "旅程回放降级：未找到会话文件" in text
 

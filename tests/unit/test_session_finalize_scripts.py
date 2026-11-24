@@ -239,6 +239,14 @@ def test_main_rejects_non_message_records(tmp_path):
     assert journey.main(["--file", str(path)]) == 2
 
 
+def test_load_records_tolerates_invalid_utf8(tmp_path):
+    path = tmp_path / "bad.jsonl"
+    path.write_bytes(b'{"id": "a", "type": "session"}\n\xff\xfe\n')
+    records, skipped = journey.load_records(path)
+    assert [record["id"] for record in records] == ["a"]
+    assert skipped >= 1
+
+
 def test_main_exit_codes_and_json(tmp_path, capsys):
     missing = tmp_path / "missing.jsonl"
     assert journey.main(["--file", str(missing)]) == 2
