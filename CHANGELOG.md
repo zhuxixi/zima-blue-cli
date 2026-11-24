@@ -27,6 +27,7 @@
 
 ### Features
 
+- **skill**: 新增 `session-finalize`——会话收尾编排（旅程回放 → 主线判定 → jfox 沉淀 + 总结）
 - **skill**: `github-issue-driven` 支持启动时一次性授权（`stepwise` / `design-only` /
   `auto` 三档）——授权落盘 `authorization.md`，step 4 设计 gate 与 step 9 push/开 PR
   gate 按档位放行；两档自动档（`auto` / `design-only`）合并前仍停一次（issue #258）
