@@ -234,10 +234,12 @@ def build_journey(records: Iterable[dict], meta: dict, max_stages: int = MAX_STA
     turns = load_turns(records)
     stages = segment_stages(turns, max_stages=max_stages)
     summaries = [stage_summary(stage) for stage in stages]
-    files = sorted({path for summary in summaries for path in summary["written_files"]})
+    written = {
+        call.target for turn in turns for call in turn.tool_calls if call.is_write and call.target
+    }
     payload_meta = dict(meta)
     payload_meta["user_turns"] = sum(1 for turn in turns if turn.role == "user")
-    payload_meta["changed_files"] = len(files)
+    payload_meta["changed_files"] = len(written)
     return {"meta": payload_meta, "stages": summaries}
 
 
@@ -250,9 +252,12 @@ def main(argv: list[str] | None = None) -> int:
 
     path = Path(args.file).expanduser()
     records, skipped = load_records(path)
-    if not records:
+    if not records or not any(record.get("type") == "message" for record in records):
         print(f"no session records: {path}", file=sys.stderr)
         return 2
+
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
     branch, fallback = select_active_branch(records)
     timestamps = [str(record["timestamp"]) for record in branch if record.get("timestamp")]

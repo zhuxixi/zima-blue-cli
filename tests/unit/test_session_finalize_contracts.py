@@ -54,7 +54,10 @@ def test_jfox_skills_are_named_in_order():
     permanent = text.find("jfox-session-to-permanent")
     summary = text.find("jfox-session-summary")
     assert permanent != -1 and summary != -1
-    assert permanent < summary
+    permanent_section = text.find("### 3.2 permanent")
+    summary_section = text.find("### 3.3 summary")
+    assert permanent_section != -1 and summary_section != -1
+    assert permanent_section < summary_section
 
 
 def test_state_and_degradation_tokens():

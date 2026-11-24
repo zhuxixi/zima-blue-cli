@@ -134,17 +134,22 @@ def test_segment_stages_one_per_user_turn():
             _message("a1", "assistant", "one"),
             _message("u2", "user", "second"),
             _message("a2", "assistant", "two"),
+            _message("u3", "user", "third"),
         ]
     )
     stages = journey.segment_stages(turns)
-    assert len(stages) == 2
+    assert len(stages) == 3
     assert stages[0].user_text == "first"
     assert [turn.role for turn in stages[0].turns] == ["user", "assistant"]
+    assert stages[2].user_text == "third"
 
 
 def test_segment_stages_merges_shortest_adjacent_pair():
     texts = [
         "x",
+        "ten chars!",
+        "ten chars!",
+        "ten chars!",
         "ten chars!",
         "ten chars!",
         "ten chars!",
@@ -215,6 +220,23 @@ def test_build_journey_meta_and_stages():
     assert payload["meta"]["user_turns"] == 2
     assert payload["meta"]["changed_files"] == 1
     assert len(payload["stages"]) == 2
+
+
+def test_build_journey_counts_all_writes_before_truncation():
+    calls = [("write", {"path": f"f{index}.py"}) for index in range(6)]
+    records = [
+        _message("u1", "user", "one"),
+        _message("a1", "assistant", "done", calls=calls),
+    ]
+    payload = journey.build_journey(records, {"records": 2})
+    assert payload["meta"]["changed_files"] == 6
+    assert len(payload["stages"][0]["written_files"]) == 5
+
+
+def test_main_rejects_non_message_records(tmp_path):
+    path = tmp_path / "only-meta.jsonl"
+    path.write_text('{"type": "session", "id": "a"}\n', encoding="utf-8")
+    assert journey.main(["--file", str(path)]) == 2
 
 
 def test_main_exit_codes_and_json(tmp_path, capsys):
